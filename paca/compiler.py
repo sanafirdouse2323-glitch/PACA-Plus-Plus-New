@@ -119,25 +119,33 @@ def parse_policy_file(path: str) -> Policy:
 
 
 def compile_policy(policy: Union[Policy, str]) -> dict:
-    """Normalize a Policy object or source string to a dict."""
+    """Normalize a Policy object or source string to a dict.
+
+    Keeps a backward-compatible `expressions` list while also exposing the
+    canonical `conditions` field expected by the project tests and examples.
+    """
 
     if isinstance(policy, str):
         policy = parse_policy(policy)
+
+    conditions = [
+        {
+            "entity": expr.entity,
+            "attribute": expr.attribute,
+            "operator": expr.operator,
+            "value": expr.value,
+        }
+        for expr in policy.expressions
+    ]
 
     compiled = {
         "name": policy.name,
         "action": policy.action,
         "effect": policy.effect,
-        "expressions": [
-            {
-                "entity": expr.entity,
-                "attribute": expr.attribute,
-                "operator": expr.operator,
-                "value": expr.value,
-            }
-            for expr in policy.expressions
-        ],
+        "conditions": conditions,
+        "expressions": conditions,
     }
+
     if policy.obligation is not None:
         compiled["obligation"] = {
             "name": policy.obligation.name,
@@ -145,6 +153,7 @@ def compile_policy(policy: Union[Policy, str]) -> dict:
         }
     else:
         compiled["obligation"] = None
+
     return compiled
 
 
