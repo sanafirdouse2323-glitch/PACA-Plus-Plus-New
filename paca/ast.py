@@ -1,18 +1,12 @@
-"""Abstract syntax tree and policy data model for PACA++.
-
-The object model stays deliberately small so that the parser, compiler, and
-runtime evaluator can remain easy to reason about and test.
-"""
-
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, List, Optional
+from typing import Any, Iterable, List, Optional
 
 
 @dataclass(frozen=True)
 class Expression:
-    """Represents one authorization condition."""
+    """Represents a single policy condition."""
 
     entity: str
     attribute: str
@@ -37,6 +31,25 @@ class Policy:
     expressions: List[Expression] = field(default_factory=list)
     obligation: Optional[Obligation] = None
     effect: str = "deny"
+    description: str = ""
+
+
+@dataclass
+class PolicySet:
+    """A named collection of policies evaluated together."""
+
+    name: str = "default"
+    policies: List[Policy] = field(default_factory=list)
+
+    def add_policy(self, policy: Policy) -> None:
+        self.policies.append(policy)
+
+    def add_policies(self, policies: Iterable[Policy]) -> None:
+        for policy in policies:
+            self.add_policy(policy)
+
+    def __iter__(self):
+        return iter(self.policies)
 
 
 @dataclass(frozen=True)
@@ -60,3 +73,13 @@ class EvaluationResult:
     total_conditions: int
     details: List[str] = field(default_factory=list)
     provenance: List[ProvenanceRecord] = field(default_factory=list)
+
+
+__all__ = [
+    "EvaluationResult",
+    "Expression",
+    "Obligation",
+    "Policy",
+    "PolicySet",
+    "ProvenanceRecord",
+]

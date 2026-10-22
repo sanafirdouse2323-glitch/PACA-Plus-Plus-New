@@ -1,9 +1,7 @@
-"""Reference parser for the PACA++ policy DSL."""
-
 from __future__ import annotations
 
 import re
-from typing import List, Optional
+from typing import Iterable, List, Optional, Union
 
 from .ast import Expression, Obligation, Policy
 
@@ -13,17 +11,17 @@ _POLICY_RE = re.compile(
     \s+
     (?P<action>[A-Za-z_][A-Za-z0-9_.-]*)
     (?:\s+when\s+(?P<conditions>.+?))?
-    (?:\s+with\s+obligation\s+(?P<obligation>.+?))?
+    (?:\s+with\s+(?:obligation|obligations)\s+(?P<obligation>.+?))?
     \s*$
     """
 )
 
 _CONDITION_RE = re.compile(
     r"""
-    ^\s*(?P<entity>[A-Za-z_][A-Za-z0-9_\.]*)
-    \s*\.\s*(?P<attribute>[A-Za-z_][A-Za-z0-9_]*)
-    \s*(?P<operator>==|!=|>=|<=|>|<)
-    \s*(?P<value>[^\s]+)
+    ^\s*(?P<entity>[A-Za-z_][A-Za-z0-9_.-]*)
+    \s*\.\s*(?P<attribute>[A-Za-z_][A-Za-z0-9_.-]*)
+    \s*(?P<operator>==|!=|>=|<=|>|<|in|contains|matches)
+    \s*(?P<value>.+?)
     \s*$
     """,
     re.IGNORECASE | re.VERBOSE,
@@ -44,6 +42,8 @@ def _clean_value(raw: str):
         return True
     if value.lower() == "false":
         return False
+    if value.lower() == "null":
+        return None
     return value
 
 
@@ -63,10 +63,6 @@ def _parse_condition(fragment: str) -> Expression:
 def _parse_conditions(raw: str) -> List[Expression]:
     if not raw or not raw.strip():
         return []
-
-    # Split on Boolean connectives while respecting simple values that contain spaces.
-    # For the current DSL, values are tokenized without spaces; this keeps the parser
-    # intentionally simple and deterministic.
     split = re.split(r"\s+(?:and|or)\s+", raw, flags=re.IGNORECASE)
     return [_parse_condition(part) for part in split if part.strip()]
 
@@ -90,7 +86,7 @@ def _parse_obligation(raw: Optional[str]) -> Optional[Obligation]:
 
 
 def parse_policy(source: str) -> Policy:
-    """Parse a PACA++ policy string into a `Policy` AST object."""
+    """Parse a PACA++ policy string into a Policy AST object."""
 
     text = (source or "").strip()
     if not text:
@@ -118,10 +114,47 @@ def parse_policy(source: str) -> Policy:
 
 
 def parse_policy_file(path: str) -> Policy:
-    """Read a policy file and parse it."""
-
     with open(path, "r", encoding="utf-8") as handle:
         return parse_policy(handle.read())
 
 
-__all__ = ["parse_policy", "parse_policy_file"]
+def compile_policy(policy: Union[Policy, str]) -> dict:
+    """Normalize a Policy object or source string to a dict."""
+
+    if isinstance(policy, str):
+        policy = parse_policy(policy)
+
+    compiled = {
+        "name": policy.name,
+        "action": policy.action,
+        "effect": policy.effect,
+        "expressions": [
+            {
+                "entity": expr.entity,
+                "attribute": expr.attribute,
+                "operator": expr.operator,
+                "value": expr.value,
+            }
+            for expr in policy.expressions
+        ],
+    }
+    if policy.obligation is not None:
+        compiled["obligation"] = {
+            "name": policy.obligation.name,
+            "parameter": policy.obligation.parameter,
+        }
+    else:
+        compiled["obligation"] = None
+    return compiled
+
+
+def compile_policy_source(source: str) -> dict:
+    return compile_policy(parse_policy(source))
+
+
+__all__ = [
+    "compile_policy",
+    "compile_policy_source",
+    "parse_policy",
+    "parse_policy_file",
+]
