@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any, Dict, Iterable, List, Sequence
 
 from .ast import EvaluationResult, Policy, PolicySet
-from .compiler import compile_policy
+from .engine import PolicyEngine as _PolicyEngine
 from .evaluator_asp import evaluate_policy as _evaluate_policy
 
 
@@ -11,7 +11,11 @@ def evaluate_policy(policy: Policy | str, context: Dict[str, Any], provenance: I
     return _evaluate_policy(policy, context, provenance)
 
 
-def evaluate_policy_set(policy_set: PolicySet | Sequence[Policy | str] | Policy | str, context: Dict[str, Any], provenance: Iterable[Any] | None = None) -> List[EvaluationResult]:
+def evaluate_policy_set(
+    policy_set: PolicySet | Sequence[Policy | str] | Policy | str,
+    context: Dict[str, Any],
+    provenance: Iterable[Any] | None = None,
+) -> List[EvaluationResult]:
     if isinstance(policy_set, PolicySet):
         policies = list(policy_set.policies)
     elif isinstance(policy_set, Policy):
@@ -26,14 +30,7 @@ def evaluate_policy_set(policy_set: PolicySet | Sequence[Policy | str] | Policy 
     return [evaluate_policy(policy, context, provenance) for policy in policies]
 
 
-def compile_cedar(policy: Policy | str) -> Dict[str, Any]:
-    compiled = compile_policy(policy)
-    compiled["backend"] = "cedar"
-    return compiled
+__all__ = ["PolicyEngine", "evaluate_policy", "evaluate_policy_set"]
 
 
-__all__ = [
-    "compile_cedar",
-    "evaluate_policy",
-    "evaluate_policy_set",
-]
+PolicyEngine = _PolicyEngine

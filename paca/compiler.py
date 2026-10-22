@@ -1,160 +1,75 @@
+"""Core compiler for PACA++ policies.
+
+The compiler normalizes a policy into a dict representation that is easy to
+persist, serialize, or pass to a backend policy engine.
+"""
+
 from __future__ import annotations
 
-import re
-from typing import Iterable, List, Optional, Union
+from typing import Any, Dict, List
 
-from .ast import Expression, Obligation, Policy
-
-_POLICY_RE = re.compile(
-    r"""(?is)^
-    (?P<effect>permit|deny)
-    \s+
-    (?P<action>[A-Za-z_][A-Za-z0-9_.-]*)
-    (?:\s+when\s+(?P<conditions>.+?))?
-    (?:\s+with\s+(?:obligation|obligations)\s+(?P<obligation>.+?))?
-    \s*$
-    """
-)
-
-_CONDITION_RE = re.compile(
-    r"""
-    ^\s*(?P<entity>[A-Za-z_][A-Za-z0-9_.-]*)
-    \s*\.\s*(?P<attribute>[A-Za-z_][A-Za-z0-9_.-]*)
-    \s*(?P<operator>==|!=|>=|<=|>|<|in|contains|matches)
-    \s*(?P<value>.+?)
-    \s*$
-    """,
-    re.IGNORECASE | re.VERBOSE,
-)
+from .ast import Policy
+from .parser import parse_policy
 
 
-def _clean_value(raw: str):
-    value = raw.strip()
-    if (value.startswith('"') and value.endswith('"')) or (
-        value.startswith("'") and value.endswith("'")
-    ):
-        return value[1:-1]
-    if re.fullmatch(r"[-+]?\d+", value):
-        return int(value)
-    if re.fullmatch(r"[-+]?\d+\.\d+", value):
-        return float(value)
-    if value.lower() == "true":
-        return True
-    if value.lower() == "false":
-        return False
-    if value.lower() == "null":
-        return None
-    return value
-
-
-def _parse_condition(fragment: str) -> Expression:
-    match = _CONDITION_RE.match(fragment.strip())
-    if not match:
-        raise ValueError(f"Unsupported condition fragment: {fragment!r}")
-
-    data = match.groupdict()
-    entity = data["entity"]
-    attribute = data["attribute"]
-    operator = data["operator"]
-    value = _clean_value(data["value"])
-    return Expression(entity=entity, attribute=attribute, operator=operator, value=value)
-
-
-def _parse_conditions(raw: str) -> List[Expression]:
-    if not raw or not raw.strip():
-        return []
-    split = re.split(r"\s+(?:and|or)\s+", raw, flags=re.IGNORECASE)
-    return [_parse_condition(part) for part in split if part.strip()]
-
-
-def _parse_obligation(raw: Optional[str]) -> Optional[Obligation]:
-    if raw is None or not raw.strip():
-        return None
-
-    text = raw.strip()
-    name_match = re.match(r"(?P<name>[A-Za-z_][A-Za-z0-9_.-]*)", text)
-    if not name_match:
-        raise ValueError(f"Invalid obligation: {raw!r}")
-
-    name = name_match.group("name")
-    remainder = text[name_match.end() :].strip()
-    if remainder.startswith("(") and remainder.endswith(")"):
-        parameter = remainder[1:-1].strip()
-    else:
-        parameter = ""
-    return Obligation(name=name, parameter=parameter)
-
-
-def parse_policy(source: str) -> Policy:
-    """Parse a PACA++ policy string into a Policy AST object."""
-
-    text = (source or "").strip()
-    if not text:
-        raise ValueError("Policy source is empty.")
-
-    match = _POLICY_RE.match(text)
-    if not match:
-        raise ValueError(f"Could not parse policy: {source!r}")
-
-    effect = match.group("effect").lower()
-    action = match.group("action")
-    conditions = match.group("conditions") or ""
-    obligation_text = match.group("obligation")
-
-    expressions = _parse_conditions(conditions)
-    obligation = _parse_obligation(obligation_text)
-
-    return Policy(
-        name=f"{effect}_{action}",
-        action=action,
-        expressions=expressions,
-        obligation=obligation,
-        effect=effect,
-    )
-
-
-def parse_policy_file(path: str) -> Policy:
-    with open(path, "r", encoding="utf-8") as handle:
-        return parse_policy(handle.read())
-
-
-def compile_policy(policy: Union[Policy, str]) -> dict:
-    """Normalize a Policy object or source string to a dict."""
+def compile_policy(policy: Policy | str) -> Dict[str, Any]:
+    """Compile a policy object or policy source string into a normalized dict."""
 
     if isinstance(policy, str):
         policy = parse_policy(policy)
 
-    compiled = {
+    conditions = [
+        {
+            "entity": expr.entity,
+            "attribute": expr.attribute,
+            "operator": expr.operator,
+            "value": expr.value,
+            "source": expr.source,
+        }
+        for expr in policy.expressions
+    ]
+
+    compiled: Dict[str, Any] = {
         "name": policy.name,
         "action": policy.action,
         "effect": policy.effect,
-        "expressions": [
-            {
-                "entity": expr.entity,
-                "attribute": expr.attribute,
-                "operator": expr.operator,
-                "value": expr.value,
-            }
-            for expr in policy.expressions
-        ],
+        "description": policy.description,
+        "priority": policy.priority,
+        "conditions": conditions,
+        "connectors": list(policy.connectors),
+        "metadata": dict(policy.metadata),
+        "expressions": conditions,
     }
-    if policy.obligation is not None:
-        compiled["obligation"] = {
-            "name": policy.obligation.name,
-            "parameter": policy.obligation.parameter,
-        }
-    else:
-        compiled["obligation"] = None
+
+    obligations: List[Dict[str, Any]] = []
+    for obligation in policy.obligations or ([policy.obligation] if policy.obligation else []):
+        obligations.append(
+            {
+                "name": obligation.name,
+                "parameter": obligation.parameter,
+                "metadata": dict(obligation.metadata),
+            }
+        )
+    compiled["obligations"] = obligations
     return compiled
 
 
-def compile_policy_source(source: str) -> dict:
+def compile_policy_source(source: str) -> Dict[str, Any]:
+    """Convenience helper to compile a policy text directly."""
+
     return compile_policy(parse_policy(source))
 
 
-__all__ = [
-    "compile_policy",
-    "compile_policy_source",
-    "parse_policy",
-    "parse_policy_file",
-]
+__all__ = ["compile_policy", "compile_policy_source"]
+
+
+def compile_asp(policy: Policy | str) -> Dict[str, Any]:
+    compiled = compile_policy(policy)
+    compiled["backend"] = "asp"
+    return compiled
+
+
+def compile_cedar(policy: Policy | str) -> Dict[str, Any]:
+    compiled = compile_policy(policy)
+    compiled["backend"] = "cedar"
+    return compiled

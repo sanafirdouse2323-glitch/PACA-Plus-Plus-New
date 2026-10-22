@@ -6,6 +6,7 @@ all conditions using a permissive set of comparison operators.
 
 from __future__ import annotations
 
+import re
 from typing import Any, Dict, Iterable, List
 
 from .ast import EvaluationResult, Expression, Policy, ProvenanceRecord
@@ -15,7 +16,6 @@ def _lookup(context: Dict[str, Any], entity: str, attribute: str) -> Any:
     if not isinstance(context, dict):
         return None
 
-    # Flat keys such as "user.role" or "user.role.value" are supported.
     flat_key = f"{entity}.{attribute}"
     if flat_key in context:
         return context[flat_key]
@@ -24,7 +24,6 @@ def _lookup(context: Dict[str, Any], entity: str, attribute: str) -> Any:
         bucket = context[entity]
         if isinstance(bucket, dict) and attribute in bucket:
             return bucket[attribute]
-
         if hasattr(bucket, attribute):
             return getattr(bucket, attribute)
 
@@ -35,18 +34,35 @@ def _lookup(context: Dict[str, Any], entity: str, attribute: str) -> Any:
 
 
 def _compare(actual: Any, operator: str, expected: Any) -> bool:
+    operator = (operator or "").lower()
     if operator == "==":
         return actual == expected
     if operator == "!=":
         return actual != expected
     if operator == ">=":
-        return (actual is not None) and (actual >= expected)
+        return actual is not None and actual >= expected
     if operator == "<=":
-        return (actual is not None) and (actual <= expected)
+        return actual is not None and actual <= expected
     if operator == ">":
-        return (actual is not None) and (actual > expected)
+        return actual is not None and actual > expected
     if operator == "<":
-        return (actual is not None) and (actual < expected)
+        return actual is not None and actual < expected
+    if operator == "in":
+        if isinstance(expected, (list, tuple, set, str)):
+            return actual in expected
+        return False
+    if operator == "contains":
+        if isinstance(actual, (list, tuple, set, str)):
+            return expected in actual
+        if isinstance(actual, dict):
+            return expected in actual
+        return False
+    if operator == "matches":
+        if not isinstance(expected, str):
+            return False
+        if actual is None:
+            return False
+        return re.fullmatch(expected, str(actual)) is not None
     raise ValueError(f"Unsupported operator: {operator!r}")
 
 
@@ -76,11 +92,7 @@ def evaluate_policy(
     context: Dict[str, Any],
     provenance: Iterable[ProvenanceRecord] | None = None,
 ) -> EvaluationResult:
-    """Evaluate a policy against a runtime context.
-
-    A policy is considered satisfied when every expression passes. The effect is
-    then applied to yield the final decision.
-    """
+    """Evaluate a policy against a runtime context."""
 
     if isinstance(policy, str):
         from .parser import parse_policy
@@ -90,22 +102,34 @@ def evaluate_policy(
     if not isinstance(context, dict):
         raise TypeError("Policy evaluation requires a dictionary-like context.")
 
-    if provenance is None:
-        provenance = []
-
     details: List[str] = []
-    all_provenance: List[ProvenanceRecord] = list(provenance)
-    passed_conditions = 0
-    total_conditions = len(policy.expressions)
+    all_provenance: List[ProvenanceRecord] = list(provenance or [])
 
-    for expr in policy.expressions:
-        ok, expr_details, expr_provenance = _evaluate_expr(expr, context)
-        details.extend(expr_details)
-        all_provenance.extend(expr_provenance)
-        if ok:
-            passed_conditions += 1
+    if not policy.expressions:
+        satisfied = True
+        matched_conditions = 0
+        total_conditions = 0
+    else:
+        bool_values: List[bool] = []
+        matched_conditions = 0
+        total_conditions = len(policy.expressions)
+        for expr in policy.expressions:
+            ok, expr_details, expr_provenance = _evaluate_expr(expr, context)
+            details.extend(expr_details)
+            all_provenance.extend(expr_provenance)
+            bool_values.append(ok)
+            if ok:
+                matched_conditions += 1
 
-    satisfied = total_conditions == 0 or passed_conditions == total_conditions
+        current = bool_values[0]
+        for idx, value in enumerate(bool_values[1:], start=1):
+            connector = (policy.connectors[idx - 1] if idx - 1 < len(policy.connectors) else "and").lower()
+            if connector == "or":
+                current = current or value
+            else:
+                current = current and value
+        satisfied = current
+
     if policy.effect == "permit":
         decision = "permit" if satisfied else "deny"
     elif policy.effect == "deny":
@@ -116,7 +140,7 @@ def evaluate_policy(
     return EvaluationResult(
         decision=decision,
         passed=satisfied,
-        matched_conditions=passed_conditions,
+        matched_conditions=matched_conditions,
         total_conditions=total_conditions,
         details=details,
         provenance=all_provenance,

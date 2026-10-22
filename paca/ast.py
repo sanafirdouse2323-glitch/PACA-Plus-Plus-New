@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Iterable, List, Optional
+from typing import Any, Dict, Iterable, List, Optional
 
 
 @dataclass(frozen=True)
@@ -12,6 +12,7 @@ class Expression:
     attribute: str
     operator: str
     value: Any
+    source: str = ""
 
 
 @dataclass(frozen=True)
@@ -20,9 +21,10 @@ class Obligation:
 
     name: str
     parameter: str = ""
+    metadata: Dict[str, Any] = field(default_factory=dict)
 
 
-@dataclass(frozen=True)
+@dataclass
 class Policy:
     """Represents a complete authorization policy."""
 
@@ -30,8 +32,12 @@ class Policy:
     action: str
     expressions: List[Expression] = field(default_factory=list)
     obligation: Optional[Obligation] = None
+    obligations: List[Obligation] = field(default_factory=list)
     effect: str = "deny"
     description: str = ""
+    priority: int = 0
+    connectors: List[str] = field(default_factory=list)
+    metadata: Dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -40,6 +46,8 @@ class PolicySet:
 
     name: str = "default"
     policies: List[Policy] = field(default_factory=list)
+    strategy: str = "deny_overrides"
+    default_decision: str = "deny"
 
     def add_policy(self, policy: Policy) -> None:
         self.policies.append(policy)
