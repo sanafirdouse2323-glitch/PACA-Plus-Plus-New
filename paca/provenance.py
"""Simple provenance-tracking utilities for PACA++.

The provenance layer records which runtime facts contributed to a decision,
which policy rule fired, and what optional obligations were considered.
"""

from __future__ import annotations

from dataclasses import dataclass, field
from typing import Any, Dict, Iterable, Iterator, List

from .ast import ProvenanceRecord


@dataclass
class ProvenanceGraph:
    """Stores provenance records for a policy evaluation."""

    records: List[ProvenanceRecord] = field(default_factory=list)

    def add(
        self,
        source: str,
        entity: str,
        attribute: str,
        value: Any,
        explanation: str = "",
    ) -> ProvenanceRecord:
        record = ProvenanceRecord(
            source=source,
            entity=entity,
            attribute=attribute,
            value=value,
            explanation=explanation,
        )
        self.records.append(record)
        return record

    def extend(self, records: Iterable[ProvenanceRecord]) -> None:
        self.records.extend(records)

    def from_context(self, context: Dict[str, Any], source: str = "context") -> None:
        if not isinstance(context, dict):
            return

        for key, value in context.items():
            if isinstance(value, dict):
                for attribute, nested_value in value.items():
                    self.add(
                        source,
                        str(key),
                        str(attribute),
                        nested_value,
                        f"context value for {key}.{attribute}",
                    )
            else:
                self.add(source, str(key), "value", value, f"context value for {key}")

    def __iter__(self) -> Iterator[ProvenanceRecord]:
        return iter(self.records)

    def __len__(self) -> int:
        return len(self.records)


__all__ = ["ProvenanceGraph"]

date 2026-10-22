@@ -1,0 +1,230 @@
+"""Core policy evaluator and policy-set engine for PACA++.
+
+The evaluator supports dictionary-like runtime contexts, equality and relational
+operators, logical connectors, provenance capture, and production-style strategy
+selection for policy sets.
+"""
+
+from __future__ import annotations
+
+from typing import Any, Dict, Iterable, List, Sequence, Tuple
+
+from .ast import EvaluationResult, Expression, Policy, PolicySet, ProvenanceRecord
+from .parser import parse_policy
+
+
+def _lookup(context: Dict[str, Any], entity: str, attribute: str) -> Any:
+    if not isinstance(context, dict):
+        return None
+
+    flat_key = f"{entity}.{attribute}"
+    if flat_key in context:
+        return context[flat_key]
+
+    if entity in context:
+        bucket = context[entity]
+        if isinstance(bucket, dict) and attribute in bucket:
+            return bucket[attribute]
+        if hasattr(bucket, attribute):
+            return getattr(bucket, attribute)
+
+    if attribute in context:
+        return context[attribute]
+
+    return None
+
+
+def _compare(actual: Any, operator: str, expected: Any) -> bool:
+    if operator == "==":
+        return actual == expected
+    if operator == "!=":
+        return actual != expected
+    if operator == ">=":
+        return actual is not None and actual >= expected
+    if operator == "<=":
+        return actual is not None and actual <= expected
+    if operator == ">":
+        return actual is not None and actual > expected
+    if operator == "<":
+        return actual is not None and actual < expected
+    if operator == "in":
+        if actual is None:
+            return False
+        if isinstance(expected, (list, tuple, set)):
+            return actual in expected
+        return actual in str(expected)
+    if operator == "contains":
+        if actual is None:
+            return False
+        if isinstance(actual, (list, tuple, set, str)):
+            return expected in actual
+        return str(expected) in str(actual)
+    if operator == "matches":
+        if actual is None:
+            return False
+        if isinstance(expected, str):
+            import re
+
+            return bool(re.match(expected, str(actual)))
+        return False
+    raise ValueError(f"Unsupported operator: {operator!r}")
+
+
+def _evaluate_expression(expr: Expression, context: Dict[str, Any]) -> Tuple[bool, List[str], List[ProvenanceRecord]]:
+    actual = _lookup(context, expr.entity, expr.attribute)
+    passed = _compare(actual, expr.operator, expr.value)
+    provenance = [
+        ProvenanceRecord(
+            source=expr.source,
+            entity=expr.entity,
+            attribute=expr.attribute,
+            value=actual,
+            explanation=f"Evaluated {expr.entity}.{expr.attribute} {expr.operator} {expr.value!r}",
+        )
+    ]
+    detail = (
+        f"{expr.entity}.{expr.attribute} {expr.operator} {expr.value!r} "
+        f"=> {'pass' if passed else 'fail'} (actual={actual!r})"
+    )
+    return passed, [detail], provenance
+
+
+def _evaluate_condition_chain(
+    expressions: Sequence[Expression],
+    connectors: Sequence[str],
+    context: Dict[str, Any],
+) -> Tuple[bool, List[str], List[ProvenanceRecord], int]:
+    if not expressions:
+        return True, [], [], 0
+
+    passed, details, provenance = _evaluate_expression(expressions[0], context)
+    matched = 1 if passed else 0
+    current = passed
+
+    for connector, expr in zip(connectors, expressions[1:]):
+        next_passed, next_details, next_provenance = _evaluate_expression(expr, context)
+        details.extend(next_details)
+        provenance.extend(next_provenance)
+
+        if connector == "and":
+            current = current and next_passed
+        elif connector == "or":
+            current = current or next_passed
+        else:
+            current = next_passed
+
+        matched += 1 if next_passed else 0
+
+    return current, details, provenance, matched
+
+
+def evaluate_policy(
+    policy: Policy | str,
+    context: Dict[str, Any],
+    provenance: Iterable[ProvenanceRecord] | None = None,
+) -> EvaluationResult:
+    """Evaluate a single policy against a runtime context."""
+
+    if isinstance(policy, str):
+        policy = parse_policy(policy)
+
+    if not isinstance(context, dict):
+        raise TypeError("Policy evaluation requires a dictionary-like context.")
+
+    existing = list(provenance or [])
+    if not policy.expressions:
+        passed = True
+        details = ["Policy has no conditions; matched by default."]
+        matched_conditions = 0
+        total_conditions = 0
+        decision = "permit" if policy.effect == "permit" else "deny"
+    else:
+        passed, details, expr_provenance, matched_conditions = _evaluate_condition_chain(
+            policy.expressions,
+            policy.connectors,
+            context,
+        )
+        total_conditions = len(policy.expressions)
+        decision = "permit" if policy.effect == "permit" and passed else "deny"
+        if policy.effect == "deny":
+            decision = "deny" if passed else "permit"
+
+    obligations = [
+        obligation.name for obligation in (policy.obligations or ([policy.obligation] if policy.obligation else []))
+    ]
+    return EvaluationResult(
+        decision=decision,
+        passed=passed,
+        matched_conditions=matched_conditions,
+        total_conditions=total_conditions,
+        details=details,
+        provenance=existing + expr_provenance if 'expr_provenance' in locals() else existing,
+        policy_id=policy.name,
+        obligations=obligations,
+    )
+
+
+class PolicyEngine:
+    """Production-style policy engine for evaluating policy sets."""
+
+    def __init__(self, strategy: str = "deny_overrides", default_decision: str = "deny") -> None:
+        self.strategy = strategy
+        self.default_decision = default_decision
+
+    def evaluate(self, policy: Policy | str, context: Dict[str, Any]) -> EvaluationResult:
+        return evaluate_policy(policy, context)
+
+    def evaluate_set(self, policy_set: PolicySet, context: Dict[str, Any]) -> EvaluationResult:
+        if not isinstance(policy_set, PolicySet):
+            raise TypeError("Expected a PolicySet instance.")
+
+        results = [evaluate_policy(policy, context) for policy in policy_set.policies]
+        if not results:
+            return EvaluationResult(
+                decision=policy_set.default_decision,
+                passed=(policy_set.default_decision == "permit"),
+                matched_conditions=0,
+                total_conditions=0,
+                details=["No policies matched; using default decision."],
+                provenance=[],
+                policy_id=policy_set.name,
+                matched_policies=[],
+            )
+
+        matched = [result.policy_id for result in results if result.decision == "permit"]
+        denies = [result.policy_id for result in results if result.decision == "deny"]
+
+        if self.strategy == "deny_overrides":
+            final_decision = "deny" if denies else "permit" if matched else self.default_decision
+        elif self.strategy == "permit_overrides":
+            final_decision = "permit" if matched else "deny" if denies else self.default_decision
+        elif self.strategy == "first_match":
+            final_decision = results[0].decision
+        else:
+            raise ValueError(f"Unsupported policy strategy: {self.strategy!r}")
+
+        all_details = []
+        provenance: List[ProvenanceRecord] = []
+        for result in results:
+            all_details.extend(result.details)
+            provenance.extend(result.provenance)
+
+        return EvaluationResult(
+            decision=final_decision,
+            passed=(final_decision == "permit"),
+            matched_conditions=sum(r.matched_conditions for r in results),
+            total_conditions=sum(r.total_conditions for r in results),
+            details=all_details,
+            provenance=provenance,
+            policy_id=policy_set.name,
+            matched_policies=matched,
+        )
+
+
+__all__ = ["PolicyEngine", "evaluate_policy"]
+
+
+# Backward-compatible function names
+
+def evaluate_policy_set(policy_set: PolicySet, context: Dict[str, Any]) -> EvaluationResult:
+    return PolicyEngine(strategy=policy_set.strategy, default_decision=policy_set.default_decision).evaluate_set(policy_set, context)

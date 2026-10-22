@@ -1,0 +1,25 @@
+"""Policy engine entry point for PACA++.
+
+This module contains the top-level engine abstraction used to evaluate rule sets
+according to consistent strategies such as deny-overrides and permit-overrides.
+"""
+
+from __future__ import annotations
+
+from .ast import PolicySet
+from .evaluator import PolicyEngine as _PolicyEngine
+
+
+PolicyEngine = _PolicyEngine
+
+
+__all__ = ["PolicyEngine", "PolicySet"]
+
+
+# Convenience helper for policy-set evaluation
+
+def evaluate_policy_set(policy_set: PolicySet, context):
+    return PolicyEngine(
+        strategy=policy_set.strategy,
+        default_decision=policy_set.default_decision,
+    ).evaluate_set(policy_set, context)

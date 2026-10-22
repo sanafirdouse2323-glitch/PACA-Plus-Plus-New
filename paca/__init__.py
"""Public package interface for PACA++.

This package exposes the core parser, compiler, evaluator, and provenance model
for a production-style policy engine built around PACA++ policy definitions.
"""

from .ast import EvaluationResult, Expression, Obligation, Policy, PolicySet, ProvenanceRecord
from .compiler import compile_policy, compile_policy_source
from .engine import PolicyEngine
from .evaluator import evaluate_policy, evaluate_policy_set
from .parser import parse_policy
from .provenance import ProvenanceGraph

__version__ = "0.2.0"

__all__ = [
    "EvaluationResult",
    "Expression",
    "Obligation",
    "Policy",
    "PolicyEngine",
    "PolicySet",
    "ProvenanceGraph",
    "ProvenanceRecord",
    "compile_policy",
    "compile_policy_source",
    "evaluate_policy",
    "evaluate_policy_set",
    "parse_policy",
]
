@@ -1,0 +1,76 @@
+"""Core compiler for PACA++ policies.
+
+The compiler normalizes a policy into a dict representation that is easy to
+persist, serialize, or pass to a backend policy engine.
+"""
+
+from __future__ import annotations
+
+from typing import Any, Dict, List
+
+from .ast import Policy
+from .parser import parse_policy
+
+
+def compile_policy(policy: Policy | str) -> Dict[str, Any]:
+    """Compile a policy object or policy source string into a normalized dict."""
+
+    if isinstance(policy, str):
+        policy = parse_policy(policy)
+
+    compiled = {
+        "name": policy.name,
+        "action": policy.action,
+        "effect": policy.effect,
+        "description": policy.description,
+        "priority": policy.priority,
+        "conditions": [
+            {
+                "entity": expr.entity,
+                "attribute": expr.attribute,
+                "operator": expr.operator,
+                "value": expr.value,
+                "source": expr.source,
+            }
+            for expr in policy.expressions
+        ],
+        "connectors": list(policy.connectors),
+        "metadata": dict(policy.metadata),
+    }
+
+    obligations: List[Dict[str, Any]] = []
+    for obligation in policy.obligations or ([policy.obligation] if policy.obligation else []):
+        obligations.append(
+            {
+                "name": obligation.name,
+                "parameter": obligation.parameter,
+                "metadata": dict(obligation.metadata),
+            }
+        )
+    if obligations:
+        compiled["obligations"] = obligations
+
+    return compiled
+
+
+def compile_policy_source(source: str) -> Dict[str, Any]:
+    """Convenience helper to compile a policy text directly."""
+
+    return compile_policy(parse_policy(source))
+
+
+__all__ = ["compile_policy", "compile_policy_source"]
+
+
+# Backward-compatible compiler aliases
+
+def compile_asp(policy: Policy | str) -> Dict[str, Any]:
+    compiled = compile_policy(policy)
+    compiled["backend"] = "asp"
+    return compiled
+
+
+def compile_cedar(policy: Policy | str) -> Dict[str, Any]:
+    compiled = compile_policy(policy)
+    compiled["backend"] = "cedar"
+    return compiled
