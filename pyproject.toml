@@ -1,0 +1,34 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "paca-plus-plus"
+version = "0.1.0"
+description = "Provenance-anchored continuous authorization framework for autonomous LLM agents"
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [{ name = "sanafirdouse2323-glitch" }]
+license = { text = "MIT" }
+keywords = ["authorization", "policy", "provenance", "ai", "security"]
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "License :: OSI Approved :: MIT License",
+  "Operating System :: OS Independent",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.0",
+  "hypothesis>=6.0",
+  "rich>=13.0",
+]
+
+[tool.setuptools]
+packages = ["paca"]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]

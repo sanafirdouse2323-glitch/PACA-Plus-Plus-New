@@ -1,37 +1,62 @@
-"""
-PACA++ Abstract Syntax Tree (AST)
+"""Abstract syntax tree and policy data model for PACA++.
 
-Defines the internal representation of PACA++ policies.
+The object model stays deliberately small so that the parser, compiler, and
+runtime evaluator can remain easy to reason about and test.
 """
+
+from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import List, Optional
+from typing import Any, List, Optional
 
 
 @dataclass(frozen=True)
 class Expression:
-    """Represents a single policy condition."""
+    """Represents one authorization condition."""
 
     entity: str
     attribute: str
     operator: str
-    value: str
+    value: Any
 
 
 @dataclass(frozen=True)
 class Obligation:
-    """Represents an obligation that must hold."""
+    """Represents an obligation attached to a policy decision."""
 
     name: str
-    parameter: str
+    parameter: str = ""
 
 
 @dataclass(frozen=True)
 class Policy:
-    """Represents a complete PACA++ policy."""
+    """Represents a complete authorization policy."""
 
     name: str
     action: str
     expressions: List[Expression] = field(default_factory=list)
     obligation: Optional[Obligation] = None
     effect: str = "deny"
+
+
+@dataclass(frozen=True)
+class ProvenanceRecord:
+    """A single fact used while evaluating a policy."""
+
+    source: str
+    entity: str
+    attribute: str
+    value: Any
+    explanation: str = ""
+
+
+@dataclass
+class EvaluationResult:
+    """The result of evaluating a policy against a runtime context."""
+
+    decision: str
+    passed: bool
+    matched_conditions: int
+    total_conditions: int
+    details: List[str] = field(default_factory=list)
+    provenance: List[ProvenanceRecord] = field(default_factory=list)

@@ -1,5 +1,3 @@
-lark
-clingo
-pytest
-hypothesis
-rich
+pytest>=8.0
+hypothesis>=6.0
+rich>=13.0

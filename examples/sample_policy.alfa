@@ -1,0 +1,43 @@
+"""Lightweight fuzzer for creating valid PACA++ policies and contexts."""
+
+from __future__ import annotations
+
+import random
+from typing import Dict, List
+
+from .ast import Expression, Policy
+
+
+def generate_random_policy(seed: int | None = None) -> Policy:
+    rng = random.Random(seed)
+    actions = ["readFile", "writeFile", "deleteFile", "runCommand", "readDatabase"]
+    effect = rng.choice(["permit", "deny"])
+    user_roles = ["admin", "analyst", "user", "auditor", "guest"]
+    departments = ["engineering", "legal", "security", "finance", "support"]
+
+    expressions = [
+        Expression("user", "role", "==", rng.choice(user_roles)),
+        Expression("user", "department", "==", rng.choice(departments)),
+    ]
+
+    return Policy(
+        name=f"{effect}_{rng.choice(actions)}",
+        action=rng.choice(actions),
+        expressions=expressions,
+        effect=effect,
+    )
+
+
+def generate_random_context(seed: int | None = None) -> Dict[str, Dict[str, str]]:
+    rng = random.Random(seed)
+    roles = ["admin", "analyst", "user", "auditor", "guest"]
+    departments = ["engineering", "legal", "security", "finance", "support"]
+    return {
+        "user": {
+            "role": rng.choice(roles),
+            "department": rng.choice(departments),
+        }
+    }
+
+
+__all__ = ["generate_random_policy", "generate_random_context"]
