@@ -1,9 +1,28 @@
 from __future__ import annotations
 
 import re
-from typing import Any, Dict, Iterable, List
+from typing import Any, Dict, Iterable, List, Sequence
 
-from .ast import EvaluationResult, Expression, Policy, ProvenanceRecord
+from .ast import EvaluationResult, Expression, Policy, PolicySet, ProvenanceRecord
+from .compiler import compile_policy
+
+
+def _coerce_expression(expr: Any) -> Expression | None:
+    if expr is None:
+        return None
+    if isinstance(expr, Expression):
+        return expr
+    if isinstance(expr, dict):
+        try:
+            return Expression(
+                entity=str(expr["entity"]),
+                attribute=str(expr["attribute"]),
+                operator=str(expr.get("operator", "==")),
+                value=expr.get("value"),
+            )
+        except KeyError:
+            return None
+    return None
 
 
 def _lookup(context: Dict[str, Any], entity: str, attribute: str) -> Any:
@@ -91,10 +110,16 @@ def _evaluate_condition_chain(
     provenance: List[ProvenanceRecord] = []
     results: List[bool] = []
     for expr in expressions:
-        ok, expr_details, expr_provenance = _evaluate_expr(expr, context)
+        normalized = _coerce_expression(expr)
+        if normalized is None:
+            continue
+        ok, expr_details, expr_provenance = _evaluate_expr(normalized, context)
         details.extend(expr_details)
         provenance.extend(expr_provenance)
         results.append(ok)
+
+    if not results:
+        return True, ["Policy has no valid conditions; matched by default."], provenance, 0
 
     passed = results[0]
     for connector, next_result in zip(connectors, results[1:]):
@@ -129,12 +154,21 @@ def evaluate_policy(
     total_conditions = len(policy.expressions)
 
     if policy.expressions:
-        passed, details, expr_provenance, matched_conditions = _evaluate_condition_chain(
-            policy.expressions,
-            list(getattr(policy, "connectors", [])),
-            context,
-        )
-        all_provenance.extend(expr_provenance)
+        valid_expressions = []
+        for item in policy.expressions:
+            coerced = _coerce_expression(item)
+            if coerced is not None:
+                valid_expressions.append(coerced)
+
+        if valid_expressions:
+            passed, details, expr_provenance, matched_conditions = _evaluate_condition_chain(
+                valid_expressions,
+                list(getattr(policy, "connectors", [])),
+                context,
+            )
+            all_provenance.extend(expr_provenance)
+        else:
+            details = ["Policy has no valid conditions; matched by default."]
     else:
         details = ["Policy has no conditions; matched by default."]
 

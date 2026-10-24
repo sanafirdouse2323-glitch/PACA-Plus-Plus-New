@@ -4,6 +4,7 @@ from typing import Any, Dict, Iterable, List, Sequence
 
 from .ast import EvaluationResult, Policy, PolicySet
 from .compiler import compile_policy
+from .engine import PolicyEngine as _PolicyEngine
 from .evaluator_asp import evaluate_policy as _evaluate_policy
 
 
@@ -36,4 +37,7 @@ def compile_cedar(policy: Policy | str) -> Dict[str, Any]:
     return compiled
 
 
-__all__ = ["compile_cedar", "evaluate_policy", "evaluate_policy_set"]
+PolicyEngine = _PolicyEngine
+
+
+__all__ = ["PolicyEngine", "compile_cedar", "evaluate_policy", "evaluate_policy_set"]

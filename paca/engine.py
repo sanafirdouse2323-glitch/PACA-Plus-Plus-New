@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, Iterable, List, Sequence
 
-from .ast import Policy, PolicySet
+from .ast import EvaluationResult, Policy, PolicySet, ProvenanceRecord
 from .compiler import compile_policy
 from .evaluator_asp import evaluate_policy as _evaluate_policy
 
@@ -37,16 +37,20 @@ def compile_cedar(policy: Policy | str) -> Dict[str, Any]:
 
 
 class PolicyEngine:
-    """Production-style policy engine for evaluating policy sets."""
+    """Compatibility wrapper around the core evaluation engine."""
 
     def __init__(self, strategy: str = "deny_overrides", default_decision: str = "deny") -> None:
         self.strategy = strategy
         self.default_decision = default_decision
 
-    def evaluate(self, policy: Policy | str, context: Dict[str, Any]) -> Any:
+    def evaluate(self, policy: Policy | str, context: Dict[str, Any]) -> EvaluationResult:
         return evaluate_policy(policy, context)
 
-    def evaluate_set(self, policy_set: PolicySet | Sequence[Policy | str] | Policy | str, context: Dict[str, Any]) -> Any:
+    def evaluate_set(
+        self,
+        policy_set: PolicySet | Sequence[Policy | str] | Policy | str,
+        context: Dict[str, Any],
+    ) -> EvaluationResult:
         if isinstance(policy_set, PolicySet):
             policies = list(policy_set.policies)
         elif isinstance(policy_set, Policy):
@@ -60,7 +64,17 @@ class PolicyEngine:
 
         results = [evaluate_policy(policy, context) for policy in policies]
         if not results:
-            return results
+            return EvaluationResult(
+                decision=self.default_decision,
+                passed=(self.default_decision == "permit"),
+                matched_conditions=0,
+                total_conditions=0,
+                details=["No policies matched; using default decision."],
+                provenance=[],
+                policy_id=getattr(policy_set, "name", "default"),
+                obligations=[],
+                matched_policies=[],
+            )
 
         matched = [result.policy_id or "unknown" for result in results if result.decision == "permit"]
         denies = [result.policy_id or "unknown" for result in results if result.decision == "deny"]
@@ -75,25 +89,22 @@ class PolicyEngine:
             raise ValueError(f"Unsupported policy strategy: {self.strategy!r}")
 
         all_details: List[str] = []
-        all_provenance: List[Any] = []
+        all_provenance: List[ProvenanceRecord] = []
         for result in results:
             all_details.extend(result.details)
             all_provenance.extend(result.provenance)
 
-        return {
-            "decision": final_decision,
-            "passed": final_decision == "permit",
-            "matched_conditions": sum(r.matched_conditions for r in results),
-            "total_conditions": sum(r.total_conditions for r in results),
-            "details": all_details,
-            "provenance": all_provenance,
-            "matched_policies": matched,
-        }
+        return EvaluationResult(
+            decision=final_decision,
+            passed=(final_decision == "permit"),
+            matched_conditions=sum(r.matched_conditions for r in results),
+            total_conditions=sum(r.total_conditions for r in results),
+            details=all_details,
+            provenance=all_provenance,
+            policy_id=getattr(policy_set, "name", "default"),
+            obligations=[],
+            matched_policies=matched,
+        )
 
 
-__all__ = [
-    "PolicyEngine",
-    "compile_cedar",
-    "evaluate_policy",
-    "evaluate_policy_set",
-]
+__all__ = ["PolicyEngine", "compile_cedar", "evaluate_policy", "evaluate_policy_set"]
