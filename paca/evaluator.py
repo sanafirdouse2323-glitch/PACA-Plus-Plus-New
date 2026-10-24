@@ -37,4 +37,3 @@ def compile_cedar(policy: Policy | str) -> Dict[str, Any]:
 
 
 __all__ = ["compile_cedar", "evaluate_policy", "evaluate_policy_set"]
-

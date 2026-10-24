@@ -1,14 +1,3 @@
-"""Reference parser for the PACA++ policy DSL.
-
-The parser accepts compact policy strings such as:
-
-    permit readFile when user.role == admin and user.department == engineering
-    deny deleteFile when user.role != admin with obligation audit_log(user.id)
-
-It keeps the lightweight public API (`parse_policy`) and also preserves the
-random policy generators used by the project tests and fuzzing utilities.
-"""
-
 from __future__ import annotations
 
 import random
@@ -65,7 +54,7 @@ def _clean_value(raw: str):
 
 
 def _split_top_level(expr: str) -> List[str]:
-    """Split an expression on and/or while respecting grouping and quotes."""
+    """Split on and/or while respecting nested grouping and quoted strings."""
     fragments: List[str] = []
     current: List[str] = []
     depth = 0
@@ -134,11 +123,10 @@ def _parse_condition(fragment: str) -> Expression:
         raise ValueError(f"Unsupported condition fragment: {fragment!r}")
 
     data = match.groupdict()
-    operator = data["operator"]
     return Expression(
         entity=data["entity"],
         attribute=data["attribute"],
-        operator=operator,
+        operator=data["operator"],
         value=_clean_value(data["value"]),
         source="context",
     )
@@ -168,7 +156,10 @@ def _parse_obligation(raw: Optional[str]) -> Optional[Obligation]:
 
     name = name_match.group("name")
     remainder = text[name_match.end() :].strip()
-    parameter = remainder[1:-1].strip() if remainder.startswith("(") and remainder.endswith(")") else ""
+    if remainder.startswith("(") and remainder.endswith(")"):
+        parameter = remainder[1:-1].strip()
+    else:
+        parameter = ""
     return Obligation(name=name, parameter=parameter)
 
 
@@ -186,7 +177,7 @@ def _parse_obligations(raw: Optional[str]) -> List[Obligation]:
 
 
 def parse_policy(source: str) -> Policy:
-    """Parse a PACA++ policy string into a Policy AST object."""
+    """Parse a PACA++ policy string into a `Policy` AST object."""
     text = (source or "").strip()
     if not text:
         raise ValueError("Policy source is empty.")
@@ -273,5 +264,9 @@ def generate_random_context(seed: int | None = None) -> Dict[str, Any]:
     }
 
 
-__all__ = ["generate_random_context", "generate_random_policy", "parse_policy", "parse_policy_file"]
-
+__all__ = [
+    "generate_random_context",
+    "generate_random_policy",
+    "parse_policy",
+    "parse_policy_file",
+]

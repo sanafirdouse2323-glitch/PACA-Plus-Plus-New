@@ -54,9 +54,8 @@ class EvaluationResult:
 class Policy:
     """Represents a complete authorization policy.
 
-    This keeps the original lightweight API (`name`, `action`, `expressions`,
-    `obligation`, `effect`) while also supporting fuller production-style policy
-    metadata used by the rest of the project.
+    The API intentionally preserves the original lightweight style while supporting
+    the richer metadata fields used by the production-style engine API.
     """
 
     name: str

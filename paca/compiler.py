@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import re
-from typing import Iterable, List, Optional, Union
+from typing import Any, Dict, Iterable, List, Optional, Union
 
 from .ast import Expression, Obligation, Policy
 
@@ -53,18 +53,19 @@ def _parse_condition(fragment: str) -> Expression:
         raise ValueError(f"Unsupported condition fragment: {fragment!r}")
 
     data = match.groupdict()
-    entity = data["entity"]
-    attribute = data["attribute"]
-    operator = data["operator"]
-    value = _clean_value(data["value"])
-    return Expression(entity=entity, attribute=attribute, operator=operator, value=value)
+    return Expression(
+        entity=data["entity"],
+        attribute=data["attribute"],
+        operator=data["operator"],
+        value=_clean_value(data["value"]),
+    )
 
 
 def _parse_conditions(raw: str) -> List[Expression]:
     if not raw or not raw.strip():
         return []
-    split = re.split(r"\s+(?:and|or)\s+", raw, flags=re.IGNORECASE)
-    return [_parse_condition(part) for part in split if part.strip()]
+    parts = re.split(r"\s+(?:and|or)\s+", raw, flags=re.IGNORECASE)
+    return [_parse_condition(part) for part in parts if part.strip()]
 
 
 def _parse_obligation(raw: Optional[str]) -> Optional[Obligation]:
@@ -77,7 +78,7 @@ def _parse_obligation(raw: Optional[str]) -> Optional[Obligation]:
         raise ValueError(f"Invalid obligation: {raw!r}")
 
     name = name_match.group("name")
-    remainder = text[name_match.end() :].strip()
+    remainder = text[name_match.end():].strip()
     if remainder.startswith("(") and remainder.endswith(")"):
         parameter = remainder[1:-1].strip()
     else:
@@ -87,7 +88,6 @@ def _parse_obligation(raw: Optional[str]) -> Optional[Obligation]:
 
 def parse_policy(source: str) -> Policy:
     """Parse a PACA++ policy string into a Policy AST object."""
-
     text = (source or "").strip()
     if not text:
         raise ValueError("Policy source is empty.")
@@ -118,13 +118,12 @@ def parse_policy_file(path: str) -> Policy:
         return parse_policy(handle.read())
 
 
-def compile_policy(policy: Union[Policy, str]) -> dict:
+def compile_policy(policy: Union[Policy, str]) -> Dict[str, Any]:
     """Normalize a Policy object or source string to a dict.
 
-    Keeps a backward-compatible `expressions` list while also exposing the
-    canonical `conditions` field expected by the project tests and examples.
+    We preserve both the legacy `expressions` key and the canonical
+    `conditions` key so older callers and tests both work.
     """
-
     if isinstance(policy, str):
         policy = parse_policy(policy)
 
@@ -157,7 +156,7 @@ def compile_policy(policy: Union[Policy, str]) -> dict:
     return compiled
 
 
-def compile_policy_source(source: str) -> dict:
+def compile_policy_source(source: str) -> Dict[str, Any]:
     return compile_policy(parse_policy(source))
 
 

@@ -1,7 +1,4 @@
-"""ASP-style compiler wrapper.
-
-This stays deliberately lightweight and simply reuses the core compiler.
-"""
+"""ASP-style compiler wrapper."""
 
 from __future__ import annotations
 
@@ -17,4 +14,10 @@ def compile_asp(policy: Policy | str) -> Dict[str, Any]:
     return compiled
 
 
-__all__ = ["compile_asp"]
+def compile_cedar(policy: Policy | str) -> Dict[str, Any]:
+    compiled = compile_policy(policy)
+    compiled["backend"] = "cedar"
+    return compiled
+
+
+__all__ = ["compile_asp", "compile_cedar"]

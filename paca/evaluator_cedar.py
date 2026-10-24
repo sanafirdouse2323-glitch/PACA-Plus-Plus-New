@@ -1,4 +1,4 @@
-"""ASP-style evaluator wrapper."""
+"""CEDAR-style evaluator wrapper."""
 
 from __future__ import annotations
 
@@ -8,8 +8,12 @@ from .ast import Policy
 from .evaluator import evaluate_policy
 
 
+def evaluate_cedar(policy: Policy | str, context: Dict[str, Any]) -> Any:
+    return evaluate_policy(policy, context)
+
+
 def evaluate_asp(policy: Policy | str, context: Dict[str, Any]) -> Any:
     return evaluate_policy(policy, context)
 
 
-__all__ = ["evaluate_asp"]
+__all__ = ["evaluate_cedar", "evaluate_asp"]

@@ -1,9 +1,3 @@
-"""Core policy evaluator for PACA++.
-
-The evaluator operates on a simple dictionary-like runtime context and evaluates
-all conditions using a permissive set of comparison operators.
-"""
-
 from __future__ import annotations
 
 import re
@@ -128,7 +122,7 @@ def evaluate_policy(
     if not isinstance(context, dict):
         raise TypeError("Policy evaluation requires a dictionary-like context.")
 
-    expr_provenance: List[ProvenanceRecord] = []
+    all_provenance: List[ProvenanceRecord] = list(provenance or [])
     details: List[str] = []
     passed = True
     matched_conditions = 0
@@ -140,12 +134,9 @@ def evaluate_policy(
             list(getattr(policy, "connectors", [])),
             context,
         )
-        total_conditions = len(policy.expressions)
+        all_provenance.extend(expr_provenance)
     else:
         details = ["Policy has no conditions; matched by default."]
-
-    if provenance is not None:
-        expr_provenance = list(provenance) + expr_provenance
 
     if policy.effect == "permit":
         decision = "permit" if passed else "deny"
@@ -154,18 +145,19 @@ def evaluate_policy(
     else:
         raise ValueError(f"Unsupported policy effect: {policy.effect!r}")
 
-    obligations = [obligation.name for obligation in (policy.obligations or ([policy.obligation] if policy.obligation else []))]
+    obligations = [
+        obligation.name for obligation in (policy.obligations or ([policy.obligation] if policy.obligation else []))
+    ]
     return EvaluationResult(
         decision=decision,
         passed=passed,
         matched_conditions=matched_conditions,
         total_conditions=total_conditions,
         details=details,
-        provenance=expr_provenance,
+        provenance=all_provenance,
         policy_id=policy.name,
         obligations=obligations,
     )
 
 
 __all__ = ["evaluate_policy"]
-
