@@ -1,92 +1,96 @@
-# PACA++
+# PACA++ - Provenance-Anchored Continuous Authorization for LLM agents
 
-Provenance-Anchored Continuous Authorization Framework for Autonomous LLM Agents.
+A small, dependency-free reference monitor that decides **at every stage of an agent run**
+(tool selection, memory write, delegation, tool call, egress) whether an *effect* is authorised,
+using **provenance labels** instead of trusting anything the model says.
 
-## Overview
-
-PACA++ is a small policy framework for expressing authorization decisions and tracking the provenance of the facts used to reach those decisions. The implementation here intentionally provides a minimal, dependency-light core that is testable and extensible, rather than claiming a full production-grade authorization engine.
-
-The current codebase focuses on three core ideas:
-
-- Parse a compact policy DSL into a structured AST.
-- Compile the policy into a normalized, engine-agnostic representation.
-- Evaluate the policy against a runtime context while recording provenance.
-
-## Architecture
-
-The project is organized around a simple pipeline:
-
-1. Policy text is parsed in `paca/parser.py`.
-2. A normalized policy representation is produced by `paca/compiler.py`.
-3. Policy evaluation happens in `paca/evaluator.py`.
-4. Provenance is tracked in `paca/provenance.py`.
-5. Backend shims, such as `compiler_asp.py` and `evaluator_cedar.py`, adapt the same core logic to backend-specific naming.
-
-This design allows the framework to support future backends without changing the core policy semantics.
-
-## Policy language
-
-The reference DSL is intentionally simple:
-
-```text
-permit readFile when user.role == admin and user.department == engineering
-
-deny deleteFile when user.role != admin
-```
-
-You can also optionally attach an obligation:
-
-```text
-permit readFile when user.role == admin with obligation audit_log(user.id)
-```
-
-## Installation
+> The path that matters is *untrusted content -> model interpretation -> access to data, tools or an
+> external recipient*. PACA++ does not try to stop the model reading malicious text; it stops that
+> chain from ending in an unauthorised effect.
 
 ```bash
-python -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-pip install -e .
+pip install -e .[dev]
+pytest -q                       # 18 tests
+python -m paca bench docs       # runs the benchmark, writes docs/index.html + docs/results.json
+python -m paca demo C02 paca    # step-by-step trace of one scenario
+python -m paca list
 ```
+Open `docs/index.html` for the interactive demo (also deployable on GitHub Pages: Settings -> Pages -> `/docs`).
 
-## Basic usage
+## What it does
+
+| Mechanism | Where | Catalog classes addressed |
+|---|---|---|
+| Task-bound, target-bound, expiring **capabilities** (default deny) | `runtime.py`, `monitor.py` C1/C2 | stale authority, goal hijack, cross-stage drift, cost DoS |
+| **Provenance labels** that only get worse when data is combined (integrity, sensitivity, tenant, origins) | `provenance.py` | provenance laundering, fragmentation, memory poisoning |
+| Policy rules in the PACA DSL over those labels (`examples/agent_policy.paca`) | `engine.py` | indirect injection, exfiltration, confused deputy, SSRF, config tampering |
+| **Manifest pinning** (hash+version of each tool authorised for the task) | C3 | MCP poisoning/rug-pull, tool-selection hijack, supply chain |
+| **Delegation attenuation**, fan-out limit, quarantine after repeated denials | C8/C11/C12 | multi-agent escalation, worms, approval fatigue |
+| **Effect tokens**: HMAC over the exact action+args, verified by the executor; approvals bound to the same digest | C13 | planner/critic swap, TOCTOU, replayed approvals |
+| Hash-chained **audit log** | `monitor.AuditLog` | forensics / tamper evidence |
+
+## Benchmark (read this before quoting any number)
+
+`paca/scenarios.py` encodes **30 attack scenarios** from the *Public AI Attack Catalog 2023-2026*
+(non-operational placeholders, no payloads) plus **11 benign workflows**. Threat model: the model is
+**fully hijacked** by anything injected, so only stopping the terminal effect counts. Five defences run on
+identical scenarios; a "vigilant" human rejects attacker prompts, a "rubber-stamp" human approves all.
+
+| Defence | Attacks succeed (vigilant) | (rubber-stamp) | Benign tasks completed | Prompts / benign task |
+|---|---|---|---|---|
+| No guard | 100% | 100% | 100% | 0 |
+| Prompt filter (classic-pattern classifier) | 96.7% | 96.7% | 90.9% (1 false block) | 0 |
+| Role-based allow-list (what v0.2 implemented) | 100% | 100% | 100% | 0 |
+| Sandbox + scoped permissions + prompts | 83.3% | 96.7% | 100% | 0.27 |
+| **PACA++ v0.3** | **10.0%** | **13.3%** | 100% | 0.18 |
+
+PACA++ still loses on: **E02 worm** (contained to 5 spread events vs 25, not prevented), **R01** trusted-but-wrong
+source and **R02** misleading content in an authorised reply (provenance proves origin, not truth), and
+**D01** when a human rubber-stamps the approval prompt.
+
+**Limits of this evidence - important:**
+- It is a *simulation I authored alongside the defence*; scenarios and baselines are explicit models
+  (`baselines.py`) of control **classes**, not tests of real products. Edit the constants to harden baselines.
+- High scores on your own suite are expected; the useful outputs are the **ablation** (which check
+  uniquely stops which attack), the **residual** cases, and the false-block count.
+- Next step for a publishable claim: run the monitor in front of real agents on **AgentDojo / InjecAgent /
+  ASB / RepoGuardBench** (catalog refs [4][5][8][30]) and report utility-under-attack and false blocks.
+
+Explicit non-goals (catalog): direct jailbreaks, system-prompt extraction, adversarial suffixes, weight
+backdoors / training poisoning, membership inference, model extraction, AI-enabled phishing/deepfakes.
+
+## Using the monitor
 
 ```python
-from paca.parser import parse_policy
-from paca.evaluator import evaluate_policy
+from paca.monitor import Monitor
+from paca.runtime import Capability, Request
+from paca.provenance import Arg, Label, derive
 
-policy = parse_policy(
-    "permit readFile when user.role == admin and user.department == engineering"
-)
-context = {
-    "user": {"role": "admin", "department": "engineering"},
-}
-result = evaluate_policy(policy, context)
-print(result.decision)
+m = Monitor()                                   # loads examples/agent_policy.paca
+cap = Capability("c1", "sana", "acme", "task1", "assistant",
+                 grants={"send_email": ("bob@corp.example",)}, expires=30)
+doc = Arg("Q3 numbers", Label("trusted", 3, "acme"))            # label comes from YOUR connector
+req = Request("send_email", {"to": Arg("bob@corp.example"), "body": derive("summary", doc)}, cap, step=1)
+d = m.decide(req)                               # allow | needs_approval | deny (+ reasons, token)
+assert m.verify(req, d)                         # executor must verify before acting
 ```
+Integration contract: **labels are assigned by your connectors/memory store, never by the model.**
+If an agent framework lets the model attach its own labels, the guarantees do not hold.
 
-## Current maturity
-
-This repository is an early research scaffold. It is intentionally conservative and does not claim to provide full solver-backed authorization, semantic verification, or a complete policy language implementation. The goal of the current codebase is to make the project executable, testable, and structurally realistic without inventing unsupported features.
-
-## Project structure
-
-```text
-paca/
-  ast.py          # dataclasses for expressions, policies, results
-  parser.py       # reference policy parser
-  compiler.py     # compiler to normalized policy format
-  evaluator.py    # core evaluator
-  provenance.py   # provenance tracking
-  obligations.py  # obligation helpers
-  fuzzer.py       # lightweight policy/context generator
-examples/
-  sample_policy.alfa
-tests/
+## DSL
 ```
-
-## Testing
-
-```bash
-pytest -q
+C5: deny any when flow.excess > 0 with obligation audit_log   # data more sensitive than destination clearance
+C15: permit merge_pr with obligation require_approval
 ```
+`ID: permit|deny ACTION [when a.b OP v [and|or ...]] [with obligation x(y)]  # note`. `and` binds tighter than
+`or`. Decisions are three-valued (`permit`/`deny`/`not_applicable`); the engine combines with `deny_overrides`
+by default.
+
+## What changed vs the previous repo state
+The committed files had **contents shifted against their names** (e.g. the compiler in `compiler_asp.py`, the
+provenance code in `obligations.py`, a README as `tests/test_parser.py`), two paths named with whole file bodies,
+`import paca` failed, and the parser regex was compiled without the verbose flag so even the README example did
+not parse. v0.3 rebuilds the package cleanly, fixes `deny` semantics (an unmatched deny used to return `permit`)
+and operator precedence, and adds the monitor, labels, scenarios and benchmark.
+
+Maturity: research prototype (Python, in-process, no solver-backed verification, no real LLM in the loop).
