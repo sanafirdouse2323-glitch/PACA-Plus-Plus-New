@@ -1,1 +1,30 @@
-YªçŠxŠWƒjÖ°jÇ^rV«yÜ"¶(žËn±é^µú+­æ¬²('i¹^½ªâi¹^°ˆˆ‰=‰±¥…Ñ¥½¹Ì…ÑÑ…¡•Ñ¼Á•Éµ¥ÐÉÕ±•Ì€¡•á•ÕÑ•‰äÑ¡”µ½¹¥Ñ½È°¹½ÐÑ¡”µ½‘•°¤¸ˆˆˆ)™É½´}}™ÕÑÕÉ•}|¥µÁ½ÉÐ…¹¹½Ñ…Ñ¥½¹Ì()™É½´ÑåÁ¥¹œ¥µÁ½ÉÐ…±±…‰±”°¥Ð°1¥ÍÐ()-9=]8€ôì‰…Õ‘¥Ñ}±½œˆ°€‰É•ÅÕ¥É•}…ÁÁÉ½Ù…°ˆ°€‰É•‘…Ðˆ°€‰É…Ñ•}±¥µ¥Ð‰ô(()±…ÍÌ=‰±¥…Ñ¥½¹IÕ¹¹•Èè(€€€€ˆˆ‰I•¥ÍÑÉä½˜½‰±¥…Ñ¥½¸¡…¹‘±•ÉÌìÕ¹­¹½Ý¸½‰±¥…Ñ¥½¹Ì™…¥°±½Í•¸ˆˆˆ((€€€‘•˜}}¥¹¥Ñ}|¡Í•±˜¤€´ø9½¹”è(€€€€€€€Í•±˜¹¡…¹‘±•ÉÌè¥ÑmÍÑÈ°…±±…‰±•l¸¸¸°9½¹•ut€ôíô((€€€‘•˜É•¥ÍÑ•È¡Í•±˜°¹…µ”èÍÑÈ°™¸è…±±…‰±•l¸¸¸°9½¹•t¤€´ø9½¹”è(€€€€€€€Í•±˜¹¡…¹‘±•ÉÍm¹…µ•t€ô™¸((€€€‘•˜ÉÕ¸¡Í•±˜°¹…µ•Ìè1¥ÍÑmÍÑÉt°€¨©Ñà¤€´ø1¥ÍÑmÍÑÉtè(€€€€€€€‘½¹”€ômt(€€€€€€€™½È¸¥¸¹…µ•Ìè(€€€€€€€€€€€¥˜¸€ôô€‰É•ÅÕ¥É•}…ÁÁÉ½Ù…°ˆè€€€€€€Œ•¹™½É•‰äÑ¡”µ½¹¥Ñ½ÈÌÙ•É‘¥Ð±½¥Œ(€€€€€€€€€€€€€€€‘½¹”¹…ÁÁ•¹¡¸¤ì½¹Ñ¥¹Õ”(€€€€€€€€€€€™¸€ôÍ•±˜¹¡…¹‘±•ÉÌ¹•Ð¡¸¤(€€€€€€€€€€€¥˜™¸¥Ì9½¹”è(€€€€€€€€€€€€€€€É…¥Í”Y…±Õ•ÉÉ½È¡˜‰Õ¹­¹½Ý¸½‰±¥…Ñ¥½¸í¸…ÉôèÉ•™ÕÍ¥¹œÑ¼ÁÉ½••ˆ¤(€€€€€€€€€€€™¸ ¨©Ñà¤ì‘½¹”¹…ÁÁ•¹¡¸¤(€€€€€€€É•ÑÕÉ¸‘½¹”(()}}…±±}|€ôl‰=‰±¥…Ñ¥½¹IÕ¹¹•Èˆ°€‰-9=]8‰t(
+"""Obligations attached to permit rules (executed by the monitor, not the model)."""
+from __future__ import annotations
+
+from typing import Callable, Dict, List
+
+KNOWN = {"audit_log", "require_approval", "redact", "rate_limit"}
+
+
+class ObligationRunner:
+    """Registry of obligation handlers; unknown obligations fail closed."""
+
+    def __init__(self) -> None:
+        self.handlers: Dict[str, Callable[..., None]] = {}
+
+    def register(self, name: str, fn: Callable[..., None]) -> None:
+        self.handlers[name] = fn
+
+    def run(self, names: List[str], **ctx) -> List[str]:
+        done = []
+        for n in names:
+            if n == "require_approval":      # enforced by the monitor's verdict logic
+                done.append(n); continue
+            fn = self.handlers.get(n)
+            if fn is None:
+                raise ValueError(f"unknown obligation {n!r}: refusing to proceed")
+            fn(**ctx); done.append(n)
+        return done
+
+
+__all__ = ["ObligationRunner", "KNOWN"]
