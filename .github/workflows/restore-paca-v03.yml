@@ -65,7 +65,7 @@ jobs:
                       raise SystemExit(f"Could not read: {member.name}")
                   data = stream.read()
                   data.decode("utf-8")
-                  git_blob = b"blob " + str(len(data)).encode("ascii") + b"\\0" + data
+                  git_blob = b"blob " + str(len(data)).encode("ascii") + b"\0" + data
                   actual = hashlib.sha1(git_blob).hexdigest()
                   if actual != expected[member.name]:
                       raise SystemExit(f"Git blob checksum mismatch: {member.name}: {actual}")
