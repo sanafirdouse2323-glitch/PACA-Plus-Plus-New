@@ -1,1 +1,39 @@
-YªçŠxŠWƒjÖ°jÇ^rV«yÜ"¶(Ën±é^µú+­æ¬²('i¹^½ªâi¹^±™É½´Á…„¥µÁ½ÉĞA½±¥å¹¥¹”°•Ù…±Õ…Ñ•}Á½±¥ä°Á…ÉÍ•}Á½±¥ä°Á…ÉÍ•}Á½±¥å}Í•Ğ()Q`€ôì‰ÕÍ•Èˆèì‰É½±”ˆè€‰…‘µ¥¸ˆ°€‰‘•Á…ÉÑµ•¹Ğˆè€‰•¹¥¹••É¥¹œ‰õô(()‘•˜Ñ•ÍÑ}É•…‘µ•}•á…µÁ±•}Á…ÉÍ•Í}…¹‘}Á•Éµ¥ÑÌ ¤è(€€€À€ôÁ…ÉÍ•}Á½±¥ä ‰Á•Éµ¥ĞÉ•…‘¥±”İ¡•¸ÕÍ•È¹É½±”€ôô…‘µ¥¸…¹ÕÍ•È¹‘•Á…ÉÑµ•¹Ğ€ôô•¹¥¹••É¥¹œİ¥Ñ ½‰±¥…Ñ¥½¸…Õ‘¥Ñ}±½œ¡ÕÍ•È¹¥¤ˆ¤(€€€È€ô•Ù…±Õ…Ñ•}Á½±¥ä¡À°Q`¤(€€€…ÍÍ•ÉĞÈ¹‘•¥Í¥½¸€ôô€‰Á•Éµ¥Ğˆ…¹È¹½‰±¥…Ñ¥½¹Ì€ôôl‰…Õ‘¥Ñ}±½œ‰t(()‘•˜Ñ•ÍÑ}Õ¹µ…Ñ¡•‘}‘•¹å}¥Í}¹½Ñ}…ÁÁ±¥…‰±•}¹½Ñ}Á•Éµ¥Ğ ¤è(€€€…ÍÍ•ÉĞ•Ù…±Õ…Ñ•}Á½±¥ä ‰‘•¹ä‘•±•Ñ•¥±”İ¡•¸ÕÍ•È¹É½±”€„ô…‘µ¥¸ˆ°Q`¤¹‘•¥Í¥½¸€ôô€‰¹½Ñ}…ÁÁ±¥…‰±”ˆ(€€€…ÍÍ•ÉĞ•Ù…±Õ…Ñ•}Á½±¥ä ‰‘•¹ä‘•±•Ñ•¥±”İ¡•¸ÕÍ•È¹É½±”€ôô…‘µ¥¸ˆ°Q`¤¹‘•¥Í¥½¸€ôô€‰‘•¹äˆ(()‘•˜Ñ•ÍÑ}…¹‘}‰¥¹‘Í}Ñ¥¡Ñ•É}Ñ¡…¹}½È ¤è(€€€À€ôÁ…ÉÍ•}Á½±¥ä ‰Á•Éµ¥Ğ„İ¡•¸à¹„€ôô€Ä½Èà¹ˆ€ôô€Ä…¹à¹Œ€ôô€Äˆ¤(€€€…ÍÍ•ÉĞ•Ù…±Õ…Ñ•}Á½±¥ä¡À°ì‰àˆèì‰„ˆè€Ä°€‰ˆˆè€À°€‰Œˆè€Áõô¤¹Á…ÍÍ•(€€€…ÍÍ•ÉĞ¹½Ğ•Ù…±Õ…Ñ•}Á½±¥ä¡À°ì‰àˆèì‰„ˆè€À°€‰ˆˆè€Ä°€‰Œˆè€Áõô¤¹Á…ÍÍ•(()‘•˜Ñ•ÍÑ}µ¥ÍÍ¥¹}…ÑÑÉ¥‰ÕÑ•}…¹‘}ÑåÁ•}•ÉÉ½ÉÍ}™…¥±}±½Í• ¤è(€€€…ÍÍ•ÉĞ¹½Ğ•Ù…±Õ…Ñ•}Á½±¥ä ‰Á•Éµ¥Ğ„İ¡•¸à¹¸€ø€Ìˆ°ì‰àˆèíõô¤¹Á…ÍÍ•(€€€…ÍÍ•ÉĞ¹½Ğ•Ù…±Õ…Ñ•}Á½±¥ä ‰Á•Éµ¥Ğ„İ¡•¸à¹¸€ø€Ìˆ°ì‰àˆèì‰¸ˆè€‰Ñ•áĞ‰õô¤¹Á…ÍÍ•(()‘•˜Ñ•ÍÑ}Á½±¥å}Í•Ñ}‘•¹å}½Ù•ÉÉ¥‘•Í}…¹‘}½‰±¥…Ñ¥½¹}µ…À ¤è(€€€ÁÌ€ôÁ…ÉÍ•}Á½±¥å}Í•Ğ ‰HÄè‘•¹ä…¹äİ¡•¸„¹à€ø€È€€Œ¹½Ñ•q¹HÈèÁ•Éµ¥Ğ…¹äİ¥Ñ ½‰±¥…Ñ¥½¸…Õ‘¥Ñ}±½œˆ¤(€€€”€ôA½±¥å¹¥¹”¡‘•™…Õ±Ñ}‘•¥Í¥½¸ô‰Á•Éµ¥Ğˆ¤(€€€…ÍÍ•ÉĞ”¹•Ù…±Õ…Ñ•}Í•Ğ¡ÁÌ°ì‰„ˆèì‰àˆè€Åõô¤¹‘•¥Í¥½¸€ôô€‰Á•Éµ¥Ğˆ(€€€È€ô”¹•Ù…±Õ…Ñ•}Í•Ğ¡ÁÌ°ì‰„ˆèì‰àˆè€Õõô¤(€€€…ÍÍ•ÉĞÈ¹‘•¥Í¥½¸€ôô€‰‘•¹äˆ…¹€ ‰‘•¹äˆ°€‰HÄˆ¤¥¸È¹™¥É•…¹È¹½‰±¥…Ñ¥½¹}µ…Ál‰HÈ‰t€ôôl‰…Õ‘¥Ñ}±½œ‰t(()‘•˜Ñ•ÍÑ}‰…‘}±¥¹•}É•Á½ÉÑÍ}±¥¹•}¹Õµ‰•È ¤è(€€€¥µÁ½ÉĞÁåÑ•ÍĞ(€€€İ¥Ñ ÁåÑ•ÍĞ¹É…¥Í•Ì¡Y…±Õ•ÉÉ½È°µ…Ñ ô‰±¥¹”€Èˆ¤è(€€€€€€€Á…ÉÍ•}Á½±¥å}Í•Ğ ‰Á•Éµ¥Ğ…q¹Ñ¡¥Ì¥Ì¹½¹Í•¹Í”ˆ¤
+from paca import PolicyEngine, evaluate_policy, parse_policy, parse_policy_set
+
+CTX = {"user": {"role": "admin", "department": "engineering"}}
+
+
+def test_readme_example_parses_and_permits():
+    p = parse_policy("permit readFile when user.role == admin and user.department == engineering with obligation audit_log(user.id)")
+    r = evaluate_policy(p, CTX)
+    assert r.decision == "permit" and r.obligations == ["audit_log"]
+
+
+def test_unmatched_deny_is_not_applicable_not_permit():
+    assert evaluate_policy("deny deleteFile when user.role != admin", CTX).decision == "not_applicable"
+    assert evaluate_policy("deny deleteFile when user.role == admin", CTX).decision == "deny"
+
+
+def test_and_binds_tighter_than_or():
+    p = parse_policy("permit a when x.a == 1 or x.b == 1 and x.c == 1")
+    assert evaluate_policy(p, {"x": {"a": 1, "b": 0, "c": 0}}).passed
+    assert not evaluate_policy(p, {"x": {"a": 0, "b": 1, "c": 0}}).passed
+
+
+def test_missing_attribute_and_type_errors_fail_closed():
+    assert not evaluate_policy("permit a when x.n > 3", {"x": {}}).passed
+    assert not evaluate_policy("permit a when x.n > 3", {"x": {"n": "text"}}).passed
+
+
+def test_policy_set_deny_overrides_and_obligation_map():
+    ps = parse_policy_set("R1: deny any when a.x > 2  # note\nR2: permit any with obligation audit_log")
+    e = PolicyEngine(default_decision="permit")
+    assert e.evaluate_set(ps, {"a": {"x": 1}}).decision == "permit"
+    r = e.evaluate_set(ps, {"a": {"x": 5}})
+    assert r.decision == "deny" and ("deny", "R1") in r.fired and r.obligation_map["R2"] == ["audit_log"]
+
+
+def test_bad_line_reports_line_number():
+    import pytest
+    with pytest.raises(ValueError, match="line 2"):
+        parse_policy_set("permit a\nthis is nonsense")

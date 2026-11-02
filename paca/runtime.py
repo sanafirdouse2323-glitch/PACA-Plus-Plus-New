@@ -1,1 +1,122 @@
-YªçŠxŠWƒjÖ°jÇ^rV«yÜ"¶(žËn±é^µú+­æ¬²('i¹^½ªâi¹^°ˆˆ‰IÕ¹Ñ¥µ”½‰©•ÑÌÍ¡…É•‰äÑ¡”µ½¹¥Ñ½È°‰…Í•±¥¹•Ì…¹Í•¹…É¥½Ì¸ˆˆˆ)™É½´}}™ÕÑÕÉ•}|¥µÁ½ÉÐ…¹¹½Ñ…Ñ¥½¹Ì()¥µÁ½ÉÐ¡…Í¡±¥ˆ)¥µÁ½ÉÐ©Í½¸)™É½´‘…Ñ…±…ÍÍ•Ì¥µÁ½ÉÐ‘…Ñ…±…ÍÌ°™¥•±)™É½´ÑåÁ¥¹œ¥µÁ½ÉÐ¹ä°¥Ð°1¥ÍÐ°=ÁÑ¥½¹…°°QÕÁ±”()™É½´€¹ÁÉ½Ù•¹…¹”¥µÁ½ÉÐÉœ°1…‰•°((Œ…Ñ¥½¸€´ø•™™•Ð±…ÍÌ°Ý¡¥ …ÉÕµ•¹Ð¹…µ•ÌÑ¡”Ñ…É•Ð€¼Á…å±½…€¼•áÑÉ„½¹ÑÉ½°Ù…±Õ•Ì¸)Q%=9Lè¥ÑmÍÑÈ°¥ÑmÍÑÈ°¹åut€ôì(€€€€‰É•…‘}µ…¥°ˆè€€€€€‘¥Ð¡±Ìô‰É•…ˆ°€€€€€€€Ñ…É•Ðô‰™½±‘•Èˆ¤°(€€€€‰É•…‘}™¥±”ˆè€€€€€‘¥Ð¡±Ìô‰É•…ˆ°€€€€€€€Ñ…É•Ðô‰Á…Ñ ˆ¤°(€€€€‰™•Ñ¡}ÕÉ°ˆè€€€€€‘¥Ð¡±Ìô‰•É•ÍÌˆ°€€€€€Ñ…É•Ðô‰ÕÉ°ˆ°€€€€Á…å±½…õl‰ÅÕ•Éä‰t¤°€€€Œ•É•ÍÌ½¹±ä¥˜Á…å±½…ÁÉ•Í•¹Ð(€€€€‰Í•¹‘}•µ…¥°ˆè€€€€‘¥Ð¡±Ìô‰•É•ÍÌˆ°€€€€€Ñ…É•Ðô‰Ñ¼ˆ°€€€€€Á…å±½…õl‰‰½‘äˆ°€‰…ÑÑ…¡µ•¹Ð‰t¤°(€€€€‰¡ÑÑÁ}Á½ÍÐˆè€€€€€‘¥Ð¡±Ìô‰•É•ÍÌˆ°€€€€€Ñ…É•Ðô‰ÕÉ°ˆ°€€€€Á…å±½…õl‰‰½‘ä‰t¤°(€€€€‰Á½ÍÑ}µ•ÍÍ…”ˆè€€‘¥Ð¡±Ìô‰•É•ÍÌˆ°€€€€€Ñ…É•Ðô‰¡…¹¹•°ˆ°Á…å±½…õl‰Ñ•áÐ‰t¤°(€€€€‰ÝÉ¥Ñ•}™¥±”ˆè€€€€‘¥Ð¡±Ìô‰ÝÉ¥Ñ”ˆ°€€€€€€Ñ…É•Ðô‰Á…Ñ ˆ°€€€Á…å±½…õl‰½¹Ñ•¹Ð‰t¤°(€€€€‰‘•±•Ñ•}™¥±”ˆè€€€‘¥Ð¡±Ìô‰‘•ÍÑÉÕÑ¥Ù”ˆ°Ñ…É•Ðô‰Á…Ñ ˆ¤°(€€€€‰ÉÕ¹}½µµ…¹ˆè€€€‘¥Ð¡±Ìô‰•á•Œˆ°€€€€€€€Ñ…É•Ðô‰½µµ…¹ˆ¤°(€€€€‰µ•É•}ÁÈˆè€€€€€€‘¥Ð¡±Ìô‰‘•ÍÑÉÕÑ¥Ù”ˆ°Ñ…É•Ðô‰ÁÈˆ¤°(€€€€‰ÑÉ…¹Í™•É}™Õ¹‘Ìˆè‘¥Ð¡±Ìô‰‘•ÍÑÉÕÑ¥Ù”ˆ°Ñ…É•Ðô‰…½Õ¹Ðˆ°½¹ÑÉ½°õl‰…µ½Õ¹Ð‰t¤°(€€€€‰¡…¹•}Í•ÑÑ¥¹œˆè‘¥Ð¡±Ìô‰Í•ÑÑ¥¹œˆ°€€€€Ñ…É•Ðô‰¹…µ”ˆ°€€€Á…å±½…õl‰Ù…±Õ”‰t¤°(€€€€‰µ•µ}ÝÉ¥Ñ”ˆè€€€€€‘¥Ð¡±Ìô‰µ•µ½Éäˆ°€€€€€Ñ…É•Ðô‰­•äˆ°€€€€Á…å±½…õl‰Ù…±Õ”‰t¤°(€€€€‰‘•±•…Ñ”ˆè€€€€€€‘¥Ð¡±Ìô‰‘•±•…Ñ”ˆ°€€€Ñ…É•Ðô‰…•¹Ðˆ°€€Á…å±½…õl‰¡¥±‘}É…¹ÑÌ‰t¤°(€€€€‰…±±}Ñ½½°ˆè€€€€€‘¥Ð¡±Ìô‰¥¹Ù½­”ˆ°€€€€€Ñ…É•Ðô‰Ñ½½°ˆ¤°)ô(()‘…Ñ…±…ÍÌ¡™É½é•¸õQÉÕ”¤)±…ÍÌQ½½°è(€€€€ˆˆ‰Ñ½½°½5@µ…¹¥™•ÍÐ…ÌÁÉ•Í•¹Ñ•Ñ¼Ñ¡”…•¹Ð…Ð…±°Ñ¥µ”¸ˆˆˆ(€€€¹…µ”èÍÑÈ(€€€Ù•ÉÍ¥½¸èÍÑÈ(€€€‘•ÍÉ¥ÁÑ¥½¸èÍÑÈ(€€€Í¡•µ„èQÕÁ±•mÍÑÈ°€¸¸¹t€ô€ ¤((€€€ÁÉ½Á•ÉÑä(€€€‘•˜¡…Í ¡Í•±˜¤€´øÍÑÈè(€€€€€€€‰±½ˆ€ô©Í½¸¹‘ÕµÁÌ¡mÍ•±˜¹¹…µ”°Í•±˜¹Ù•ÉÍ¥½¸°Í•±˜¹‘•ÍÉ¥ÁÑ¥½¸°±¥ÍÐ¡Í•±˜¹Í¡•µ„¥t°Í½ÉÑ}­•åÌõQÉÕ”¤(€€€€€€€É•ÑÕÉ¸¡…Í¡±¥ˆ¹Í¡„ÈÔØ¡‰±½ˆ¹•¹½‘” ¤¤¹¡•á‘¥•ÍÐ ¥lèÄÙt(()‘…Ñ…±…ÍÌ)±…ÍÌ…Á…‰¥±¥Ñäè(€€€€ˆˆ‰M¡½ÉÐµ±¥Ù•°Ñ…Í¬µ‰½Õ¹°Ñ…É•Ðµ‰½Õ¹…ÕÑ¡½É¥Ñä€¡¹½Ð„ÍÑ…¹‘¥¹œÉ½±”¤¸ˆˆˆ(€€€…Á}¥èÍÑÈ(€€€ÁÉ¥¹¥Á…°èÍÑÈ(€€€Ñ•¹…¹ÐèÍÑÈ(€€€Ñ…Í­}¥èÍÑÈ(€€€É½±”èÍÑÈ(€€€É…¹ÑÌè¥ÑmÍÑÈ°QÕÁ±•mÍÑÈ°€¸¸¹ut(€€€•áÁ¥É•Ìè¥¹Ð(€€€µ…á}…±±Ìè¥¹Ð€ô€ÐÀ(€€€µ…á}™…¹½ÕÐè¥¹Ð€ô€Ô(€€€Ñ½½±}Á¥¹Ìè¥ÑmÍÑÈ°ÍÑÉt€ô™¥•±¡‘•™…Õ±Ñ}™…Ñ½Éäõ‘¥Ð¤(€€€Á…É•¹Ðè=ÁÑ¥½¹…±mÍÑÉt€ô9½¹”(€€€…±±Ìè¥¹Ð€ô€À(()‘…Ñ…±…ÍÌ)±…ÍÌI•ÅÕ•ÍÐè(€€€…Ñ¥½¸èÍÑÈ(€€€…ÉÌè¥ÑmÍÑÈ°Ét(€€€…Àè…Á…‰¥±¥Ñä(€€€ÍÑ•Àè¥¹Ð(€€€Ñ½½°è=ÁÑ¥½¹…±mQ½½±t€ô9½¹”(€€€É•Í½ÕÉ”è=ÁÑ¥½¹…±m1…‰•±t€ô9½¹”€€€€€€€€Œ±…‰•°½˜Ñ¡”½‰©•Ð„É•…Ý½Õ±É•ÑÕÉ¸(€€€…ÁÁÉ½Ù…°è=ÁÑ¥½¹…±mÍÑÉt€ô9½¹”€€€€€€€€€€Œ¡Õµ…¸…ÁÁÉ½Ù…°°‰½Õ¹Ñ¼Ñ¡¥Ì•á…Ð•™™•ÐÌ‘¥•ÍÐ(€€€•Ù¥°è‰½½°€ô…±Í”€€€€€€€€€€€€€€€€€€€€€€ŒÉ½Õ¹ÑÉÕÑ ÕÍ•½¹±ä‰äÑ¡”‰•¹¡µ…É¬((€€€‘•˜Ù…±Õ•Ì¡Í•±˜¤€´ø¥ÑmÍÑÈ°¹åtè(€€€€€€€É•ÑÕÉ¸í¬èØ¹Ù…±Õ”™½È¬°Ø¥¸Í•±˜¹…ÉÌ¹¥Ñ•µÌ ¥ô((€€€ÁÉ½Á•ÉÑä(€€€‘•˜‘¥•ÍÐ¡Í•±˜¤€´øÍÑÈè(€€€€€€€‰±½ˆ€ô©Í½¸¹‘ÕµÁÌ¡ì‰„ˆèÍ•±˜¹…Ñ¥½¸°€‰…ÉÌˆèí¬èÉ•ÁÈ¡Ø¤™½È¬°Ø¥¸Í½ÉÑ•¡Í•±˜¹Ù…±Õ•Ì ¤¹¥Ñ•µÌ ¤¥ô°(€€€€€€€€€€€€€€€€€€€€€€€€€€€‰…ÀˆèÍ•±˜¹…À¹…Á}¥°€‰Ñ…Í¬ˆèÍ•±˜¹…À¹Ñ…Í­}¥°(€€€€€€€€€€€€€€€€€€€€€€€€€€€‰Ñ½½°ˆèÍ•±˜¹Ñ½½°¹¡…Í ¥˜Í•±˜¹Ñ½½°•±Í”9½¹•ô°Í½ÉÑ}­•åÌõQÉÕ”¤(€€€€€€€É•ÑÕÉ¸¡…Í¡±¥ˆ¹Í¡„ÈÔØ¡‰±½ˆ¹•¹½‘” ¤¤¹¡•á‘¥•ÍÐ ¤(()‘…Ñ…±…ÍÌ)±…ÍÌY¥½±…Ñ¥½¸è(€€€¡•¬èÍÑÈ(€€€Í•Ù•É¥ÑäèÍÑÈ€€€€€€€€€€€€Œ‘•¹äð•Í…±…Ñ”(€€€µÍœèÍÑÈ(()‘…Ñ…±…ÍÌ)±…ÍÌ•¥Í¥½¸è(€€€Ù•É‘¥ÐèÍÑÈ€€€€€€€€€€€€€Œ…±±½Üð¹••‘Í}…ÁÁÉ½Ù…°ð‘•¹ä(€€€Ù¥½±…Ñ¥½¹Ìè1¥ÍÑmY¥½±…Ñ¥½¹t€ô™¥•±¡‘•™…Õ±Ñ}™…Ñ½Éäõ±¥ÍÐ¤(€€€‘¥•ÍÐèÍÑÈ€ô€ˆˆ(€€€Ñ½­•¸è=ÁÑ¥½¹…±mÍÑÉt€ô9½¹”(€€€½‰±¥…Ñ¥½¹Ìè1¥ÍÑmÍÑÉt€ô™¥•±¡‘•™…Õ±Ñ}™…Ñ½Éäõ±¥ÍÐ¤((€€€ÁÉ½Á•ÉÑä(€€€‘•˜¡•­Ì¡Í•±˜¤€´ø1¥ÍÑmÍÑÉtè(€€€€€€€É•ÑÕÉ¸Í½ÉÑ•¡íØ¹¡•¬™½ÈØ¥¸Í•±˜¹Ù¥½±…Ñ¥½¹Íô¤(()‘…Ñ…±…ÍÌ)±…ÍÌ™™•Ðè(€€€…Ñ¥½¸èÍÑÈ(€€€Ù…±Õ•Ìè¥ÑmÍÑÈ°¹åt(€€€•Ù¥°è‰½½°(€€€ÍÑ•Àè¥¹Ð(€€€¹½Ñ”èÍÑÈ€ô€ˆˆ(()‘…Ñ…±…ÍÌ)±…ÍÌ]½É±è(€€€•™™•ÑÌè1¥ÍÑm™™•Ñt€ô™¥•±¡‘•™…Õ±Ñ}™…Ñ½Éäõ±¥ÍÐ¤(€€€µ•µ½Éäè¥ÑmÍÑÈ°Ét€ô™¥•±¡‘•™…Õ±Ñ}™…Ñ½Éäõ‘¥Ð¤((€€€‘•˜¡…Éµ•¡Í•±˜¤€´ø‰½½°è(€€€€€€€É•ÑÕÉ¸…¹ä¡”¹•Ù¥°™½È”¥¸Í•±˜¹•™™•ÑÌ¤(()}}…±±}|€ôl‰Q%=9Lˆ°€‰Q½½°ˆ°€‰…Á…‰¥±¥Ñäˆ°€‰I•ÅÕ•ÍÐˆ°€‰Y¥½±…Ñ¥½¸ˆ°€‰•¥Í¥½¸ˆ°€‰™™•Ðˆ°€‰]½É±‰t
+"""Runtime objects shared by the monitor, baselines and scenarios."""
+from __future__ import annotations
+
+import hashlib
+import json
+from dataclasses import dataclass, field
+from typing import Any, Dict, List, Optional, Tuple
+
+from .provenance import Arg, Label
+
+# action -> effect class, which argument names the target / payload / extra control values.
+ACTIONS: Dict[str, Dict[str, Any]] = {
+    "read_mail":      dict(cls="read",        target="folder"),
+    "read_file":      dict(cls="read",        target="path"),
+    "fetch_url":      dict(cls="egress",      target="url",     payload=["query"]),   # egress only if payload present
+    "send_email":     dict(cls="egress",      target="to",      payload=["body", "attachment"]),
+    "http_post":      dict(cls="egress",      target="url",     payload=["body"]),
+    "post_message":   dict(cls="egress",      target="channel", payload=["text"]),
+    "write_file":     dict(cls="write",       target="path",    payload=["content"]),
+    "delete_file":    dict(cls="destructive", target="path"),
+    "run_command":    dict(cls="exec",        target="command"),
+    "merge_pr":       dict(cls="destructive", target="pr"),
+    "transfer_funds": dict(cls="destructive", target="account", control=["amount"]),
+    "change_setting": dict(cls="setting",     target="name",    payload=["value"]),
+    "mem_write":      dict(cls="memory",      target="key",     payload=["value"]),
+    "delegate":       dict(cls="delegate",    target="agent",   payload=["child_grants"]),
+    "call_tool":      dict(cls="invoke",      target="tool"),
+}
+
+
+@dataclass(frozen=True)
+class Tool:
+    """A tool/MCP manifest as presented to the agent at call time."""
+    name: str
+    version: str
+    description: str
+    schema: Tuple[str, ...] = ()
+
+    @property
+    def hash(self) -> str:
+        blob = json.dumps([self.name, self.version, self.description, list(self.schema)], sort_keys=True)
+        return hashlib.sha256(blob.encode()).hexdigest()[:16]
+
+
+@dataclass
+class Capability:
+    """Short-lived, task-bound, target-bound authority (not a standing role)."""
+    cap_id: str
+    principal: str
+    tenant: str
+    task_id: str
+    role: str
+    grants: Dict[str, Tuple[str, ...]]
+    expires: int
+    max_calls: int = 40
+    max_fanout: int = 5
+    tool_pins: Dict[str, str] = field(default_factory=dict)
+    parent: Optional[str] = None
+    calls: int = 0
+
+
+@dataclass
+class Request:
+    action: str
+    args: Dict[str, Arg]
+    cap: Capability
+    step: int
+    tool: Optional[Tool] = None
+    resource: Optional[Label] = None        # label of the object a read would return
+    approval: Optional[str] = None          # human approval, bound to this exact effect's digest
+    evil: bool = False                      # ground truth used only by the benchmark
+
+    def values(self) -> Dict[str, Any]:
+        return {k: v.value for k, v in self.args.items()}
+
+    @property
+    def digest(self) -> str:
+        blob = json.dumps({"a": self.action, "args": {k: repr(v) for k, v in sorted(self.values().items())},
+                           "cap": self.cap.cap_id, "task": self.cap.task_id,
+                           "tool": self.tool.hash if self.tool else None}, sort_keys=True)
+        return hashlib.sha256(blob.encode()).hexdigest()
+
+
+@dataclass
+class Violation:
+    check: str
+    severity: str            # deny | escalate
+    msg: str
+
+
+@dataclass
+class Decision:
+    verdict: str             # allow | needs_approval | deny
+    violations: List[Violation] = field(default_factory=list)
+    digest: str = ""
+    token: Optional[str] = None
+    obligations: List[str] = field(default_factory=list)
+
+    @property
+    def checks(self) -> List[str]:
+        return sorted({v.check for v in self.violations})
+
+
+@dataclass
+class Effect:
+    action: str
+    values: Dict[str, Any]
+    evil: bool
+    step: int
+    note: str = ""
+
+
+@dataclass
+class World:
+    effects: List[Effect] = field(default_factory=list)
+    memory: Dict[str, Arg] = field(default_factory=dict)
+
+    def harmed(self) -> bool:
+        return any(e.evil for e in self.effects)
+
+
+__all__ = ["ACTIONS", "Tool", "Capability", "Request", "Violation", "Decision", "Effect", "World"]
