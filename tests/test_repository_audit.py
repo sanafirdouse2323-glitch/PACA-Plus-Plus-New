@@ -94,3 +94,9 @@ def test_session_derive_marks_missing_source_untrusted():
     result = Session(Monitor()).derive("a value guessed without the blocked read", None)
     assert result.label.integrity == "untrusted"
     assert "unavailable_source" in result.label.origins
+
+
+
+def test_derivation_without_sources_is_untrusted():
+    from paca.provenance import derive
+    assert derive("generated without source").label.integrity == "untrusted"

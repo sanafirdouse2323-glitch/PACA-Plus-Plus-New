@@ -46,7 +46,7 @@ class Label:
     def join(*labels: "Label") -> "Label":
         ls = [label for label in labels if label is not None]
         if not ls:
-            return Label()
+            return Label(integrity="untrusted")
         return Label(
             integrity="untrusted" if any(label.integrity == "untrusted" for label in ls) else "trusted",
             sensitivity=max(label.sensitivity for label in ls),
