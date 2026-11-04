@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import hmac
 import os
 from typing import Any, Dict, List
 
@@ -10,9 +11,15 @@ from .baselines import NoGuard, PromptFilter, SandboxScoped, StaticRBAC
 from .harness import REGISTRY, run
 from .monitor import CHECKS, Monitor
 
+def _benchmark_monitor() -> Monitor:
+    # Simulation-only verifier: the harness supplies the digest only after applying its
+    # explicit vigilant/rubber-stamp human decision. This is not an authenticated approval service.
+    return Monitor(approval_verifier=lambda req, token: hmac.compare_digest(token, req.digest))
+
+
 DEFENCES = [("none", "No guard", NoGuard), ("filter", "Prompt filter", PromptFilter),
             ("rbac", "Role-based allow-list", StaticRBAC), ("sandbox", "Sandbox + scoped permissions", SandboxScoped),
-            ("paca", "PACA++ v0.3", Monitor)]
+            ("paca", "PACA++ v0.3", _benchmark_monitor)]
 
 OUT_OF_SCOPE = [
     ("Direct jailbreak / unsafe content with no tool effect", "A", "model behaviour, not an authorisation problem"),

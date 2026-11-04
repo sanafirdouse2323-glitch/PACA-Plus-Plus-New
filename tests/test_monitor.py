@@ -68,7 +68,7 @@ def test_delegation_must_attenuate():
 
 
 def test_approval_is_bound_to_exact_effect():
-    m = Monitor()
+    m = Monitor(approval_verifier=lambda req, token: token == req.digest)
     c = cap(grants={"merge_pr": ("#1", "#2")})
     r1 = req("merge_pr", c, pr="#1")
     assert m.decide(r1).verdict == "needs_approval"

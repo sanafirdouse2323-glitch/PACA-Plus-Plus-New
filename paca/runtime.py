@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -75,10 +76,50 @@ class Request:
 
     @property
     def digest(self) -> str:
-        blob = json.dumps({"a": self.action, "args": {k: repr(v) for k, v in sorted(self.values().items())},
-                           "cap": self.cap.cap_id, "task": self.cap.task_id,
-                           "tool": self.tool.hash if self.tool else None}, sort_keys=True)
-        return hashlib.sha256(blob.encode()).hexdigest()
+        """Stable digest of the action, arguments, provenance and authority snapshot."""
+        def canonical(value: Any) -> Any:
+            if value is None or isinstance(value, (str, bool, int)):
+                return value
+            if isinstance(value, float):
+                if not math.isfinite(value):
+                    raise ValueError("non-finite numbers are not valid request arguments")
+                return value
+            if isinstance(value, (list, tuple)):
+                return [canonical(item) for item in value]
+            if isinstance(value, dict):
+                if any(not isinstance(key, str) for key in value):
+                    raise TypeError("request object keys must be strings")
+                return {key: canonical(value[key]) for key in sorted(value)}
+            raise TypeError(f"unsupported request argument type: {type(value).__name__}")
+
+        def label_data(label: Label) -> Dict[str, Any]:
+            return {"integrity": label.integrity, "sensitivity": label.sensitivity,
+                    "tenants": sorted(label.tenants), "origins": sorted(label.origins)}
+
+        args_data = {}
+        for name in sorted(self.args):
+            arg = self.args[name]
+            if not isinstance(arg, Arg):
+                raise TypeError(f"request argument {name!r} must be an Arg")
+            args_data[name] = {"value": canonical(arg.value), "label": label_data(arg.label)}
+
+        cap_data = {
+            "id": self.cap.cap_id, "principal": self.cap.principal, "tenant": self.cap.tenant,
+            "task": self.cap.task_id, "parent": self.cap.parent, "role": self.cap.role,
+            "grants": {name: sorted(patterns) for name, patterns in sorted(self.cap.grants.items())},
+            "expires": self.cap.expires, "max_calls": self.cap.max_calls,
+            "max_fanout": self.cap.max_fanout, "tool_pins": dict(sorted(self.cap.tool_pins.items())),
+        }
+        payload = {
+            "action": self.action, "args": args_data, "capability": cap_data, "step": self.step,
+            "resource": label_data(self.resource) if self.resource is not None else None,
+            "tool": None if self.tool is None else {
+                "name": self.tool.name, "version": self.tool.version, "description": self.tool.description,
+                "schema": list(self.tool.schema), "hash": self.tool.hash,
+            },
+        }
+        blob = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False, allow_nan=False)
+        return hashlib.sha256(blob.encode("utf-8")).hexdigest()
 
 
 @dataclass

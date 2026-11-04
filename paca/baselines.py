@@ -9,7 +9,7 @@ from __future__ import annotations
 import fnmatch
 from typing import Optional
 
-from .monitor import host_of, INTERNAL_RE
+from .monitor import host_of, is_internal_host, is_allowed_network_host
 from .runtime import ACTIONS, Decision, Request, Violation
 
 _BASE = {"read_mail", "read_file", "fetch_url", "http_post", "send_email", "post_message", "write_file", "run_command",
@@ -82,11 +82,11 @@ class SandboxScoped(Baseline):
         tgt = str(v.get(spec["target"], ""))
         if a in ("fetch_url", "http_post"):
             h = host_of(tgt)
-            if INTERNAL_RE.match(h):
+            if is_internal_host(h):
                 return self._out(req, "deny", "SBX-net", "sandbox blocks internal/metadata endpoints")
-            if (a == "http_post" or "query" in v) and not h.endswith(NET_ALLOW):
+            if (a == "http_post" or "query" in v) and not is_allowed_network_host(h, NET_ALLOW):
                 return self._out(req, "needs_approval", "SBX-net", f"new network destination {h}")
-        elif a == "send_email" and not host_of(tgt).endswith(NET_ALLOW):
+        elif a == "send_email" and not is_allowed_network_host(host_of(tgt), NET_ALLOW):
             return self._out(req, "needs_approval", "SBX-net", f"new recipient domain {host_of(tgt)}")
         elif a in ("read_file", "write_file", "delete_file"):
             if not tgt.startswith(FS_SCOPE):

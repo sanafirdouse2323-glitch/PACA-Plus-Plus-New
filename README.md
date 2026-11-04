@@ -10,7 +10,7 @@ using **provenance labels** instead of trusting anything the model says.
 
 ```bash
 pip install -e .[dev]
-pytest -q                       # 18 tests
+pytest -q                       # regression tests
 python -m paca bench docs       # runs the benchmark, writes docs/index.html + docs/results.json
 python -m paca demo C02 paca    # step-by-step trace of one scenario
 python -m paca list
@@ -77,6 +77,22 @@ assert m.verify(req, d)                         # executor must verify before ac
 Integration contract: **labels are assigned by your connectors/memory store, never by the model.**
 If an agent framework lets the model attach its own labels, the guarantees do not hold.
 
+**Execution and approval boundaries:** this repository contains an in-process reference monitor
+and a simulated executor; it does not yet contain adapters for a real LLM/agent framework or an
+independent production executor. A deployment must route every consequential effect through an
+executor that verifies and consumes the monitor's single-use token. The default monitor does not
+accept approvals unless the integrator supplies an `approval_verifier` that validates a signed
+approval from a separately authenticated approval service. The benchmark injects a test-only
+verifier and simulates the human decision; its digest check is not an authentication mechanism
+and must not be reused in production. Memory reads, planning steps and communication boundaries
+are not independently integrated with a real agent runtime in this prototype.
+
+**Provenance scope:** joined labels preserve all contributing tenant identifiers. The label
+mechanism still depends on trusted adapters assigning correct labels and on integrations preserving
+them across every transformation; it does not establish the truth of a source or protect against
+a compromised adapter. The audit chain detects record alteration within the retained chain, but
+is not an external, append-only log service.
+
 ## DSL
 ```
 C5: deny any when flow.excess > 0 with obligation audit_log   # data more sensitive than destination clearance
@@ -93,4 +109,5 @@ provenance code in `obligations.py`, a README as `tests/test_parser.py`), two pa
 not parse. v0.3 rebuilds the package cleanly, fixes `deny` semantics (an unmatched deny used to return `permit`)
 and operator precedence, and adds the monitor, labels, scenarios and benchmark.
 
-Maturity: research prototype (Python, in-process, no solver-backed verification, no real LLM in the loop).
+Maturity: research prototype (Python, in-process, simulated benchmark, no solver-backed verification,
+no real LLM or external executor integration).
