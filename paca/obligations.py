@@ -3,7 +3,8 @@ from __future__ import annotations
 
 from typing import Callable, Dict, List
 
-KNOWN = {"audit_log", "require_approval", "redact", "rate_limit"}
+# Only these names have built-in semantics. Integrators may register additional handlers.
+KNOWN = {"audit_log", "require_approval"}
 
 
 class ObligationRunner:

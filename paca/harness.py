@@ -90,7 +90,7 @@ class Session:
         self._log("time", text=f"{n} steps pass")
 
     def lit(self, v: Any) -> Arg:                    # a value the user typed / configured
-        return Arg(v, Label(origins=frozenset({"user"})))
+        return Arg(v, Label("trusted", origins=frozenset({"user"})))
 
     def lift(self, src: Arg, v: Any) -> Arg:         # value the model extracted from `src`
         return Arg(v, src.label)
@@ -116,20 +116,30 @@ class Session:
         return Arg(content, self._label(source, sens, tenant))
 
     def ingest(self, via: str, target: str, content: str, source: str, sens: int = 0, tenant: Optional[str] = None,
-               style: Optional[str] = None, evil: bool = False, required: bool = False) -> Arg:
+               style: Optional[str] = None, evil: bool = False, required: bool = False) -> Optional[Arg]:
         """Read through an authorised read action; the returned data carries the connector's label."""
         lab = self._label(source, sens, tenant)
         if self.d.scan(source, content, style):
             self.halted = True
         arg = Arg(content, lab)
         key = {"read_mail": "folder", "read_file": "path", "fetch_url": "url"}[via]
-        self._exec(via, {key: Arg(target, Label(origins=frozenset({"user"})))}, evil, required, None,
-                   resource=lab, shown_content=(content, lab.short()))
-        return arg
+        executed = self._exec(via, {key: self.lit(target)}, evil, required, None,
+                              resource=lab, shown_content=(content, lab.short()))
+        return arg if executed else None
 
     def mem_read(self, key: str) -> Optional[Arg]:
+        """Read memory only after the current task grants this key."""
         a = self.world.memory.get(key)
-        self._log("memread", key=key, found=a is not None, label=a.label.short() if a else None)
+        executed = self._exec(
+            "mem_read", {"key": self.lit(key)}, False, False, None,
+            resource=a.label if a is not None else None,
+            shown_content=(str(a.value), a.label.short()) if a is not None else None,
+        )
+        if not executed:
+            self._log("memread", key=key, found=None, denied=True, label=None)
+            return None
+        self._log("memread", key=key, found=a is not None, denied=False,
+                  label=a.label.short() if a else None)
         return a
 
     # ---------------------------------------------------------------- actions
@@ -183,8 +193,8 @@ class Session:
                 self.required_done += 1
         self._log("act", action=action, args=self._show(final.args), verdict=d.verdict, executed=executed,
                   evil=evil, human=human, checks=[{"id": v.check, "sev": v.severity, "msg": v.msg} for v in d.violations],
-                  swapped=bool(swap), content=shown_content[0][:90] if shown_content else None,
-                  label=shown_content[1] if shown_content else None)
+                  swapped=bool(swap), content=shown_content[0][:90] if shown_content and executed else None,
+                  label=shown_content[1] if shown_content and executed else None)
         return executed
 
 

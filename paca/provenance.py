@@ -37,7 +37,10 @@ class Label:
         normalized = frozenset(tenant_set)
         object.__setattr__(self, "tenants", normalized)
         object.__setattr__(self, "tenant", next(iter(normalized)) if len(normalized) == 1 else None)
-        object.__setattr__(self, "origins", frozenset(self.origins))
+        origins = frozenset(self.origins)
+        if any(not isinstance(origin, str) or not origin for origin in origins):
+            raise ValueError("provenance origins must be non-empty strings")
+        object.__setattr__(self, "origins", origins)
 
     @staticmethod
     def join(*labels: "Label") -> "Label":
@@ -64,12 +67,15 @@ class Label:
 class Arg:
     """A value plus its provenance label."""
     value: Any
-    label: Label = field(default_factory=Label)
+    # Unknown values are tainted by default; trusted adapters must explicitly label them.
+    label: Label = field(default_factory=lambda: Label(integrity="untrusted"))
 
 
 def derive(value: Any, *inputs: Arg) -> Arg:
-    """Value computed from other values: labels are joined, never improved."""
-    return Arg(value, Label.join(*(arg.label for arg in inputs if isinstance(arg, Arg))))
+    """Value computed from labelled inputs; missing provenance is an error."""
+    if any(not isinstance(arg, Arg) for arg in inputs):
+        raise TypeError("derive() accepts only Arg inputs; label every source before deriving")
+    return Arg(value, Label.join(*(arg.label for arg in inputs)))
 
 
 @dataclass

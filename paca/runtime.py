@@ -23,6 +23,7 @@ ACTIONS: Dict[str, Dict[str, Any]] = {
     "merge_pr":       dict(cls="destructive", target="pr"),
     "transfer_funds": dict(cls="destructive", target="account", control=["amount"]),
     "change_setting": dict(cls="setting",     target="name",    payload=["value"]),
+    "mem_read":       dict(cls="read",        target="key"),
     "mem_write":      dict(cls="memory",      target="key",     payload=["value"]),
     "delegate":       dict(cls="delegate",    target="agent",   payload=["child_grants"]),
     "call_tool":      dict(cls="invoke",      target="tool"),
@@ -40,7 +41,7 @@ class Tool:
     @property
     def hash(self) -> str:
         blob = json.dumps([self.name, self.version, self.description, list(self.schema)], sort_keys=True)
-        return hashlib.sha256(blob.encode()).hexdigest()[:16]
+        return hashlib.sha256(blob.encode("utf-8")).hexdigest()
 
 
 @dataclass

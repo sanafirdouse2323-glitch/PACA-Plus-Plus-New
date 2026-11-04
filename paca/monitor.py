@@ -13,9 +13,11 @@ import ipaddress
 import hmac
 import json
 import os
+import posixpath
 import re
 from typing import Any, Callable, Dict, Iterable, List, Optional
 from urllib.parse import urlparse
+from importlib import resources
 
 from .engine import PolicyEngine
 from .obligations import ObligationRunner
@@ -51,17 +53,51 @@ DEFAULT_CLEARANCE = {"corp.example": 3, "partner.example": 1, "storage.cloud.exa
                      "chan:#finance": 2, "chan:#general": 0}
 PROTECTED = ["*/.github/workflows/*", ".github/workflows/*", "*AGENTS.md", "*/.agent/*", "*/.git/*"]
 INTERNAL_RE = re.compile(r"^(localhost|127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|169\.254\.|metadata\.|.*\.internal$)")
+PATH_ACTIONS = frozenset({"read_file", "write_file", "delete_file"})
+
+
+def canonical_path_target(value: Any) -> Optional[str]:
+    """Return a lexically safe absolute POSIX path, or None for an invalid path.
+
+    This rejects traversal and platform-separator ambiguity. A real executor must still
+    resolve symlinks safely beneath an authorised directory and prevent TOCTOU races.
+    """
+    if not isinstance(value, str) or not value or "\x00" in value or "\\" in value:
+        return None
+    if not value.startswith("/") or value.startswith("//"):
+        return None
+    if ".." in value.split("/"):
+        return None
+    normalized = posixpath.normpath(value)
+    if not normalized.startswith("/") or normalized.startswith("//"):
+        return None
+    return normalized
+
+
+def _canonical_path_pattern(pattern: Any) -> Optional[str]:
+    if not isinstance(pattern, str) or not pattern or "\x00" in pattern or "\\" in pattern:
+        return None
+    if not pattern.startswith("/") or pattern.startswith("//") or ".." in pattern.split("/"):
+        return None
+    normalized = posixpath.normpath(pattern)
+    if not normalized.startswith("/") or normalized.startswith("//"):
+        return None
+    return normalized
 
 
 def host_of(value: Any) -> str:
-    v = str(value)
+    v = str(value).strip()
     if "://" in v:
-        return (urlparse(v).hostname or "").lower()
+        try:
+            host = urlparse(v).hostname
+        except ValueError:
+            return ""
+        return (host or "").lower().rstrip(".")
     if "@" in v:
-        return v.rsplit("@", 1)[1].lower()
+        return v.rsplit("@", 1)[1].lower().rstrip(".")
     if v.startswith("#"):
         return "chan:" + v
-    return v.lower()
+    return v.lower().rstrip(".")
 
 
 def is_internal_host(host: str) -> bool:
@@ -85,8 +121,11 @@ def is_internal_host(host: str) -> bool:
 def is_allowed_network_host(host: str, allowed_domains: Iterable[str]) -> bool:
     """Match a domain exactly or on a DNS-label boundary."""
     normalized = (host or "").strip().lower().rstrip(".")
-    return any(normalized == domain or normalized.endswith("." + domain)
-               for domain in allowed_domains)
+    if not normalized:
+        return False
+    domains = {(domain or "").strip().lower().rstrip(".") for domain in allowed_domains}
+    return any(domain and (normalized == domain or normalized.endswith("." + domain))
+               for domain in domains)
 
 
 def _grant_is_subset(child: str, parent: str) -> bool:
@@ -109,9 +148,19 @@ def is_exact(pattern: str) -> bool:
 
 
 def match_grant(cap: Capability, action: str, target: str) -> Optional[str]:
-    for pat in cap.grants.get(action, ()):
-        if fnmatch.fnmatchcase(target, pat):
-            return pat
+    """Match only canonical targets; filesystem paths reject traversal before globbing."""
+    if action in PATH_ACTIONS:
+        target = canonical_path_target(target)
+        if target is None:
+            return None
+        for pattern in cap.grants.get(action, ()):
+            safe_pattern = _canonical_path_pattern(pattern)
+            if safe_pattern is not None and fnmatch.fnmatchcase(target, safe_pattern):
+                return safe_pattern
+        return None
+    for pattern in cap.grants.get(action, ()):
+        if isinstance(pattern, str) and fnmatch.fnmatchcase(target, pattern):
+            return pattern
     return None
 
 
@@ -149,9 +198,7 @@ class Monitor:
                  disable: Iterable[str] = (), key: Optional[bytes] = None,
                  approval_verifier: Optional[Callable[[Request, str], bool]] = None) -> None:
         if policy_text is None:
-            here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-            with open(os.path.join(here, "examples", "agent_policy.paca"), encoding="utf-8") as fh:
-                policy_text = fh.read()
+            policy_text = resources.files("paca").joinpath("policies", "agent_policy.paca").read_text(encoding="utf-8")
         self.rules = parse_policy_set(policy_text, "agent_policy", default_decision="permit")
         self.engine = PolicyEngine("deny_overrides", default_decision="permit")
         self.clearance = dict(DEFAULT_CLEARANCE if clearance is None else clearance)
@@ -174,7 +221,8 @@ class Monitor:
                 best, n = c, len(suffix)
         if best is not None:
             return best
-        return 1 if trusted_literal and not host.startswith("chan:") else 0
+        # Unknown destinations are not automatically cleared merely because a literal was user-supplied.
+        return 0
 
     def _context(self, req: Request, spec: Dict[str, Any], matched_pat: Optional[str]) -> Dict[str, Any]:
         args, cap = req.args, req.cap
@@ -195,7 +243,8 @@ class Monitor:
         trusted_dest = tgt is not None and tgt.label.integrity == "trusted"
         clr = self._clearance(host, trusted_dest) if is_egress else 99
         url_like = req.action in ("fetch_url", "http_post")
-        value = str(tgt.value) if tgt is not None else ""
+        raw_value = tgt.value if tgt is not None else ""
+        value = (canonical_path_target(raw_value) or "") if req.action in PATH_ACTIONS else str(raw_value)
         scope = "core" if (req.action == "mem_write" and value.startswith("core/")) else ""
         contributing_tenants = set(pl.tenants)
         if req.resource is not None:
@@ -342,4 +391,4 @@ class Monitor:
 
 
 __all__ = ["Monitor", "AuditLog", "CHECKS", "host_of", "match_grant",
-           "is_internal_host", "is_allowed_network_host"]
+           "is_internal_host", "is_allowed_network_host", "canonical_path_target"]

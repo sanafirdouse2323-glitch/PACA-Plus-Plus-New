@@ -12,7 +12,7 @@ def cap(**kw):
 
 
 def req(action, c, step=1, **args):
-    return Request(action, {k: (v if isinstance(v, Arg) else Arg(v)) for k, v in args.items()}, c, step)
+    return Request(action, {k: (v if isinstance(v, Arg) else Arg(v, Label("trusted", origins=frozenset({"user"})))) for k, v in args.items()}, c, step)
 
 
 def test_label_join_never_improves():

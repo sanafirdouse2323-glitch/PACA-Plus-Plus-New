@@ -37,3 +37,36 @@ def test_bad_line_reports_line_number():
     import pytest
     with pytest.raises(ValueError, match="line 2"):
         parse_policy_set("permit a\nthis is nonsense")
+
+
+
+def test_missing_attribute_does_not_satisfy_not_equal():
+    assert evaluate_policy("permit read_file when user.role != banned", {"user": {}}).decision == "not_applicable"
+    assert evaluate_policy("deny read_file when user.role != banned", {"user": {}}).decision == "not_applicable"
+
+
+def test_logical_words_inside_quoted_values_are_not_connectors():
+    p = parse_policy('permit read_file when user.department == "sales or engineering" and user.active == true')
+    assert len(p.expressions) == 2
+    assert p.connectors == ["and"]
+    assert evaluate_policy(p, {"user": {"department": "sales or engineering", "active": True}}).decision == "permit"
+    assert evaluate_policy(p, {"user": {"department": "sales", "active": True}}).decision == "not_applicable"
+
+
+def test_compiler_preserves_connectors_and_all_obligations():
+    from paca.compiler import compile_policy
+    p = parse_policy("permit read_file when user.a == 1 or user.b == 2 with obligations audit_log, require_approval")
+    compiled = compile_policy(p)
+    assert compiled["connectors"] == ["or"]
+    assert [item["name"] for item in compiled["obligations"]] == ["audit_log", "require_approval"]
+
+
+def test_policy_set_strategy_and_default_are_honoured():
+    from paca.ast import PolicySet
+    from paca.engine import PolicyEngine
+    ps = PolicySet(name="override", policies=[], strategy="permit_overrides", default_decision="permit")
+    assert PolicyEngine(default_decision="deny").evaluate_set(ps, {}).decision == "permit"
+    ps.strategy = "unknown"
+    import pytest
+    with pytest.raises(ValueError, match="Unsupported policy strategy"):
+        PolicyEngine().evaluate_set(ps, {})

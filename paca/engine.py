@@ -13,6 +13,8 @@ class PolicyEngine:
     def __init__(self, strategy: str = "deny_overrides", default_decision: str = "deny") -> None:
         if strategy not in self.STRATEGIES:
             raise ValueError(f"Unsupported policy strategy: {strategy!r}")
+        if default_decision not in ("permit", "deny"):
+            raise ValueError(f"Unsupported default decision: {default_decision!r}")
         self.strategy, self.default_decision = strategy, default_decision
 
     def evaluate(self, policy: Policy | str, context: Dict[str, Any]) -> EvaluationResult:
@@ -20,21 +22,34 @@ class PolicyEngine:
 
     def evaluate_set(self, policy_set: PolicySet | Sequence[Policy | str], context: Dict[str, Any],
                      action: str | None = None) -> EvaluationResult:
-        pols = list(policy_set.policies) if isinstance(policy_set, PolicySet) else list(policy_set)
+        if isinstance(policy_set, PolicySet):
+            pols = list(policy_set.policies)
+            strategy = policy_set.strategy
+            default_decision = policy_set.default_decision
+        else:
+            pols = list(policy_set)
+            strategy = self.strategy
+            default_decision = self.default_decision
+        if strategy not in self.STRATEGIES:
+            raise ValueError(f"Unsupported policy strategy: {strategy!r}")
+        if default_decision not in ("permit", "deny"):
+            raise ValueError(f"Unsupported default decision: {default_decision!r}")
+        from .parser import parse_policy
+        normalized = [parse_policy(policy) if isinstance(policy, str) else policy for policy in pols]
         results = []
-        for p in pols:
-            if action is not None and isinstance(p, Policy) and p.action not in (action, "any"):
+        for policy in normalized:
+            if action is not None and policy.action not in (action, "any"):
                 continue
-            results.append(evaluate_policy(p, context))
+            results.append(evaluate_policy(policy, context))
         fired = [f for r in results for f in r.fired]
         permits = [n for e, n in fired if e == "permit"]
         denies = [n for e, n in fired if e == "deny"]
-        if self.strategy == "deny_overrides":
-            final = "deny" if denies else "permit" if permits else self.default_decision
-        elif self.strategy == "permit_overrides":
-            final = "permit" if permits else "deny" if denies else self.default_decision
+        if strategy == "deny_overrides":
+            final = "deny" if denies else "permit" if permits else default_decision
+        elif strategy == "permit_overrides":
+            final = "permit" if permits else "deny" if denies else default_decision
         else:
-            final = fired[0][0] if fired else self.default_decision
+            final = fired[0][0] if fired else default_decision
         obl_map: Dict[str, list] = {}
         for r in results:
             obl_map.update(r.obligation_map)
