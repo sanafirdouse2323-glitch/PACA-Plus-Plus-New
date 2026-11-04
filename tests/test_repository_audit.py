@@ -85,3 +85,12 @@ def test_memory_read_requires_current_task_capability():
 
 def test_unlabelled_argument_defaults_to_untrusted():
     assert Arg("unclassified").label.integrity == "untrusted"
+
+
+
+def test_session_derive_marks_missing_source_untrusted():
+    from paca.harness import Session
+    from paca.monitor import Monitor
+    result = Session(Monitor()).derive("a value guessed without the blocked read", None)
+    assert result.label.integrity == "untrusted"
+    assert "unavailable_source" in result.label.origins

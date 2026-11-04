@@ -21,7 +21,7 @@ def _lookup(context: Dict[str, Any], entity: str, attribute: str) -> Any:
         return context[flat]
     bucket = context.get(entity)
     if isinstance(bucket, dict):
-        return bucket.get(attribute)
+        return bucket[attribute] if attribute in bucket else _MISSING
     if bucket is not None and hasattr(bucket, attribute):
         return getattr(bucket, attribute)
     return _MISSING

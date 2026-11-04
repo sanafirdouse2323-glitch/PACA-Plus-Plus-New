@@ -95,7 +95,14 @@ class Session:
     def lift(self, src: Arg, v: Any) -> Arg:         # value the model extracted from `src`
         return Arg(v, src.label)
 
-    def derive(self, v: Any, *srcs: Arg) -> Arg:
+    def derive(self, v: Any, *srcs: Optional[Arg]) -> Arg:
+        # A scripted agent step may still emit a guess after a denied read. Preserve any
+        # available labels and mark the missing source as untrusted; never substitute the
+        # denied content into the simulated run.
+        if any(src is None for src in srcs):
+            labels = [src.label for src in srcs if isinstance(src, Arg)]
+            labels.append(Label("untrusted", origins=frozenset({"unavailable_source"})))
+            return Arg(v, Label.join(*labels))
         return derive(v, *srcs)
 
     def say(self, text: str, style: Optional[str] = None) -> Arg:
