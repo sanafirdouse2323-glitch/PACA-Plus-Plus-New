@@ -123,4 +123,4 @@ def test_mem_write_without_required_value_is_denied():
     request = Request("mem_write", {"key": Arg("notes/missing-value", USER)}, cap, 1)
     decision = monitor.decide(request)
     assert decision.verdict == "deny"
-    assert "C13" in decision.checks
+    assert "C14" in decision.checks
