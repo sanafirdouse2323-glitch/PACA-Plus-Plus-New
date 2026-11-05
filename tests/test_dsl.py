@@ -70,3 +70,41 @@ def test_policy_set_strategy_and_default_are_honoured():
     import pytest
     with pytest.raises(ValueError, match="Unsupported policy strategy"):
         PolicyEngine().evaluate_set(ps, {})
+
+
+
+def test_policy_conflict_strategies_only_fire_effective_rules_and_obligations():
+    from paca.parser import parse_policy_set
+
+    source = (
+        "D: deny any with obligation audit_log\\n"
+        "P: permit any with obligation require_approval"
+    )
+    permit_wins = parse_policy_set(source, strategy="permit_overrides", default_decision="deny")
+    result = PolicyEngine().evaluate_set(permit_wins, {})
+    assert result.decision == "permit"
+    assert result.fired == [("permit", "P")]
+    assert result.obligation_map == {"P": ["require_approval"]}
+    assert result.obligations == ["require_approval"]
+    assert result.matched_policies == ["D", "P"]
+
+    deny_wins = parse_policy_set(source, strategy="deny_overrides", default_decision="permit")
+    result = PolicyEngine().evaluate_set(deny_wins, {})
+    assert result.decision == "deny"
+    assert result.fired == [("deny", "D")]
+    assert result.obligation_map == {"D": ["audit_log"]}
+
+    first = parse_policy_set(source, strategy="first_applicable", default_decision="permit")
+    result = PolicyEngine().evaluate_set(first, {})
+    assert result.decision == "deny"
+    assert result.fired == [("deny", "D")]
+    assert result.obligation_map == {"D": ["audit_log"]}
+
+
+def test_hash_inside_quoted_policy_value_is_not_a_comment():
+    ps = parse_policy_set(
+        'R1: permit post_message when resource.channel == "#finance" # finance channel rule'
+    )
+    policy = ps.policies[0]
+    assert policy.expressions[0].value == "#finance"
+    assert policy.description == "finance channel rule"
