@@ -343,7 +343,8 @@ class Monitor:
             elif "require_approval" in res.obligation_map.get(name, []):
                 v.append(Violation(name, "escalate", note or "human approval required"))
 
-        v = [x for x in v if x.check not in self.disable]
+        # Action-contract validation is a structural invariant, not an ablatable policy check.
+        v = [x for x in v if x.check not in self.disable or x.check == "C14"]
         if any(x.severity == "deny" for x in v):
             verdict = "deny"
         elif any(x.severity == "escalate" for x in v):
