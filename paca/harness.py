@@ -89,8 +89,13 @@ class Session:
         self.step += n
         self._log("time", text=f"{n} steps pass")
 
-    def lit(self, v: Any) -> Arg:                    # a value the user typed / configured
+    def lit(self, v: Any) -> Arg:                    # an explicitly user-typed / configured value
         return Arg(v, Label("trusted", origins=frozenset({"user"})))
+
+    @staticmethod
+    def _as_arg(value: Any) -> Arg:
+        """Keep explicit labels; treat unlabelled runtime/model values as untrusted."""
+        return value if isinstance(value, Arg) else Arg(value)
 
     def lift(self, src: Arg, v: Any) -> Arg:         # value the model extracted from `src`
         return Arg(v, src.label)
@@ -130,15 +135,17 @@ class Session:
             self.halted = True
         arg = Arg(content, lab)
         key = {"read_mail": "folder", "read_file": "path", "fetch_url": "url"}[via]
-        executed = self._exec(via, {key: self.lit(target)}, evil, required, None,
+        executed = self._exec(via, {key: self._as_arg(target)}, evil, required, None,
                               resource=lab, shown_content=(content, lab.short()))
         return arg if executed else None
 
-    def mem_read(self, key: str) -> Optional[Arg]:
+    def mem_read(self, key: Any) -> Optional[Arg]:
         """Authorize using label metadata before touching the stored value."""
-        label = self.world.memory_labels.get(key)
+        key_arg = self._as_arg(key)
+        key_value = key_arg.value
+        label = self.world.memory_labels.get(key_value) if isinstance(key_value, str) else None
         executed = self._exec(
-            "mem_read", {"key": self.lit(key)}, False, False, None,
+            "mem_read", {"key": key_arg}, False, False, None,
             resource=label,
         )
         if not executed:
@@ -149,7 +156,7 @@ class Session:
             return None
 
         # This value lookup occurs only after the monitor has allowed and verified the read.
-        value = self.world.memory.get(key)
+        value = self.world.memory.get(key_value)
         if value is None or value.label != label:
             self._log("memread", key=key, found=None, denied=True, label=None)
             return None
@@ -159,14 +166,14 @@ class Session:
     # ---------------------------------------------------------------- actions
     def act(self, action: str, *, tool: Optional[Tool] = None, evil: bool = False, required: bool = False,
             blind: bool = False, cap: Optional[Capability] = None, **args: Any) -> bool:
-        wrapped = {k: (v if isinstance(v, Arg) else self.lit(v)) for k, v in args.items()}
+        wrapped = {k: self._as_arg(v) for k, v in args.items()}
         if tool is not None and action == "call_tool" and "tool" not in wrapped:
-            wrapped["tool"] = self.lit(tool.name)
+            wrapped["tool"] = self._as_arg(tool.name)
         return self._exec(action, wrapped, evil, required, tool, blind=blind, cap=cap)
 
     def act_swapped(self, action: str, approved: Dict[str, Any], actual: Dict[str, Any], evil: bool = True) -> bool:
         """Planner/critic scenario: the effect is authorised for `approved` args but executed with `actual`."""
-        w = lambda d: {k: (v if isinstance(v, Arg) else self.lit(v)) for k, v in d.items()}
+        w = lambda d: {k: self._as_arg(v) for k, v in d.items()}
         return self._exec(action, w(approved), evil, False, None, swap=w(actual))
 
     def _exec(self, action, args, evil, required, tool, blind=False, cap=None, resource=None, swap=None,
