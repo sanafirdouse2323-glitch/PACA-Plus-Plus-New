@@ -203,6 +203,26 @@ def parse_policy_file(path: str) -> Policy:
         return parse_policy(handle.read())
 
 
+def _split_comment(line: str) -> Tuple[str, str]:
+    """Split a policy line at the first unquoted comment marker."""
+    quote: Optional[str] = None
+    escaped = False
+    for index, char in enumerate(line):
+        if quote is not None:
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == quote:
+                quote = None
+            continue
+        if char in ("'", '"'):
+            quote = char
+        elif char == "#":
+            return line[:index], line[index + 1:]
+    return line, ""
+
+
 _NAMED_RE = re.compile(r"^(?P<name>[A-Za-z][A-Za-z0-9_.-]*)\s*:\s+(?P<rest>(?:permit|deny)\b.*)$", re.I | re.S)
 
 
@@ -215,7 +235,7 @@ def parse_policy_set(text: str, name: str = "default", strategy: str = "deny_ove
     """
     pset = PolicySet(name=name, strategy=strategy, default_decision=default_decision)
     for lineno, raw in enumerate(text.splitlines(), 1):
-        line, _, note = raw.partition("#")
+        line, note = _split_comment(raw)
         line = line.strip()
         if not line:
             continue
