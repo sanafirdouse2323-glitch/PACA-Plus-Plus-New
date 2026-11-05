@@ -26,11 +26,19 @@ def test_missing_attribute_and_type_errors_fail_closed():
 
 
 def test_policy_set_deny_overrides_and_obligation_map():
-    ps = parse_policy_set("R1: deny any when a.x > 2  # note\nR2: permit any with obligation audit_log")
+    ps = parse_policy_set(
+        "R1: deny any when a.x > 2 with obligation audit_log  # note\n"
+        "R2: permit any with obligation require_approval"
+    )
     e = PolicyEngine(default_decision="permit")
     assert e.evaluate_set(ps, {"a": {"x": 1}}).decision == "permit"
     r = e.evaluate_set(ps, {"a": {"x": 5}})
-    assert r.decision == "deny" and ("deny", "R1") in r.fired and r.obligation_map["R2"] == ["audit_log"]
+    assert r.decision == "deny"
+    assert ("deny", "R1") in r.fired
+    assert ("permit", "R2") not in r.fired
+    assert r.matched_policies == ["R1", "R2"]
+    assert r.obligation_map == {"R1": ["audit_log"]}
+    assert r.obligations == ["audit_log"]
 
 
 def test_bad_line_reports_line_number():
