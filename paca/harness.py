@@ -1,9 +1,9 @@
-"""Deterministic agent-session simulator.
+"""Deterministic simulator for selected LLM-agent authorization workflows.
 
-Threat model used by the benchmark (stated, deliberately pessimistic): the model is *fully
-hijacked* by any injected content it reads - so a defence only scores if it stops the terminal
-effect, which is the evaluation the catalog recommends. Defences never see the `evil` flag;
-it is ground truth for scoring and for the simulated 'vigilant human'.
+The benchmark uses a deliberately pessimistic threat model: injected content fully hijacks
+the simulated model, and a defence succeeds only when it blocks the terminal effect.
+Defences never see the `evil` flag; it is ground truth used only for scoring and the
+simulated human decision.
 """
 from __future__ import annotations
 
@@ -26,9 +26,9 @@ class Scenario:
     id: str
     title: str
     kind: str                 # attack | benign
-    section: str              # catalog section letter, or R (residual) / B (benign)
-    klass: str                # catalog attack class
-    ref: str                  # catalog citations
+    section: str              # author-defined grouping letter
+    klass: str                # author-defined risk category
+    ref: str                  # provisional source key; not a verified citation
     summary: str
     fn: Callable[["Session"], None]
     residual: bool = False
