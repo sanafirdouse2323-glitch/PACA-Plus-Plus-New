@@ -77,7 +77,7 @@ def test_policy_conflict_strategies_only_fire_effective_rules_and_obligations():
     from paca.parser import parse_policy_set
 
     source = (
-        "D: deny any with obligation audit_log\\n"
+        "D: deny any with obligation audit_log\n"
         "P: permit any with obligation require_approval"
     )
     permit_wins = parse_policy_set(source, strategy="permit_overrides", default_decision="deny")
