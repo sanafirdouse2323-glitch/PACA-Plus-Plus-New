@@ -1,7 +1,7 @@
 from paca.harness import Session
 from paca.monitor import Monitor, canonical_path_target, match_grant
 from paca.provenance import Arg, Label
-from paca.runtime import Capability, Request
+from paca.runtime import Capability, Request, Tool
 
 
 USER = Label("trusted", origins=frozenset({"user"}))
