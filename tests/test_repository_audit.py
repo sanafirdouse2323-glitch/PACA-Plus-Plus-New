@@ -70,17 +70,32 @@ def test_denied_read_returns_no_content_and_does_not_log_data():
     assert event["label"] is None
 
 
-def test_memory_read_requires_current_task_capability():
+def test_memory_read_requires_current_task_capability_before_value_lookup():
+    class TrackingDict(dict):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            self.lookups = 0
+
+        def get(self, key, default=None):
+            self.lookups += 1
+            return super().get(key, default)
+
     session = Session(Monitor())
     session.start_task("Write note", {"mem_write": ["notes/*"]})
     assert session.act("mem_write", key="notes/x", value=session.lit("private note"))
+    tracked = TrackingDict(session.world.memory)
+    session.world.memory = tracked
+
     session.start_task("No memory access", {"read_file": ["/acme/*"]})
     assert session.mem_read("notes/x") is None
+    assert tracked.lookups == 0
     denied = [x for x in session.trace if x.get("kind") == "memread"][-1]
     assert denied["denied"] is True and denied["found"] is None
+
     session.start_task("Read note", {"mem_read": ["notes/*"]})
     value = session.mem_read("notes/x")
     assert value is not None and value.value == "private note"
+    assert tracked.lookups == 1
 
 
 def test_unlabelled_argument_defaults_to_untrusted():
@@ -100,3 +115,12 @@ def test_session_derive_marks_missing_source_untrusted():
 def test_derivation_without_sources_is_untrusted():
     from paca.provenance import derive
     assert derive("generated without source").label.integrity == "untrusted"
+
+
+def test_mem_write_without_required_value_is_denied():
+    monitor = Monitor()
+    cap = capability({"mem_write": ("notes/*",)})
+    request = Request("mem_write", {"key": Arg("notes/missing-value", USER)}, cap, 1)
+    decision = monitor.decide(request)
+    assert decision.verdict == "deny"
+    assert "C13" in decision.checks
