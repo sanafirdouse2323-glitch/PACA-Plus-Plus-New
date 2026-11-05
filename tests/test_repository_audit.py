@@ -124,3 +124,13 @@ def test_mem_write_without_required_value_is_denied():
     decision = monitor.decide(request)
     assert decision.verdict == "deny"
     assert "C14" in decision.checks
+
+
+
+def test_required_argument_validation_cannot_be_disabled():
+    monitor = Monitor(disable={"C14"})
+    cap = capability({"mem_write": ("notes/*",)})
+    request = Request("mem_write", {"key": Arg("notes/missing-value", USER)}, cap, 1)
+    decision = monitor.decide(request)
+    assert decision.verdict == "deny"
+    assert "C14" in decision.checks
