@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "paca-plus-plus"
 version = "0.3.0"
-description = "Provenance-anchored continuous authorization for autonomous LLM agents (reference monitor + catalog-driven benchmark)"
+description = "Provenance-anchored authorization reference monitor and deterministic simulator for selected LLM-agent workflows"
 readme = "README.md"
 requires-python = ">=3.10"
 license = "MIT"
