@@ -30,7 +30,7 @@ let a='<h2>Ablation: which attacks succeed if one PACA++ check is removed</h2><t
 for(const [c,ids] of Object.entries(D.ablation))a+=`<tr><td>${c}</td><td style="text-align:left">${esc(D.checks[c].title)}</td><td>${ids.length?ids.join(', '):'<span class=mut>none (covered by another check)</span>'}</td></tr>`;$('abl').innerHTML=a+'</table>';
 $('oos').innerHTML=D.out_of_scope.map(o=>`<div>- <b>${esc(o[0])}</b> <span class=pill>${o[1]}</span> ${esc(o[2])}</div>`).join('')}
 function nav(){let h='',last='';for(const s of D.scenarios){const r=s.results.paca.vig,bad=s.kind=='attack'?r.harmed:!r.completed;
-const g=s.kind=='benign'?'Benign workflows':'Section '+s.section;if(g!=last){h+=`<div class="mut" style="margin:10px 6px 2px;font-size:12px">${s.kind=='benign'?g:'Catalog '+g}</div>`;last=g}
+const g=s.kind=='benign'?'Benign workflows':'Section '+s.section;if(g!=last){h+=`<div class="mut" style="margin:10px 6px 2px;font-size:12px">${s.kind=='benign'?g:'Section '+g}</div>`;last=g}
 h+=`<button data-id="${s.id}" class="${s.id==cur?'on':''}"><span class="dot" style="background:var(--${bad?'bad':'ok'})"></span><b>${s.id}</b> ${esc(s.title)}</button>`}
 $('nav').innerHTML=h;$('nav').querySelectorAll('button').forEach(b=>b.onclick=()=>{cur=b.dataset.id;nav();view()})}
 function ev(e,s){if(e.kind=='task')return`<div class="ev"><b>Task</b> ${esc(e.text)}<div class="chk">capability: ${esc(JSON.stringify(e.grants))} - role ${e.role}</div></div>`;
@@ -42,7 +42,7 @@ const x=e.executed?(e.evil?'evilx':'exec'):'deny';const v=e.executed?(e.evil?'EX
 const a=Object.entries(e.args).map(([k,[v,l]])=>`${k}=<code>${esc(v)}</code><span class="tag ${l[0]}">${l}</span>`).join(' ');
 const h=e.human=='approved'?' - human approved':'';return`<div class="ev act ${x}"><b>${e.action}</b> ${a}<div><b style="color:var(--${e.executed?(e.evil?'bad':'ok'):'warn'})">${v}${h}</b>${e.swapped?' (executed args differ from authorised args)':''}</div>${(e.checks||[]).map(c=>`<div class="chk">${c.id}: ${esc(c.msg)}</div>`).join('')}</div>`}
 function view(){const s=D.scenarios.find(x=>x.id==cur),R=s.results[def];
-let h=`<h2 style="margin-top:0">${s.id} - ${esc(s.title)}</h2><div class="mut">${esc(s.klass)} <span class="pill">${s.ref}</span>${s.residual?' <span class="pill">residual risk</span>':''}</div><p>${esc(s.summary)}</p><div class="tabs">`;
+let h=`<h2 style="margin-top:0">${s.id} - ${esc(s.title)}</h2><div class="mut">${esc(s.klass)} <span class="pill">${s.ref==='-'?'no source key':'unverified source key: '+esc(s.ref)}</span>${s.residual?' <span class="pill">residual risk</span>':''}</div><p>${esc(s.summary)}</p><div class="tabs">`;
 for(const d of D.defences)h+=`<button class="${d.key==def?'on':''}" data-d="${d.key}">${d.label}</button>`;h+='</div>';
 const v=R.vig,r=R.rub;
 if(s.kind=='attack')h+=v.harmed?`<div class="banner bad">Attacker goal achieved (${v.evil} attacker effect${v.evil>1?'s':''} executed)</div>`:`<div class="banner ok">Contained${r.harmed?' - but succeeds if the human rubber-stamps the prompt':''}${v.fired.length?' (stopped by '+v.fired.join(', ')+')':''}</div>`;
