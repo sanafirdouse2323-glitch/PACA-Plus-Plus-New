@@ -11,22 +11,22 @@ from .provenance import Arg, Label
 
 # action -> effect class, which argument names the target / payload / extra control values.
 ACTIONS: Dict[str, Dict[str, Any]] = {
-    "read_mail":      dict(cls="read",        target="folder"),
-    "read_file":      dict(cls="read",        target="path"),
-    "fetch_url":      dict(cls="egress",      target="url",     payload=["query"]),   # egress only if payload present
-    "send_email":     dict(cls="egress",      target="to",      payload=["body", "attachment"]),
-    "http_post":      dict(cls="egress",      target="url",     payload=["body"]),
-    "post_message":   dict(cls="egress",      target="channel", payload=["text"]),
-    "write_file":     dict(cls="write",       target="path",    payload=["content"]),
-    "delete_file":    dict(cls="destructive", target="path"),
-    "run_command":    dict(cls="exec",        target="command"),
-    "merge_pr":       dict(cls="destructive", target="pr"),
-    "transfer_funds": dict(cls="destructive", target="account", control=["amount"]),
-    "change_setting": dict(cls="setting",     target="name",    payload=["value"]),
-    "mem_read":       dict(cls="read",        target="key"),
-    "mem_write":      dict(cls="memory",      target="key",     payload=["value"]),
-    "delegate":       dict(cls="delegate",    target="agent",   payload=["child_grants"]),
-    "call_tool":      dict(cls="invoke",      target="tool"),
+    "read_mail":      dict(cls="read",        target="folder",   required=["folder"]),
+    "read_file":      dict(cls="read",        target="path",     required=["path"]),
+    "fetch_url":      dict(cls="egress",      target="url",     payload=["query"], required=["url"]),   # egress only if payload present
+    "send_email":     dict(cls="egress",      target="to",      payload=["body", "attachment"], required=["to", "body"]),
+    "http_post":      dict(cls="egress",      target="url",     payload=["body"], required=["url", "body"]),
+    "post_message":   dict(cls="egress",      target="channel", payload=["text"], required=["channel", "text"]),
+    "write_file":     dict(cls="write",       target="path",    payload=["content"], required=["path", "content"]),
+    "delete_file":    dict(cls="destructive", target="path",    required=["path"]),
+    "run_command":    dict(cls="exec",        target="command", required=["command"]),
+    "merge_pr":       dict(cls="destructive", target="pr",      required=["pr"]),
+    "transfer_funds": dict(cls="destructive", target="account", control=["amount"], required=["account", "amount"]),
+    "change_setting": dict(cls="setting",     target="name",    payload=["value"], required=["name", "value"]),
+    "mem_read":       dict(cls="read",        target="key",     required=["key"]),
+    "mem_write":      dict(cls="memory",      target="key",     payload=["value"], required=["key", "value"]),
+    "delegate":       dict(cls="delegate",    target="agent",   payload=["child_grants"], required=["agent", "child_grants"]),
+    "call_tool":      dict(cls="invoke",      target="tool",    required=["tool"]),
 }
 
 
@@ -156,6 +156,8 @@ class Effect:
 class World:
     effects: List[Effect] = field(default_factory=list)
     memory: Dict[str, Arg] = field(default_factory=dict)
+    # Labels are kept separately so a memory read can be authorized before value access.
+    memory_labels: Dict[str, Label] = field(default_factory=dict)
 
     def harmed(self) -> bool:
         return any(e.evil for e in self.effects)
