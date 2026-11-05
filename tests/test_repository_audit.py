@@ -134,3 +134,35 @@ def test_required_argument_validation_cannot_be_disabled():
     decision = monitor.decide(request)
     assert decision.verdict == "deny"
     assert "C14" in decision.checks
+
+
+def test_unlabelled_action_and_tool_values_default_to_untrusted():
+    session = Session(Monitor())
+    session.start_task("Store a note", {"mem_write": ["notes/*"]})
+    assert session.act("mem_write", key="notes/raw", value="unlabelled value")
+    assert session.world.memory["notes/raw"].label.integrity == "untrusted"
+
+    assert session.act(
+        "mem_write",
+        key=session.lit("notes/explicit"),
+        value=session.lit("explicit user value"),
+    )
+    assert session.world.memory["notes/explicit"].label.integrity == "trusted"
+
+    tool = Tool("docs_summarize", "1.0", "Summarise a document")
+    session.start_task("Summarise a document", {"call_tool": ["docs_summarize"]}, pins=[tool])
+    assert session.act("call_tool", tool=tool)
+    tool_arg = session.trace[-1]["args"]["tool"]
+    assert tool_arg[1] == "U/S0"
+
+
+def test_ingest_does_not_promote_an_unlabelled_target_to_trusted():
+    session = Session(Monitor())
+    session.start_task("Read a project file", {"read_file": ["/acme/*"]})
+    result = session.ingest(
+        "read_file", "/acme/report.txt", "project report", "user_files", tenant="acme"
+    )
+    assert result is not None
+    read_action = [item for item in session.trace if item.get("action") == "read_file"][-1]
+    assert read_action["args"]["path"][1] == "U/S0"
+    assert result.label.integrity == "trusted"
