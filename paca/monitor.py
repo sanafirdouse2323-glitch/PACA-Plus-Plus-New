@@ -1,9 +1,9 @@
-"""PACA++ continuous-authorisation reference monitor.
+"""PACA++ reference monitor used by the deterministic simulator.
 
-One monitor sits at every stage boundary (tool selection, memory write, delegation,
-tool call, egress). It never trusts model output: authority comes from a task-bound
-capability, facts about data come from provenance labels, and every allowed effect gets
-an HMAC token bound to the exact action + arguments that the executor must verify.
+The simulator routes selected effect requests through this monitor. It does not itself
+mediate real agent planning, inbound communication, connector I/O, or production effects.
+Every allowed request receives a single-use token bound to its arguments for an executor
+integration to verify.
 """
 from __future__ import annotations
 
@@ -31,9 +31,9 @@ CHECKS = {
     "C3":  ("Manifest pin: tool hash/version matches what was authorised", "MCP poisoning; rug-pull; tool-selection hijack; supply chain"),
     "C4a": ("Untrusted-derived control value on destructive action", "goal hijack; confused deputy"),
     "C4b": ("Untrusted-derived control value on command execution", "indirect injection; structured-output injection; fragmentation"),
-    "C4c": ("Untrusted-derived delegation target", "agent-to-agent injection"),
+    "C4c": ("Untrusted delegated grant set", "agent-to-agent injection"),
     "C4d": ("Untrusted-derived tool selection", "tool-selection hijack"),
-    "C4e": ("Untrusted-derived settings change", "confused deputy"),
+    "C4e": ("Untrusted setting value", "confused deputy"),
     "C4f": ("Untrusted recipient with non-public data", "indirect injection; exfiltration"),
     "C4g": ("Untrusted recipient, public data: human approval", "reply/forward workflows"),
     "C5":  ("Data sensitivity above destination clearance", "uncontrolled egress; sensitive-data extraction"),
@@ -279,6 +279,13 @@ class Monitor:
                                "digest": request_digest[:16], "principal": req.cap.principal})
             return decision
         spec, cap, v = ACTIONS[req.action], req.cap, []
+        missing = [
+            name for name in spec.get("required", ())
+            if name not in req.args or req.args[name].value is None
+        ]
+        if missing:
+            v.append(Violation("C13", "deny",
+                               f"missing required argument(s): {', '.join(missing)}"))
         tgt = req.args.get(spec["target"])
         tval = str(tgt.value) if tgt is not None else ""
         consequential = spec["cls"] != "read"
