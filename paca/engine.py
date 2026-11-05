@@ -41,26 +41,32 @@ class PolicyEngine:
             if action is not None and policy.action not in (action, "any"):
                 continue
             results.append(evaluate_policy(policy, context))
-        fired = [f for r in results for f in r.fired]
-        permits = [n for e, n in fired if e == "permit"]
-        denies = [n for e, n in fired if e == "deny"]
+        all_fired = [item for result in results for item in result.fired]
+        permits = [result for result in results if any(effect == "permit" for effect, _ in result.fired)]
+        denies = [result for result in results if any(effect == "deny" for effect, _ in result.fired)]
+
         if strategy == "deny_overrides":
-            final = "deny" if denies else "permit" if permits else default_decision
+            effective = denies or permits
         elif strategy == "permit_overrides":
-            final = "permit" if permits else "deny" if denies else default_decision
-        else:
-            final = fired[0][0] if fired else default_decision
+            effective = permits or denies
+        else:  # first_applicable: retain only the first policy that matched
+            effective = next(( [result] for result in results if result.fired), [])
+
+        fired = [item for result in effective for item in result.fired]
+        final = fired[0][0] if fired else default_decision
+        # Keep diagnostics for all matched rules, but only effective rules may
+        # trigger enforcement or contribute obligations to the final decision.
         obl_map: Dict[str, list] = {}
-        for r in results:
-            obl_map.update(r.obligation_map)
+        for result in effective:
+            obl_map.update(result.obligation_map)
         return EvaluationResult(
             decision=final, passed=final == "permit",
             matched_conditions=sum(r.matched_conditions for r in results),
             total_conditions=sum(r.total_conditions for r in results),
             details=[d for r in results for d in r.details],
             provenance=[x for r in results for x in r.provenance],
-            matched_policies=[n for _, n in fired], fired=fired, obligation_map=obl_map,
-            obligations=sorted({o for n, os in obl_map.items() for o in os}),
+            matched_policies=[name for _, name in all_fired], fired=fired, obligation_map=obl_map,
+            obligations=sorted({obligation for values in obl_map.values() for obligation in values}),
         )
 
 
