@@ -279,10 +279,15 @@ class Monitor:
                                "digest": request_digest[:16], "principal": req.cap.principal})
             return decision
         spec, cap, v = ACTIONS[req.action], req.cap, []
-        missing = [
-            name for name in spec.get("required", ())
-            if name not in req.args or req.args[name].value is None
-        ]
+        missing = []
+        for name in spec.get("required", ()):
+            arg = req.args.get(name)
+            if arg is None or arg.value is None:
+                missing.append(name)
+            elif name == spec["target"] and (
+                not isinstance(arg.value, str) or not arg.value.strip()
+            ):
+                missing.append(name)
         if missing:
             v.append(Violation("C13", "deny",
                                f"missing required argument(s): {', '.join(missing)}"))
