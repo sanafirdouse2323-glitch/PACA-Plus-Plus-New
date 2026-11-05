@@ -135,19 +135,26 @@ class Session:
         return arg if executed else None
 
     def mem_read(self, key: str) -> Optional[Arg]:
-        """Read memory only after the current task grants this key."""
-        a = self.world.memory.get(key)
+        """Authorize using label metadata before touching the stored value."""
+        label = self.world.memory_labels.get(key)
         executed = self._exec(
             "mem_read", {"key": self.lit(key)}, False, False, None,
-            resource=a.label if a is not None else None,
-            shown_content=(str(a.value), a.label.short()) if a is not None else None,
+            resource=label,
         )
         if not executed:
             self._log("memread", key=key, found=None, denied=True, label=None)
             return None
-        self._log("memread", key=key, found=a is not None, denied=False,
-                  label=a.label.short() if a else None)
-        return a
+        if label is None:
+            self._log("memread", key=key, found=False, denied=False, label=None)
+            return None
+
+        # This value lookup occurs only after the monitor has allowed and verified the read.
+        value = self.world.memory.get(key)
+        if value is None or value.label != label:
+            self._log("memread", key=key, found=None, denied=True, label=None)
+            return None
+        self._log("memread", key=key, found=True, denied=False, label=label.short())
+        return value
 
     # ---------------------------------------------------------------- actions
     def act(self, action: str, *, tool: Optional[Tool] = None, evil: bool = False, required: bool = False,
@@ -195,7 +202,10 @@ class Session:
         if executed:
             self.world.effects.append(Effect(action, final.values(), evil, self.step))
             if action == "mem_write":
-                self.world.memory[str(final.values()["key"])] = final.args["value"]
+                key = str(final.values()["key"])
+                value = final.args["value"]
+                self.world.memory[key] = value
+                self.world.memory_labels[key] = value.label
             if required:
                 self.required_done += 1
         self._log("act", action=action, args=self._show(final.args), verdict=d.verdict, executed=executed,
