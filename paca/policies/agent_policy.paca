@@ -1,6 +1,6 @@
-# PACA++ agent policy - tunable rules evaluated by the policy engine at EVERY stage.
-# Capabilities (code) give default-deny; these rules are the defeaters/obligations on top.
-# Rule IDs map to catalog classes; the monitor builds the `action`, `dest`, `flow`, `control`,
+# PACA++ policy for selected simulated reference-monitor requests.
+# Task-bound capabilities restrict actions; these rules add risk checks and obligations.
+# Rule IDs denote author-defined risk categories; the monitor builds the `action`, `dest`, `flow`, `control`,
 # `payload`, `target` attributes from provenance labels, not from anything the model says.
 
 C4a: deny any when action.cls == destructive and control.integrity == untrusted   # goal hijack / confused deputy
