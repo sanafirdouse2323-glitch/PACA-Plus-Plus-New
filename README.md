@@ -19,7 +19,7 @@ Open `docs/index.html` for the interactive demo (also deployable on GitHub Pages
 
 ## What it does
 
-| Mechanism | Where | Catalog classes addressed |
+| Mechanism | Where | Risk classes exercised in the simulator |
 |---|---|---|
 | Task-bound, target-bound, expiring **capabilities** (default deny) | `runtime.py`, `monitor.py` C1/C2 | stale authority, goal hijack, cross-stage drift, cost DoS |
 | **Provenance labels** that only get worse when data is combined (integrity, sensitivity, tenant, origins); unlabelled `Arg` values default to untrusted | `provenance.py` | provenance laundering, fragmentation, memory poisoning |
@@ -53,10 +53,11 @@ cases where provenance alone cannot establish source truth or message correctnes
   (`baselines.py`) of control **classes**, not tests of real products. Edit the constants to harden baselines.
 - High scores on your own suite are expected; the useful outputs are the **ablation** (which check
   uniquely stops which attack), the **residual** cases, and the false-block count.
-- Next step for a publishable claim: run the monitor in front of real agents on **AgentDojo / InjecAgent /
-  ASB / RepoGuardBench** (catalog refs [4][5][8][30]) and report utility-under-attack and false blocks.
+- Next step for stronger evidence: implement adapters for independent agent frameworks and benchmark suites,
+  pre-register the threat model and success criteria, and report utility-under-attack, false blocks,
+  adapter overhead and reproducibility. The current repository contains no such external integration.
 
-Explicit non-goals (catalog): direct jailbreaks, system-prompt extraction, adversarial suffixes, weight
+Explicit non-goals for this prototype: direct jailbreaks, system-prompt extraction, adversarial suffixes, weight
 backdoors / training poisoning, membership inference, model extraction, AI-enabled phishing/deepfakes.
 
 ## Using the monitor
@@ -66,7 +67,7 @@ from paca.monitor import Monitor
 from paca.runtime import Capability, Request
 from paca.provenance import Arg, Label, derive
 
-m = Monitor()                                   # loads examples/agent_policy.paca
+m = Monitor()                                   # loads packaged paca/policies/agent_policy.paca
 cap = Capability("c1", "sana", "acme", "task1", "assistant",
                  grants={"send_email": ("bob@corp.example",)}, expires=30)
 doc = Arg("Q3 numbers", Label("trusted", 3, "acme"))            # label comes from YOUR connector
@@ -80,15 +81,21 @@ If an agent framework lets the model attach its own labels, the guarantees do no
 
 **Execution and approval boundaries:** this repository contains an in-process reference monitor
 and a deterministic simulator; it does not yet contain adapters for a real LLM/agent framework or an
-independent production executor. Filesystem grant matching performs lexical path validation only;
-a real executor must also prevent symlink escapes and TOCTOU races. Network integrations must resolve
-and re-check destinations and redirects at connection time to reduce DNS-rebinding and redirect-based SSRF. A deployment must route every consequential effect through an
-executor that verifies and consumes the monitor's single-use token. The default monitor does not
-accept approvals unless the integrator supplies an `approval_verifier` that validates a signed
-approval from a separately authenticated approval service. The benchmark injects a test-only
-verifier and simulates the human decision; its digest check is not an authentication mechanism
-and must not be reused in production. Memory reads and writes are represented in the simulator and require task grants; planning steps
-and inbound communication are not independently integrated with a real agent runtime in this prototype.
+independent production executor. The scenario harness supplies read content to `Session.ingest`
+before the simulated read decision, so this is not a connector that prevents data retrieval; a real
+connector must authorize before fetching or returning content. The simulator's memory-read path
+authorizes using a separately stored label before looking up the stored value, but it is still an
+in-memory test harness, not an integrated memory-store adapter. Inbound communication through
+`Session.receive` and agent planning are not independently mediated by a real runtime in this prototype.
+
+Filesystem grant matching performs lexical path validation only; a real executor must also prevent
+symlink escapes and TOCTOU races. Network integrations must resolve and re-check destinations and
+redirects at connection time to reduce DNS-rebinding and redirect-based SSRF. A deployment must route
+every consequential effect through an executor that verifies and consumes the monitor's single-use
+token. The default monitor does not accept approvals unless the integrator supplies an
+`approval_verifier` that validates a signed approval from a separately authenticated approval
+service. The benchmark injects a test-only verifier and simulates the human decision; its digest
+check is not an authentication mechanism and must not be reused in production.
 
 **Provenance scope:** joined labels preserve all contributing tenant identifiers. The label
 mechanism still depends on trusted adapters assigning correct labels and on integrations preserving
