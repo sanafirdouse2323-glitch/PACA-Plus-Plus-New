@@ -23067,14 +23067,14 @@
  "metrics": {
   "none": {
    "label": "No guard",
-   "asr_vig": 100.0,
-   "asr_rub": 100.0,
-   "asr_inscope_vig": 100.0,
-   "asr_inscope_rub": 100.0,
+   "asr_vig": 100,
+   "asr_rub": 100,
+   "asr_inscope_vig": 100,
+   "asr_inscope_rub": 100,
    "blast": 2.43,
-   "completion": 100.0,
+   "completion": 100,
    "false_blocks": 0,
-   "prompts": 0.0
+   "prompts": 0
   },
   "filter": {
    "label": "Prompt filter",
@@ -23085,18 +23085,18 @@
    "blast": 2.4,
    "completion": 90.9,
    "false_blocks": 1,
-   "prompts": 0.0
+   "prompts": 0
   },
   "rbac": {
    "label": "Role-based allow-list",
-   "asr_vig": 100.0,
-   "asr_rub": 100.0,
-   "asr_inscope_vig": 100.0,
-   "asr_inscope_rub": 100.0,
+   "asr_vig": 100,
+   "asr_rub": 100,
+   "asr_inscope_vig": 100,
+   "asr_inscope_rub": 100,
    "blast": 2.43,
-   "completion": 100.0,
+   "completion": 100,
    "false_blocks": 0,
-   "prompts": 0.0
+   "prompts": 0
   },
   "sandbox": {
    "label": "Sandbox + scoped permissions",
@@ -23105,18 +23105,18 @@
    "asr_inscope_vig": 82.1,
    "asr_inscope_rub": 96.4,
    "blast": 2.23,
-   "completion": 100.0,
+   "completion": 100,
    "false_blocks": 0,
    "prompts": 0.27
   },
   "paca": {
    "label": "PACA++ v0.3",
-   "asr_vig": 10.0,
+   "asr_vig": 10,
    "asr_rub": 13.3,
    "asr_inscope_vig": 3.6,
    "asr_inscope_rub": 7.1,
    "blast": 0.23,
-   "completion": 100.0,
+   "completion": 100,
    "false_blocks": 0,
    "prompts": 0.18
   }
@@ -23455,5 +23455,8 @@
   ]
  ],
  "n_attacks": 30,
- "n_benign": 11
+ "n_benign": 11,
+ "_snapshot_status": "historical",
+ "_snapshot_note": "This checked-in JSON snapshot predates the latest branch benchmark. Use the paca-benchmark-regenerated artifact from GitHub Actions run 42027208900, or regenerate with `python -m paca bench docs`.",
+ "_latest_benchmark_run": "https://github.com/sanafirdouse2323-glitch/PACA-Plus-Plus-New/actions/runs/42027208900"
 }
