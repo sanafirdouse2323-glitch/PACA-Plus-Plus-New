@@ -46,7 +46,7 @@ CHECKS = {
     "C11": ("Delegated authority must be a subset of the parent's", "capability escalation; multi-agent confused deputy"),
     "C12": ("Quarantine after repeated denied attempts", "approval fatigue; autonomy loops"),
     "C13": ("Effect token binds executed effect to the authorised one", "planner/critic manipulation; TOCTOU argument swap"),
-    "C14": ("Action contract: required values are present and well-formed", "incomplete or malformed requests"),
+    "C14": ("Required arguments are present; the target is a non-empty string", "incomplete or malformed requests"),
     "C15": ("Human gate on irreversible release actions", "prompt-to-commit manipulation"),
 }
 
@@ -287,6 +287,8 @@ class Monitor:
                                "digest": request_digest[:16], "principal": req.cap.principal})
             return decision
         spec, cap, v = ACTIONS[req.action], req.cap, []
+        # C14 checks required-value presence and the target's basic string shape.
+        # A real executor must additionally validate each action's payload schema and semantics.
         missing = []
         for name in spec.get("required", ()):
             arg = req.args.get(name)
@@ -298,7 +300,7 @@ class Monitor:
                 missing.append(name)
         if missing:
             v.append(Violation("C14", "deny",
-                               f"missing or malformed required argument(s): {', '.join(missing)}"))
+                               f"missing required argument(s) or invalid target: {', '.join(missing)}"))
         tgt = req.args.get(spec["target"])
         tval = str(tgt.value) if tgt is not None else ""
         consequential = spec["cls"] != "read"
