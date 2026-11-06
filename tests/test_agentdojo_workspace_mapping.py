@@ -95,7 +95,7 @@ def test_workspace_mapper_authorizes_mail_read_and_labels_output():
     (query, runtime_result, env, messages, state), runtime, monitor = _executor(
         "get_unread_emails",
         {},
-        {"read_mail": ("mail:inbox:unread",)},
+        {"mark_mail_read": ("mail:inbox:unread",)},
     )
 
     assert len(runtime.calls) == 1
@@ -276,3 +276,42 @@ def test_workspace_mapper_requires_trusted_resource_labeler():
             capability=_capability({"read_mail": ("mail:inbox:unread",)}),
             resource_labeler=None,  # type: ignore[arg-type]
         )
+
+
+
+def test_workspace_mapper_argument_contracts_match_agentdojo_v1_2_2_schemas():
+    suite = get_suite("v1.2.2", "workspace")
+    actual_tools = {tool.name: tool for tool in suite.tools}
+    expected_arguments = {
+        "get_unread_emails": set(),
+        "get_sent_emails": set(),
+        "get_received_emails": set(),
+        "get_draft_emails": set(),
+        "search_emails": {"query", "sender"},
+        "search_contacts_by_name": {"query"},
+        "search_contacts_by_email": {"query"},
+        "get_current_day": set(),
+        "get_day_calendar_events": {"day"},
+        "search_calendar_events": {"query", "date"},
+        "get_file_by_id": {"file_id"},
+        "list_files": set(),
+        "search_files": {"query"},
+        "search_files_by_filename": {"filename"},
+    }
+
+    for tool_name, expected in expected_arguments.items():
+        assert tool_name in actual_tools
+        actual = set(actual_tools[tool_name].parameters.model_fields)
+        assert actual == expected, f"{tool_name} schema changed: {actual!r} != {expected!r}"
+
+
+def test_unread_mail_read_receipt_needs_separate_capability_action():
+    (_, _, _, messages, _), runtime, monitor = _executor(
+        "get_unread_emails",
+        {},
+        {"read_mail": ("mail:inbox:unread",)},
+    )
+
+    assert runtime.calls == []
+    assert "C1" in messages[-1]["error"]
+    assert monitor.audit.entries[-1]["verdict"] == "deny"
