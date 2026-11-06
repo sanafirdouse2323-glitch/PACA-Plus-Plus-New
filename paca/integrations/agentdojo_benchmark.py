@@ -321,6 +321,7 @@ def _mean(values: list[bool]) -> float | None:
 def _sum_metrics(records: list[dict[str, int]]) -> dict[str, int]:
     keys = (
         "tool_calls_seen",
+        "policy_evaluations",
         "denied_calls",
         "authorized_dispatches",
         "dispatch_attempts",
@@ -619,7 +620,7 @@ def run_workspace_benchmark(
     all_policy_metrics = _sum_metrics([*paca_benign_metrics, *paca_attacked_metrics])
 
     def policy_metric_summary(metrics: dict[str, int]) -> dict[str, Any]:
-        calls = metrics["tool_calls_seen"]
+        calls = metrics["policy_evaluations"]
         return {
             **metrics,
             "mean_policy_decision_ms_per_tool_call": (
