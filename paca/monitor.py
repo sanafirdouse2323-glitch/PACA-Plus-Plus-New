@@ -46,7 +46,7 @@ CHECKS = {
     "C11": ("Delegated authority must be a subset of the parent's", "capability escalation; multi-agent confused deputy"),
     "C12": ("Quarantine after repeated denied attempts", "approval fatigue; autonomy loops"),
     "C13": ("Effect token binds executed effect to the authorised one", "planner/critic manipulation; TOCTOU argument swap"),
-    "C14": ("Required arguments are present; the target is a non-empty string", "incomplete or malformed requests"),
+    "C14": ("Required arguments are present; the target is a non-empty string", "missing required fields or invalid target shape"),
     "C15": ("Human gate on irreversible release actions", "prompt-to-commit manipulation"),
 }
 
