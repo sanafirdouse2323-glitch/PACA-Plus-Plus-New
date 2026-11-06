@@ -671,6 +671,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--suite-version", default=DEFAULT_SUITE_VERSION)
     parser.add_argument("--suite", default=DEFAULT_SUITE_NAME, choices=[DEFAULT_SUITE_NAME])
     parser.add_argument("--list-supported-tasks", action="store_true")
+    parser.add_argument("--list-injection-tasks", action="store_true")
     parser.add_argument("--user-tasks", type=_csv_ids)
     parser.add_argument("--injection-tasks", type=_csv_ids)
     parser.add_argument("--model")
@@ -690,6 +691,10 @@ def main(argv: list[str] | None = None) -> int:
 
     api = _agentdojo_imports()
     suite = api["get_suite"](args.suite_version, args.suite)
+
+    if args.list_injection_tasks:
+        print(json.dumps({"injection_task_ids": list(suite.injection_tasks)}, indent=2))
+        return 0
 
     if args.list_supported_tasks:
         supported, excluded = list_supported_workspace_tasks(suite)
