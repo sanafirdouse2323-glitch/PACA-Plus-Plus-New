@@ -97,6 +97,7 @@ class PacaToolsExecutor(ToolsExecutor):
         self.approval_provider = approval_provider
         self.result_labeler = result_labeler
         self._output_counter = 0
+        self._last_steps: dict[str, int] = {}
 
     @staticmethod
     def _tool_call_result(
@@ -179,6 +180,13 @@ class PacaToolsExecutor(ToolsExecutor):
                 )
                 if not isinstance(request, Request):
                     raise TypeError("request_builder did not return a PACA++ Request")
+                if isinstance(request.step, bool) or not isinstance(request.step, int):
+                    raise TypeError("request_builder must provide an integer request step")
+                # Enforce monotonic steps within each capability, even if an application
+                # mapper accidentally reuses a fixed initial step for subsequent calls.
+                last_step = self._last_steps.get(request.cap.cap_id, request.step - 1)
+                request.step = max(request.step, last_step + 1)
+                self._last_steps[request.cap.cap_id] = request.step
                 if RAW_ARGUMENTS_KEY in request.args:
                     raise ValueError(f"{RAW_ARGUMENTS_KEY} is reserved by the adapter")
 
@@ -221,18 +229,21 @@ class PacaToolsExecutor(ToolsExecutor):
                     ))
                     continue
 
-                # Dispatch the exact snapshot committed into the PACA++ request,
-                # not the mutable argument mapping owned by the incoming message.
-                result, error = runtime.run_function(env, function_name, execution_args)
-
             except Exception as exc:
                 # Fail closed: request construction, canonicalization, authorization,
-                # verification, or dispatch preparation must never fall through.
+                # or token verification must never fall through to function dispatch.
                 tool_call_results.append(self._deny_result(
                     tool_call,
-                    f"PACA++ integration error ({type(exc).__name__}); tool was not executed.",
+                    f"PACA++ integration error ({type(exc).__name__}); tool was not dispatched.",
                 ))
                 continue
+
+            # Keep function execution outside the authorization exception handler:
+            # a function may raise after causing a partial external effect. Propagate
+            # that runtime error instead of claiming that no effect occurred.
+            # The mutable message-owned arguments are not used; dispatch the exact
+            # normalized snapshot whose digest was authorized.
+            result, error = runtime.run_function(env, function_name, execution_args)
 
             self._output_counter += 1
             call_id = getattr(tool_call, "id", None) or f"{function_name}:{self._output_counter}"
@@ -266,7 +277,17 @@ class PacaToolsExecutor(ToolsExecutor):
                 state["paca_output_labels"] = output_labels
             output_labels[str(call_id)] = output_label
 
-            formatted_result = self.output_formatter(result)
+            try:
+                formatted_result = self.output_formatter(result)
+            except Exception as exc:
+                # The tool function has already returned. Do not label this as a
+                # denied or unexecuted action; only result formatting failed.
+                tool_call_results.append(self._tool_call_result(
+                    tool_call,
+                    "The tool function returned, but its result could not be formatted.",
+                    error=f"Output formatting failed ({type(exc).__name__}).",
+                ))
+                continue
             tool_call_results.append(self._tool_call_result(
                 tool_call,
                 formatted_result,
