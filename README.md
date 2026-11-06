@@ -62,12 +62,12 @@ the checked-in `docs/` snapshot. Run `python -m paca bench docs` to regenerate t
   of real products or an independent benchmark suite.
 - High scores on a defence's own suite are expected; useful outputs include the **ablation**
   (which check uniquely stops which attack), residual cases, benign completion, and false blocks.
-- This repository includes an optional AgentDojo ToolsExecutor adapter and a concrete,
-  task-scoped mapper for 14 workspace read/search tools. The unread-mail operation is separately
-  authorised because AgentDojo marks those messages as read. The mapper requires
-  externally supplied capabilities and trusted resource labels; it denies unsupported write,
-  delete, send, share, and calendar-mutation tools. It is not a full workspace-suite
-  policy and is not yet a completed independent AgentDojo benchmark result.
+- This repository includes an optional AgentDojo ToolsExecutor adapter, a task-scoped
+  mapper for 14 workspace read/search operations, and a paired benchmark runner. The runner
+  derives exact action/target grants from each selected user's clean AgentDojo ground-truth
+  calls, and applies conservative untrusted/max-sensitivity fixture labels. The mapper denies
+  unsupported write, delete, send, share, and calendar-mutation tools. This is a limited
+  workspace experiment, not a full-suite policy or a completed independent benchmark result.
 
 Explicit non-goals for this prototype: direct jailbreaks, system-prompt extraction, adversarial suffixes,
 weight backdoors / training poisoning, membership inference, model extraction, AI-enabled phishing/deepfakes.
@@ -94,10 +94,12 @@ If an agent framework lets the model attach its own labels, the guarantees do no
 **Execution and approval boundaries:** this repository contains an in-process reference monitor
 and a deterministic simulator. An optional AgentDojo ToolsExecutor adapter inserts
 the monitor before AgentDojo function dispatch. The companion workspace mapper supports
-a limited read/search tool set and requires application-supplied task capabilities and
-trusted resource labels. It deliberately denies mutating workspace tools that do not
-yet have dedicated PACA++ action mappings. It is not a generic agent adapter and does
-not provide an independent production executor. The scenario harness supplies read
+a limited read/search tool set and requires task-specific capabilities and trusted
+resource labels. The `paca-agentdojo` runner derives those capabilities from the selected
+AgentDojo user task's clean ground-truth calls and conservatively labels fixture data as
+untrusted at maximum sensitivity. It deliberately denies mutating workspace tools that
+do not yet have dedicated PACA++ action mappings. It is not a generic agent adapter and
+does not provide an independent production executor. The scenario harness supplies read
 content to `Session.ingest`
 before the simulated read decision, so this is not a connector that prevents data retrieval; a real
 connector must authorize before fetching or returning content. In this request model, `fetch_url`
@@ -125,15 +127,18 @@ is not an external, append-only log service.
 
 ## External framework integration
 
-An optional adapter and a task-scoped workspace read/search mapper are available
-for the independently maintained AgentDojo benchmark. The mapper supports 14
-workspace read/search tools, requires task-specific capabilities and trusted source
-labels, and denies unimplemented mutating tools. Its supported scope, configuration,
-pipeline insertion instructions, limitations, and evaluation protocol are documented
-in [docs/agentdojo-integration.md](docs/agentdojo-integration.md).
+An optional adapter, a task-scoped workspace read/search mapper, and a paired
+benchmark runner are available for the independently maintained AgentDojo benchmark.
+Install the optional dependency with `pip install -e ".[dev,agentdojo]"`, then use
+`paca-agentdojo --list-supported-tasks` and `paca-agentdojo --list-injection-tasks`
+to inspect the installed suite. The runner requires explicit user-task and injection-task
+IDs and can produce a dry-run policy manifest before any model calls. Its supported
+scope, configuration, metrics, limitations, and evaluation protocol are documented in
+[docs/agentdojo-integration.md](docs/agentdojo-integration.md).
 
-The adapter is not a claim that PACA++ has passed AgentDojo. No independent AgentDojo
-scores are published until matched runs have actually completed.
+CI validates the runner and integrations; it does not call an LLM provider. No independent
+AgentDojo effectiveness scores are published until an operator runs matched experiments
+with a configured model provider and retains the raw task-level results.
 
 ## DSL
 ```
@@ -159,5 +164,5 @@ and operator precedence, and adds the monitor, labels, scenarios and benchmark.
 
 Maturity: research prototype (Python, in-process monitor, self-authored deterministic benchmark,
 optional AgentDojo tool-executor adapter, limited task-scoped workspace read/search mapper,
-no full workspace write/effect mapping, no independent end-to-end benchmark results,
-no production executor, and no solver-backed verification).
+paired AgentDojo benchmark runner not yet executed against a real LLM in this repository,
+no full workspace write/effect mapping, no production executor, and no solver-backed verification).
