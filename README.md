@@ -63,8 +63,9 @@ the checked-in `docs/` snapshot. Run `python -m paca bench docs` to regenerate t
 - High scores on a defence's own suite are expected; useful outputs include the **ablation**
   (which check uniquely stops which attack), residual cases, benign completion, and false blocks.
 - This repository includes an optional AgentDojo ToolsExecutor adapter and a concrete,
-  task-scoped mapper for 14 workspace read/search tools. The mapper requires externally
-  supplied capabilities and trusted resource labels; it denies unsupported write,
+  task-scoped mapper for 14 workspace read/search tools. The unread-mail operation is separately
+  authorised because AgentDojo marks those messages as read. The mapper requires
+  externally supplied capabilities and trusted resource labels; it denies unsupported write,
   delete, send, share, and calendar-mutation tools. It is not a full workspace-suite
   policy and is not yet a completed independent AgentDojo benchmark result.
 
