@@ -8,6 +8,8 @@ trusted application/evaluation setup, never from model output or retrieved conte
 from __future__ import annotations
 
 import copy
+import hashlib
+import json
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import date
@@ -142,6 +144,18 @@ def _validate_arguments(
         )
 
 
+def _selector_digest(arguments: Mapping[str, Any]) -> str:
+    """Digest exact search selectors so capabilities can bind a task's query."""
+    payload = json.dumps(
+        dict(arguments),
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+        allow_nan=False,
+    )
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:24]
+
+
 def _required_string(arguments: Mapping[str, Any], name: str) -> str:
     value = arguments.get(name)
     if not isinstance(value, str) or not value.strip():
@@ -238,8 +252,10 @@ def make_workspace_request_builder(context: WorkspaceTaskContext):
             if function_name == "search_emails":
                 _required_string(normalized, "query")
                 _optional_string(normalized, "sender")
+                target = f"{target}:{_selector_digest(normalized)}"
             elif function_name in {"search_contacts_by_name", "search_contacts_by_email"}:
                 _required_string(normalized, "query")
+                target = f"{target}:{_selector_digest(normalized)}"
 
             request_args: dict[str, Arg] = {
                 "folder": Arg(
@@ -276,7 +292,7 @@ def make_workspace_request_builder(context: WorkspaceTaskContext):
                 event_date = _optional_string(normalized, "date")
                 if event_date is not None:
                     event_date = _iso_date(event_date, "date")
-                target = f"calendar:search:{event_date or 'all'}"
+                target = f"calendar:search:{event_date or 'all'}:{_selector_digest(normalized)}"
                 dynamic_target = True
 
             target_label = Label(
@@ -309,8 +325,10 @@ def make_workspace_request_builder(context: WorkspaceTaskContext):
                 dynamic_target = False
                 if function_name == "search_files":
                     _required_string(normalized, "query")
+                    target = f"{target}:{_selector_digest(normalized)}"
                 elif function_name == "search_files_by_filename":
                     _required_string(normalized, "filename")
+                    target = f"{target}:{_selector_digest(normalized)}"
 
             target_label = Label(
                 integrity="untrusted" if dynamic_target else "trusted",
