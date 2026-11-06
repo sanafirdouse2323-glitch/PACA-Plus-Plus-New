@@ -238,3 +238,11 @@ def test_agentdojo_adapter_does_not_claim_tool_was_not_executed_after_runtime_er
         _run(executor, runtime, "read_report", {"path": "/tenant-a/report.txt"})
 
     assert len(runtime.calls) == 1
+
+
+def test_aggregate_prior_output_labels_fails_closed_on_any_unlabelled_entry():
+    valid = Label("trusted", sensitivity=0, tenant="tenant-a")
+    result = aggregate_prior_output_labels({"paca_output_labels": {"first": valid, "second": "missing-label"}})
+
+    assert result.integrity == "untrusted"
+    assert "unknown_agentdojo_lineage" in result.origins
