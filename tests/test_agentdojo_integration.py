@@ -181,3 +181,60 @@ def test_agentdojo_adapter_binds_all_executed_arguments():
         {"path": "/tenant-a/report.txt", "selectors": ["name", "summary"]},
     )]
     assert observed["selectors"] == ["name", "summary"]
+
+
+def test_agentdojo_adapter_advances_step_for_repeated_calls_under_one_capability():
+    cap = Capability(
+        "cap-step", "user@example.test", "tenant-a", "task-step", "assistant",
+        {"read_file": ("/tenant-a/report.txt",)}, expires=100,
+    )
+    observed_steps: list[int] = []
+
+    def request_builder(function_name, arguments, env, extra_args):
+        request = Request(
+            "read_file",
+            {"path": Arg(arguments["path"], Label("untrusted"))},
+            cap,
+            step=1,
+            resource=Label("untrusted", sensitivity=1, tenant="tenant-a"),
+        )
+        observed_steps.append(request.step)
+        return request
+
+    runtime = RuntimeStub(["read_report"])
+    executor = PacaToolsExecutor(Monitor(), request_builder)
+    _run(executor, runtime, "read_report", {"path": "/tenant-a/report.txt"})
+    _run(executor, runtime, "read_report", {"path": "/tenant-a/report.txt"})
+
+    assert observed_steps == [1, 1]  # builder may reuse an initial step
+    assert len(runtime.calls) == 2
+    assert executor._last_steps[cap.cap_id] == 2
+
+
+def test_agentdojo_adapter_does_not_claim_tool_was_not_executed_after_runtime_error():
+    cap = Capability(
+        "cap-runtime-error", "user@example.test", "tenant-a", "task-runtime-error", "assistant",
+        {"read_file": ("/tenant-a/report.txt",)}, expires=100,
+    )
+
+    def request_builder(function_name, arguments, env, extra_args):
+        return Request(
+            "read_file",
+            {"path": Arg(arguments["path"], Label("untrusted"))},
+            cap,
+            step=1,
+            resource=Label("untrusted", sensitivity=1, tenant="tenant-a"),
+        )
+
+    class RaisingRuntime(RuntimeStub):
+        def run_function(self, env, function_name, arguments):
+            self.calls.append((function_name, arguments))
+            raise RuntimeError("downstream connector failed after dispatch")
+
+    runtime = RaisingRuntime(["read_report"])
+    executor = PacaToolsExecutor(Monitor(), request_builder)
+
+    with pytest.raises(RuntimeError, match="downstream connector failed"):
+        _run(executor, runtime, "read_report", {"path": "/tenant-a/report.txt"})
+
+    assert len(runtime.calls) == 1
