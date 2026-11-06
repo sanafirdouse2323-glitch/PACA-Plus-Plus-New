@@ -306,9 +306,10 @@ the manifest.
 
 ### Run the paired benchmark
 
-After the dry run, configure the selected model provider using AgentDojo's
-supported environment variables/API credentials, then run the same task and
-injection selections without `--dry-run`:
+After the dry run, configure `OPENAI_API_KEY` securely in the execution
+environment, then run the same task and injection selections without
+`--dry-run`. The three-way comparison in this runner requires an OpenAI-backed
+model because AgentDojo's official `tool_filter` implementation is OpenAI-only:
 
 ```bash
 paca-agentdojo \
@@ -320,10 +321,10 @@ paca-agentdojo \
   --output runs/agentdojo/paca-comparison.json
 ```
 
-For a local model, use AgentDojo's `local` or `openai-compatible` model
-identifier and supply the corresponding `--model-id` and endpoint environment
-variables. Do not put API keys in command-line arguments, task manifests, or
-result files.
+Do not put API keys in command-line arguments, task manifests, or result files.
+The current three-condition runner intentionally rejects non-OpenAI models rather
+than silently omitting the `tool_filter` comparison. A non-OpenAI comparison
+requires a separately implemented and validated baseline.
 
 The runner uses AgentDojo's own user-task utility and injection-task security
 checks. It records raw task-pair outcomes, the exact task capability manifest,
@@ -358,10 +359,11 @@ The first runner intentionally excludes DoS attack classes and does not cover
 workspace tasks that require writes, deletes, sends, sharing, or calendar
 mutations. It does not measure OPA, NeMo Guardrails, OpenAI Agents SDK, or
 AgentDojo's other defence settings. Those are separate integrations/conditions.
-CI tests the runner and mapper APIs with the pinned AgentDojo dependency; CI
-does not call an LLM API and does not generate benchmark scores. An actual
-result file is created only when the operator runs the command with configured
-model credentials.
+The ordinary CI tests and dry-run checks make no model calls. A separate bounded
+GitHub Actions benchmark job runs only when the repository's `OPENAI_API_KEY`
+secret is present; it uploads raw results and AgentDojo logs as a workflow
+artifact. If the secret is absent, that job explicitly records that the real-model
+experiment was skipped. A completed adapter test is not an effectiveness result.
 
 ## Approval behavior
 
