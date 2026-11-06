@@ -251,8 +251,15 @@ class Monitor:
         if req.resource is not None:
             contributing_tenants.update(req.resource.tenants)
         cross = any(tenant != cap.tenant for tenant in contributing_tenants)
+        # A plain fetch_url request retrieves remote data; it does not disclose
+        # caller data. It is classified as egress only when an outbound query/payload
+        # is present, matching the is_egress calculation above.
+        action_class = spec["cls"]
+        if req.action == "fetch_url" and not is_egress:
+            action_class = "read"
+
         return {
-            "action": {"name": req.action, "cls": spec["cls"]},
+            "action": {"name": req.action, "cls": action_class},
             "dest": {"host": host, "clearance": clr, "internal": bool(url_like and (not host or is_internal_host(host))),
                      "trusted": trusted_dest},
             "flow": {"max_sens": pl.sensitivity, "excess": (pl.sensitivity - clr) if is_egress else -9,
