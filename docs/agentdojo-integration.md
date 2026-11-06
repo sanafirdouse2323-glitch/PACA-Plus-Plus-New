@@ -113,6 +113,11 @@ print(results)
 ~~~
 
 
+The names `make_task_scoped_monitor()` and `make_workspace_request_builder()`
+in this example are placeholders for application-supplied implementations; they are
+not functions exported by PACA++ or AgentDojo. The mapper must be written and reviewed
+for the concrete suite/task before running the experiment.
+
 The model provider must be configured using AgentDojo's supported environment
 variables/API credentials. The sample model name is illustrative; keep the model,
 suite version, tasks, attack, and model settings identical across baseline and PACA++
