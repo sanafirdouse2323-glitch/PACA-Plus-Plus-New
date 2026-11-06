@@ -60,6 +60,45 @@ def test_cross_tenant_and_ssrf():
     assert "C7" in m.decide(req("fetch_url", c, url="http://169.254.169.254/latest")).checks
 
 
+def test_fetch_url_without_query_is_not_outbound_egress():
+    monitor = Monitor()
+    capability = cap(grants={"fetch_url": ("https://*",)})
+    read = Request(
+        "fetch_url",
+        {"url": Arg("https://news.example/page", U)},
+        capability,
+        1,
+    )
+    decision = monitor.decide(read)
+    assert decision.verdict == "allow"
+    assert "C4g" not in decision.checks
+    assert monitor.verify(read, decision)
+
+    # Supplying caller data as a query makes this an egress action again.
+    disclosure = Request(
+        "fetch_url",
+        {
+            "url": Arg("https://news.example/search", U),
+            "query": Arg("private query", CONF),
+        },
+        capability,
+        2,
+    )
+    denied = monitor.decide(disclosure)
+    assert denied.verdict == "deny"
+    assert "C4f" in denied.checks
+
+    # The read classification must not disable internal/metadata endpoint checks.
+    internal_capability = cap(grants={"fetch_url": ("http://*",)})
+    internal = Request(
+        "fetch_url",
+        {"url": Arg("http://169.254.169.254/latest", U)},
+        internal_capability,
+        1,
+    )
+    assert "C7" in Monitor().decide(internal).checks
+
+
 def test_delegation_must_attenuate():
     m = Monitor()
     c = cap(grants={"delegate": ("w1",), "read_file": ("/acme/*",)})
