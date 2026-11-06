@@ -22,7 +22,7 @@ WorkspaceResourceLabeler = Callable[[str, dict[str, Any], Any], Label]
 
 # (PACA action, source label domain, target scope, accepted args, required args)
 # The names and argument keys are taken from AgentDojo's v1 workspace tools.
-_MAIL_TOOLS: dict[str, tuple[str, frozenset[str], frozenset[str]]] = {
+_MAIL_TOOLS: dict[str, tuple[str, str, frozenset[str], frozenset[str]]] = {
     "get_unread_emails": (
         "mark_mail_read",
         "mail:inbox:unread",
