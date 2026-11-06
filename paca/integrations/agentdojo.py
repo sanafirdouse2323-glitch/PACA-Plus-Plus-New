@@ -14,6 +14,7 @@ from __future__ import annotations
 import ast
 import copy
 import json
+import time
 from collections.abc import Callable, Mapping
 from typing import Any
 
@@ -108,6 +109,19 @@ class PacaToolsExecutor(ToolsExecutor):
         self.result_labeler = result_labeler
         self._output_counter = 0
         self._last_steps: dict[str, int] = {}
+        # Per-executor counters used by the reproducible AgentDojo harness.
+        # "authorized_dispatches" means token-verified dispatch attempts, not
+        # proof that an external effect completed successfully.
+        self.metrics: dict[str, int] = {
+            "tool_calls_seen": 0,
+            "denied_calls": 0,
+            "authorized_dispatches": 0,
+            "dispatch_attempts": 0,
+            "dispatch_errors": 0,
+            "dispatch_exceptions": 0,
+            "approval_requests": 0,
+            "policy_decision_ns": 0,
+        }
 
     @staticmethod
     def _tool_call_result(
@@ -133,11 +147,15 @@ class PacaToolsExecutor(ToolsExecutor):
         return isinstance(parsed, list)
 
     def _deny_result(self, tool_call: Any, reason: str) -> ChatToolResultMessage:
+        self.metrics["denied_calls"] += 1
         return self._tool_call_result(
             tool_call,
             "PACA++ did not authorize this tool call; no tool result was released.",
             error=reason,
         )
+
+    def _record_policy_time(self, started_ns: int) -> None:
+        self.metrics["policy_decision_ns"] += time.perf_counter_ns() - started_ns
 
     def query(
         self,
@@ -158,11 +176,13 @@ class PacaToolsExecutor(ToolsExecutor):
         registered_names = {tool.name for tool in runtime.functions.values()}
 
         for tool_call in tool_calls:
+            self.metrics["tool_calls_seen"] += 1
             function_name = getattr(tool_call, "function", None)
             if not isinstance(function_name, str) or not function_name:
                 tool_call_results.append(self._deny_result(tool_call, "Invalid or empty tool name."))
                 continue
             if function_name not in registered_names:
+                self.metrics["denied_calls"] += 1
                 tool_call_results.append(self._tool_call_result(
                     tool_call,
                     "",
@@ -175,6 +195,7 @@ class PacaToolsExecutor(ToolsExecutor):
                 tool_call_results.append(self._deny_result(tool_call, "Tool arguments are not a mapping."))
                 continue
 
+            policy_started_ns = time.perf_counter_ns()
             try:
                 execution_args = copy.deepcopy(dict(supplied_args))
                 for key, value in list(execution_args.items()):
@@ -216,6 +237,8 @@ class PacaToolsExecutor(ToolsExecutor):
                 )
 
                 decision = self.monitor.decide(request)
+                if decision.verdict == "needs_approval":
+                    self.metrics["approval_requests"] += 1
                 if decision.verdict == "needs_approval" and self.approval_provider is not None:
                     approval = self.approval_provider(request, decision, env, state)
                     if approval is not None:
@@ -225,6 +248,7 @@ class PacaToolsExecutor(ToolsExecutor):
                         decision = self.monitor.decide(request)
 
                 if decision.verdict != "allow":
+                    self._record_policy_time(policy_started_ns)
                     check_ids = ",".join(decision.checks) or "approval_required_or_policy_denied"
                     tool_call_results.append(self._deny_result(
                         tool_call,
@@ -234,6 +258,7 @@ class PacaToolsExecutor(ToolsExecutor):
 
                 bound_args = request.args[RAW_ARGUMENTS_KEY].value
                 if _canonical_json(bound_args) != argument_snapshot:
+                    self._record_policy_time(policy_started_ns)
                     # Consume the token created by decide(), but fail verification
                     # because the request no longer matches its authorised digest.
                     self.monitor.verify(request, decision)
@@ -244,13 +269,18 @@ class PacaToolsExecutor(ToolsExecutor):
                     continue
 
                 if not self.monitor.verify(request, decision):
+                    self._record_policy_time(policy_started_ns)
                     tool_call_results.append(self._deny_result(
                         tool_call,
                         "PACA++ effect-token verification failed; tool was not executed.",
                     ))
                     continue
 
+                self._record_policy_time(policy_started_ns)
+                self.metrics["authorized_dispatches"] += 1
+
             except Exception as exc:
+                self._record_policy_time(policy_started_ns)
                 # Fail closed: request construction, canonicalization, authorization,
                 # or token verification must never fall through to function dispatch.
                 tool_call_results.append(self._deny_result(
@@ -264,7 +294,14 @@ class PacaToolsExecutor(ToolsExecutor):
             # that runtime error instead of claiming that no effect occurred.
             # The mutable message-owned arguments are not used; dispatch the exact
             # normalized snapshot whose digest was authorized.
-            result, error = runtime.run_function(env, function_name, execution_args)
+            self.metrics["dispatch_attempts"] += 1
+            try:
+                result, error = runtime.run_function(env, function_name, execution_args)
+            except Exception:
+                self.metrics["dispatch_exceptions"] += 1
+                raise
+            if error is not None:
+                self.metrics["dispatch_errors"] += 1
 
             self._output_counter += 1
             call_id = getattr(tool_call, "id", None) or f"{function_name}:{self._output_counter}"
