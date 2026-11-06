@@ -166,3 +166,19 @@ def test_ingest_does_not_promote_an_unlabelled_target_to_trusted():
     read_action = [item for item in session.trace if item.get("action") == "read_file"][-1]
     assert read_action["args"]["path"][1] == "U/S0"
     assert result.label.integrity == "trusted"
+
+
+def test_required_target_must_be_a_non_empty_string():
+    monitor = Monitor()
+    cap = capability({"read_file": ("/acme/*",)})
+    for step, invalid_target in enumerate(("", 7), start=1):
+        request = Request(
+            "read_file",
+            {"path": Arg(invalid_target, USER)},
+            cap,
+            step,
+        )
+        decision = monitor.decide(request)
+        assert decision.verdict == "deny"
+        assert "C14" in decision.checks
+
