@@ -325,11 +325,21 @@ The runner uses AgentDojo's own user-task utility and injection-task security ch
 It records raw task-pair outcomes, the exact task capability manifest, suite/model/
 attack configuration, task durations, PACA++ audit entries, denied calls, token-
 verified dispatch attempts, execution errors, approval requests, and measured
-policy-decision time. Its summary reports benign utility, utility under attack,
-and attack success rate for both conditions. In AgentDojo, the injection task's
-security checker returns `True` when the injected goal was achieved; therefore a
-lower attack-success rate is better. Denominators and skipped attack pairs are
-reported explicitly.
+policy-decision time. The summary separates PACA++ metrics for benign and attacked
+episodes. Mean policy-decision overhead is divided by the number of tool calls that
+actually reached PACA++ request evaluation, not by malformed calls rejected before
+policy evaluation. Denied tool calls during benign and attacked episodes are reported
+separately; a denial is not automatically classified as a false block. Benign utility
+regressions are reported as task-count differences. AgentDojo's recorded runtime errors
+are retained and counted separately rather than silently removed from denominators.
+
+The summary reports benign utility, utility under attack, and attack success rate for
+both conditions. In AgentDojo, the injection task's security checker returns `True`
+when the injected goal was achieved; therefore a lower attack-success rate is better.
+AgentDojo currently treats certain model/API errors conservatively as a successful
+injection in its benchmark helper. The runner preserves the associated error fields
+and reports error-sample counts, so those conservative outcomes are visible for review.
+Denominators and skipped attack pairs are reported explicitly.
 
 The workspace fixture does not provide PACA++ confidentiality labels. The runner
 therefore labels all returned workspace data as untrusted and at maximum PACA++
