@@ -20,7 +20,7 @@ agentdojo = ["agentdojo==0.1.35"]
 paca = "paca.cli:main"
 
 [tool.setuptools]
-packages = ["paca", "paca.policies"]
+packages = ["paca", "paca.policies", "paca.integrations"]
 
 [tool.setuptools.package-data]
 paca = ["policies/*.paca"]
