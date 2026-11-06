@@ -54,10 +54,10 @@ def aggregate_prior_output_labels(extra_args: Mapping[str, Any]) -> Label:
     labels = extra_args.get("paca_output_labels", {})
     if not isinstance(labels, Mapping):
         return Label(integrity="untrusted", origins=frozenset({"unknown_agentdojo_lineage"}))
-    valid = [value for value in labels.values() if isinstance(value, Label)]
-    if not valid:
+    recorded = list(labels.values())
+    if not recorded or any(not isinstance(value, Label) for value in recorded):
         return Label(integrity="untrusted", origins=frozenset({"unknown_agentdojo_lineage"}))
-    return Label.join(*valid)
+    return Label.join(*recorded)
 
 
 class PacaToolsExecutor(ToolsExecutor):
