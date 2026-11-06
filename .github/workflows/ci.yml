@@ -89,4 +89,4 @@ jobs:
           pip install -e ".[dev,agentdojo]"
 
       - name: Run AgentDojo adapter tests
-        run: pytest -q tests/test_agentdojo_integration.py
+        run: pytest -q tests/test_agentdojo_integration.py tests/test_agentdojo_workspace_mapping.py
