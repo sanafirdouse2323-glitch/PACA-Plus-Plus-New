@@ -277,7 +277,9 @@ class PacaToolsExecutor(ToolsExecutor):
             if not isinstance(output_labels, dict):
                 output_labels = {}
                 state["paca_output_labels"] = output_labels
-            output_labels[str(call_id)] = output_label
+            # Tool-call IDs may be reused in later turns. Keep each result label
+            # as a distinct event so a later call cannot overwrite earlier lineage.
+            output_labels[f"{call_id}:{self._output_counter}"] = output_label
 
             try:
                 formatted_result = self.output_formatter(result)
