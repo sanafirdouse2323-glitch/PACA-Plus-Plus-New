@@ -265,95 +265,101 @@ independent attack-success or utility measurements.
 
 ## Reproducible benchmark runner
 
-The repository now provides an executable paired runner:
+### 4. How to use it
 
-`paca-agentdojo`
+Install the optional dependency:
 
-It runs the stock AgentDojo pipeline without a defence and the PACA++-wrapped
-pipeline against the same explicitly selected workspace task and injection-task
-pairs. For every PACA++ episode it creates a fresh in-process monitor, executor,
-capability, and step counter. The capability is derived only from that workspace
-user task's ground-truth calls on the clean, uninjected fixture. Injection-task
-ground truth and model-generated calls are never used to mint authority.
+```bash
+pip install -e ".[dev,agentdojo]"
+```
 
-First install the pinned optional dependency:
+Discover the available tasks in the pinned AgentDojo workspace suite:
 
-~~~bash
-python -m pip install -e ".[dev,agentdojo]"
-~~~
-
-Discover the exact task IDs available in the installed suite release:
-
-~~~bash
+```bash
 paca-agentdojo --list-supported-tasks
 paca-agentdojo --list-injection-tasks
-~~~
+```
 
-Review a task policy without making model calls:
+Prepare an experiment without calling an LLM:
 
-~~~bash
+```bash
 paca-agentdojo \
   --model gpt-4o-2024-05-13 \
   --user-tasks user_task_1,user_task_16 \
-  --injection-tasks INJECTION_TASK_ID_FROM_LIST \
+  --injection-tasks YOUR_SELECTED_INJECTION_IDS \
   --attack tool_knowledge \
   --dry-run
-~~~
+```
 
-Replace `INJECTION_TASK_ID_FROM_LIST` with one or more actual IDs returned by
-`--list-injection-tasks`. The runner rejects any selected user task whose trusted
-ground-truth tool calls include an operation outside the supported mapper.
+Replace `YOUR_SELECTED_INJECTION_IDS` with one or more comma-separated IDs
+returned by `--list-injection-tasks`. Do not use a guessed or hand-typed task ID.
+The two example user tasks above are included in the supported read-scoped task
+set; the runner will reject any selected user task whose trusted ground-truth
+tool calls include an operation outside the mapper.
 
-Run the paired benchmark after configuring the chosen provider's credentials using
-AgentDojo's supported environment variables:
+The dry run validates the selected task IDs and emits each task's exact
+ground-truth-derived capability manifest. It does not construct an AgentDojo
+LLM pipeline, call a model, or require provider credentials. The `--model`
+value is still required to make the intended model configuration explicit in
+the manifest.
 
-~~~bash
+### Run the paired benchmark
+
+After the dry run, configure the selected model provider using AgentDojo's
+supported environment variables/API credentials, then run the same task and
+injection selections without `--dry-run`:
+
+```bash
 paca-agentdojo \
   --model gpt-4o-2024-05-13 \
   --user-tasks user_task_1,user_task_16 \
-  --injection-tasks INJECTION_TASK_ID_FROM_LIST \
+  --injection-tasks YOUR_SELECTED_INJECTION_IDS \
   --attack tool_knowledge \
   --log-dir runs/agentdojo \
   --output runs/agentdojo/paca-comparison.json
-~~~
+```
 
-For a local model, use AgentDojo's `local` or `openai-compatible` model identifier
-and supply the corresponding `--model-id` and endpoint environment variables.
-Do not put API keys in command-line arguments, task manifests, or result files.
+For a local model, use AgentDojo's `local` or `openai-compatible` model
+identifier and supply the corresponding `--model-id` and endpoint environment
+variables. Do not put API keys in command-line arguments, task manifests, or
+result files.
 
-The runner uses AgentDojo's own user-task utility and injection-task security checks.
-It records raw task-pair outcomes, the exact task capability manifest, suite/model/
-attack configuration, task durations, PACA++ audit entries, denied calls, token-
-verified dispatch attempts, execution errors, approval requests, and measured
-policy-decision time. The summary separates PACA++ metrics for benign and attacked
-episodes. Mean policy-decision overhead is divided by the number of tool calls that
-actually reached PACA++ request evaluation, not by malformed calls rejected before
-policy evaluation. Denied tool calls during benign and attacked episodes are reported
-separately; a denial is not automatically classified as a false block. Benign utility
-regressions are reported as task-count differences. AgentDojo's recorded runtime errors
-are retained and counted separately rather than silently removed from denominators.
+The runner uses AgentDojo's own user-task utility and injection-task security
+checks. It records raw task-pair outcomes, the exact task capability manifest,
+suite/model/attack configuration, task durations, PACA++ audit entries, denied
+calls, token-verified dispatch attempts, execution errors, approval requests,
+and measured policy-decision time. The summary separates PACA++ metrics for
+benign and attacked episodes. Mean policy-decision overhead is divided by the
+number of tool calls that actually reached PACA++ request evaluation, not by
+malformed calls rejected before policy evaluation. Denied tool calls during
+benign and attacked episodes are reported separately; a denial is not
+automatically classified as a false block. Benign utility regressions are
+reported as task-count differences. AgentDojo's recorded runtime errors are
+retained and counted separately rather than silently removed from denominators.
 
-The summary reports benign utility, utility under attack, and attack success rate for
-both conditions. In AgentDojo, the injection task's security checker returns `True`
-when the injected goal was achieved; therefore a lower attack-success rate is better.
-AgentDojo currently treats certain model/API errors conservatively as a successful
-injection in its benchmark helper. The runner preserves the associated error fields
-and reports error-sample counts, so those conservative outcomes are visible for review.
-Denominators and skipped attack pairs are reported explicitly.
+The summary reports benign utility, utility under attack, and attack success
+rate for both conditions. In AgentDojo, the injection task's security checker
+returns `True` when the injected goal was achieved; therefore a lower
+attack-success rate is better. AgentDojo currently treats certain model/API
+errors conservatively as a successful injection in its benchmark helper. The
+runner preserves the associated error fields and reports error-sample counts,
+so those conservative outcomes are visible for review. Denominators and
+skipped attack pairs are reported explicitly.
 
-The workspace fixture does not provide PACA++ confidentiality labels. The runner
-therefore labels all returned workspace data as untrusted and at maximum PACA++
-sensitivity (3), with a benchmark tenant identifier. This is a deliberately
-conservative experiment policy, not a claim that AgentDojo has native data-sensitivity
-metadata.
+The workspace fixture does not provide PACA++ confidentiality labels. The
+runner therefore labels all returned workspace data as untrusted and at
+maximum PACA++ sensitivity (3), with a benchmark tenant identifier. This is a
+deliberately conservative experiment policy, not a claim that AgentDojo has
+native data-sensitivity metadata.
 
 The first runner intentionally excludes DoS attack classes and does not cover
-workspace tasks that require writes, deletes, sends, sharing, or calendar mutations.
-It does not measure OPA, NeMo Guardrails, OpenAI Agents SDK, or AgentDojo's other
-defence settings. Those are separate integrations/conditions. CI tests the runner
-and mapper APIs with the pinned AgentDojo dependency; CI does not call an LLM API
-and does not generate benchmark scores. An actual result file is created only when
-the operator runs the command with configured model credentials.
+workspace tasks that require writes, deletes, sends, sharing, or calendar
+mutations. It does not measure OPA, NeMo Guardrails, OpenAI Agents SDK, or
+AgentDojo's other defence settings. Those are separate integrations/conditions.
+CI tests the runner and mapper APIs with the pinned AgentDojo dependency; CI
+does not call an LLM API and does not generate benchmark scores. An actual
+result file is created only when the operator runs the command with configured
+model credentials.
 
 ## Approval behavior
 
