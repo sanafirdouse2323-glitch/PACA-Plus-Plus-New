@@ -139,8 +139,9 @@ benchmark's ground-truth attack flag is not an authenticated approval mechanism.
   descriptions, or all non-function-tool surfaces.
 - The application policy mapper and task-specific capability issuance are not
   supplied automatically. A weak mapper can invalidate the security argument.
-- Output labels are stored in extra_args; the mapper must explicitly use them when
-  labelling downstream derived data. The adapter cannot infer exact LLM data lineage.
+- Output labels are stored in extra_args under unique result-event keys; the mapper must
+  explicitly use them when labelling downstream derived data. The adapter cannot infer
+  exact LLM data lineage.
 - The tool's underlying function remains responsible for validating action-specific
   semantics and ensuring the actual external effect matches the authorised request.
 - This adapter does not wrap AgentDojo's hosted model provider, nor does it eliminate
