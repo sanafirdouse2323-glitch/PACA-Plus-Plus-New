@@ -93,7 +93,10 @@ If an agent framework lets the model attach its own labels, the guarantees do no
 and a deterministic simulator; it does not yet contain adapters for a real LLM/agent framework or an
 independent production executor. The scenario harness supplies read content to `Session.ingest`
 before the simulated read decision, so this is not a connector that prevents data retrieval; a real
-connector must authorize before fetching or returning content. The simulator's memory-read path
+connector must authorize before fetching or returning content. In this request model, `fetch_url`
+treats its declared `query` field as outbound data; implicit HTTP headers, cookies, credentials,
+and other transport-layer state are not modeled. A real connector must include any such data in
+the authorization-bound request representation. The simulator's memory-read path
 authorizes using a separately stored label before looking up the stored value, but it is still an
 in-memory test harness, not an integrated memory-store adapter. Inbound communication through
 `Session.receive` and agent planning are not independently mediated by a real runtime in this prototype.
