@@ -202,13 +202,15 @@ def test_agentdojo_adapter_advances_step_for_repeated_calls_under_one_capability
         return request
 
     runtime = RuntimeStub(["read_report"])
-    executor = PacaToolsExecutor(Monitor(), request_builder)
+    monitor = Monitor()
+    executor = PacaToolsExecutor(monitor, request_builder)
     _run(executor, runtime, "read_report", {"path": "/tenant-a/report.txt"})
     _run(executor, runtime, "read_report", {"path": "/tenant-a/report.txt"})
 
     assert observed_steps == [1, 1]  # builder may reuse an initial step
     assert len(runtime.calls) == 2
     assert executor._last_steps[cap.cap_id] == 2
+    assert [entry["step"] for entry in monitor.audit.entries if "step" in entry] == [1, 2]
 
 
 def test_agentdojo_adapter_does_not_claim_tool_was_not_executed_after_runtime_error():
@@ -246,3 +248,68 @@ def test_aggregate_prior_output_labels_fails_closed_on_any_unlabelled_entry():
 
     assert result.integrity == "untrusted"
     assert "unknown_agentdojo_lineage" in result.origins
+
+
+def test_agentdojo_adapter_accepts_only_verifier_accepted_approval_evidence():
+    cap = Capability(
+        "cap-approved", "user@example.test", "tenant-a", "task-approved", "assistant",
+        {"send_email": ("*@partner.example",)}, expires=100,
+    )
+
+    def request_builder(function_name, arguments, env, extra_args):
+        return Request(
+            "send_email",
+            {
+                "to": Arg(arguments["recipient"], Label("untrusted", origins=frozenset({"model_argument"}))),
+                "body": Arg("public update", Label("trusted", 0, "tenant-a")),
+            },
+            cap,
+            step=1,
+        )
+
+    runtime = RuntimeStub(["send_update"])
+    monitor = Monitor(approval_verifier=lambda request, evidence: evidence == "signed-approval-evidence")
+    executor = PacaToolsExecutor(
+        monitor,
+        request_builder,
+        approval_provider=lambda request, decision, env, state: "signed-approval-evidence",
+    )
+    _run(executor, runtime, "send_update", {
+        "recipient": "person@partner.example",
+        "body": "public update",
+    })
+
+    assert len(runtime.calls) == 1
+
+
+def test_agentdojo_adapter_rejects_boolean_approval_callback():
+    cap = Capability(
+        "cap-bool-approval", "user@example.test", "tenant-a", "task-bool-approval", "assistant",
+        {"send_email": ("*@partner.example",)}, expires=100,
+    )
+
+    def request_builder(function_name, arguments, env, extra_args):
+        return Request(
+            "send_email",
+            {
+                "to": Arg(arguments["recipient"], Label("untrusted", origins=frozenset({"model_argument"}))),
+                "body": Arg("public update", Label("trusted", 0, "tenant-a")),
+            },
+            cap,
+            step=1,
+        )
+
+    runtime = RuntimeStub(["send_update"])
+    monitor = Monitor(approval_verifier=lambda request, evidence: True)
+    executor = PacaToolsExecutor(
+        monitor,
+        request_builder,
+        approval_provider=lambda request, decision, env, state: True,  # type: ignore[return-value]
+    )
+    _, _, _, messages, _ = _run(executor, runtime, "send_update", {
+        "recipient": "person@partner.example",
+        "body": "public update",
+    })
+
+    assert runtime.calls == []
+    assert "integration error" in messages[-1]["error"]
