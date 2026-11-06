@@ -69,7 +69,7 @@ def test_agentdojo_adapter_authorizes_before_dispatch_and_retains_read_label():
     assert runtime.calls[0][1] == {"path": "/tenant-a/report.txt"}
     assert messages[-1]["role"] == "tool"
     assert "confidential report body" in messages[-1]["content"][0]["content"]
-    assert state["paca_output_labels"]["call-1"].sensitivity == 2
+    assert state["paca_output_labels"]["call-1:1"].sensitivity == 2
     assert aggregate_prior_output_labels(state).sensitivity == 2
     assert aggregate_prior_output_labels(state).integrity == "untrusted"
 
@@ -313,3 +313,42 @@ def test_agentdojo_adapter_rejects_boolean_approval_callback():
 
     assert runtime.calls == []
     assert "integration error" in messages[-1]["error"]
+
+
+def test_agentdojo_adapter_does_not_overwrite_output_labels_when_call_id_repeats():
+    cap = Capability(
+        "cap-reused-call-id", "user@example.test", "tenant-a", "task-reused-call-id", "assistant",
+        {"read_file": ("/tenant-a/report.txt",)}, expires=100,
+    )
+
+    def request_builder(function_name, arguments, env, extra_args):
+        return Request(
+            "read_file",
+            {"path": Arg(arguments["path"], Label("untrusted"))},
+            cap,
+            step=1,
+            resource=Label(
+                "untrusted", sensitivity=3, tenant="tenant-a",
+                origins=frozenset({"sensitive_report_store"}),
+            ),
+        )
+
+    runtime = RuntimeStub(["read_report"], result="report")
+    executor = PacaToolsExecutor(Monitor(), request_builder)
+    state = {
+        "paca_output_labels": {
+            "call-1:prior": Label(
+                "untrusted", sensitivity=1, tenant="tenant-a",
+                origins=frozenset({"earlier_result"}),
+            )
+        }
+    }
+
+    _run(executor, runtime, "read_report", {"path": "/tenant-a/report.txt"}, state)
+
+    labels = state["paca_output_labels"]
+    assert "call-1:prior" in labels
+    assert "call-1:1" in labels
+    assert labels["call-1:prior"].sensitivity == 1
+    assert labels["call-1:1"].sensitivity == 3
+    assert aggregate_prior_output_labels(state).sensitivity == 3
