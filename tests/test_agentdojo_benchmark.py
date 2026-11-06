@@ -88,3 +88,55 @@ def test_supported_task_listing_separates_mapped_and_unmapped_tasks():
     assert "user_task_6" in excluded_ids
     assert all(item["tool_calls"] for item in supported)
     assert all(item["reason"] for item in excluded)
+
+
+def test_runner_uses_pinned_agentdojo_benchmark_api_contract():
+    import inspect
+
+    from paca.integrations.agentdojo_benchmark import _agentdojo_imports
+
+    api = _agentdojo_imports()
+
+    without_parameters = inspect.signature(
+        api["run_task_without_injection_tasks"]
+    ).parameters
+    with_parameters = inspect.signature(
+        api["run_task_with_injection_tasks"]
+    ).parameters
+    assert "benchmark_version" in without_parameters
+    assert "benchmark_version" in with_parameters
+    assert "injection_tasks" in with_parameters
+
+
+def test_runner_lists_real_injection_task_ids_without_model_initialization(capsys):
+    from paca.integrations.agentdojo_benchmark import main
+
+    result = main(["--list-injection-tasks"])
+    output = capsys.readouterr().out
+
+    assert result == 0
+    payload = __import__("json").loads(output)
+    assert payload["injection_task_ids"]
+    assert all(task_id.startswith("injection_task_") for task_id in payload["injection_task_ids"])
+
+
+def test_runner_dry_run_emits_task_manifest_without_constructing_llm_pipeline(capsys):
+    from paca.integrations.agentdojo_benchmark import main
+
+    suite = get_suite("v1.2.2", "workspace")
+    injection_id = next(iter(suite.injection_tasks))
+
+    result = main([
+        "--model", "gpt-4o-2024-05-13",
+        "--user-tasks", "user_task_1",
+        "--injection-tasks", injection_id,
+        "--dry-run",
+    ])
+    output = capsys.readouterr().out
+    payload = __import__("json").loads(output)
+
+    assert result == 0
+    assert payload["status"] == "dry_run"
+    assert payload["task_policies"]["user_task_1"]["grants"] == {
+        "read_calendar": ["calendar:day:2024-05-15"]
+    }
