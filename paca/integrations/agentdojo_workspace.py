@@ -103,6 +103,24 @@ class WorkspaceTaskContext:
             value = getattr(self.capability, name)
             if not isinstance(value, str) or not value.strip():
                 raise ValueError(f"capability.{name} must be a non-empty string")
+        allowed_actions = {"read_mail", "mark_mail_read", "read_calendar", "read_drive"}
+        if not isinstance(self.capability.grants, Mapping):
+            raise TypeError("capability.grants must be a mapping")
+        for action, patterns in self.capability.grants.items():
+            if action not in allowed_actions:
+                raise ValueError(f"unsupported workspace capability action: {action!r}")
+            if not isinstance(patterns, (tuple, list)):
+                raise TypeError(f"capability grants for {action!r} must be a tuple or list")
+            if any(not isinstance(pattern, str) or not pattern.strip() for pattern in patterns):
+                raise ValueError(f"capability grants for {action!r} must contain non-empty strings")
+        for name in ("expires", "max_calls", "max_fanout"):
+            value = getattr(self.capability, name)
+            if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+                raise ValueError(f"capability.{name} must be a positive integer")
+        if self.initial_step > self.capability.expires:
+            raise ValueError("initial_step must not exceed capability.expires")
+        if self.capability.calls < 0 or self.capability.calls >= self.capability.max_calls:
+            raise ValueError("capability.calls must be non-negative and below max_calls")
 
 
 def _validate_arguments(
@@ -171,6 +189,14 @@ def _resource_label(
         raise TypeError(
             "resource_labeler must return a PACA++ Label for "
             f"the {source!r} source"
+        )
+    if label.integrity != "untrusted":
+        raise ValueError(
+            f"AgentDojo {source!r} resources must be labelled untrusted"
+        )
+    if context.capability.tenant not in label.tenants:
+        raise ValueError(
+            f"AgentDojo {source!r} resource label must include the capability tenant"
         )
     return label
 
