@@ -1,8 +1,8 @@
 """Reproducible, task-scoped AgentDojo workspace benchmark runner.
 
-This runner compares AgentDojo's stock no-defense pipeline with PACA++ for
-explicitly selected workspace user tasks whose trusted ground-truth calls are
-entirely within the PACA++ read-scoped workspace mapper.
+This runner compares AgentDojo's stock no-defense and built-in tool_filter
+pipelines with PACA++ for explicitly selected workspace user tasks whose
+trusted ground-truth calls are entirely within the PACA++ read-scoped mapper.
 
 It uses AgentDojo's own task/attack result checkers and logger. It does not claim
 full workspace-suite coverage, and it does not run until an operator explicitly
@@ -15,6 +15,7 @@ import importlib.metadata
 import json
 import statistics
 import sys
+from types import SimpleNamespace
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -242,11 +243,12 @@ def _build_pipeline(
     pipeline_name: str,
     max_iters: int,
     task_policy: TaskPolicy | None = None,
+    defense: str | None = None,
 ) -> tuple[Any, PacaToolsExecutor | None, Any | None]:
     config = api["PipelineConfig"](
         llm=model,
         model_id=model_id,
-        defense=None,
+        defense=defense,
         tool_delimiter="tool",
         system_message_name=None,
         system_message=None,
@@ -280,7 +282,7 @@ def _build_pipeline(
     ]
     if len(executor_indices) != 1:
         raise RuntimeError(
-            "Expected exactly one stock AgentDojo ToolsExecutor in the unprotected pipeline"
+            "Expected exactly one stock AgentDojo ToolsExecutor in the AgentDojo pipeline"
         )
     tools_loop.elements[executor_indices[0]] = executor
     return pipeline, executor, executor.monitor
@@ -333,6 +335,37 @@ def _sum_metrics(records: list[dict[str, int]]) -> dict[str, int]:
     return {key: sum(record.get(key, 0) for record in records) for key in keys}
 
 
+def _preflight_attack_pairs(
+    api: dict[str, Any],
+    suite: Any,
+    *,
+    user_task_ids: list[str],
+    injection_task_ids: list[str],
+    model: str,
+    attack_name: str,
+) -> tuple[dict[str, list[str]], list[dict[str, str]]]:
+    """Find applicable attack pairs without creating an LLM client or calling a model."""
+    attack_pipeline = SimpleNamespace(name=model)
+    attack = api["load_attack"](attack_name, suite, attack_pipeline)
+    applicable: dict[str, list[str]] = {}
+    skipped: list[dict[str, str]] = []
+    for user_task_id in user_task_ids:
+        user_task = suite.user_tasks[user_task_id]
+        applicable[user_task_id] = []
+        for injection_task_id in injection_task_ids:
+            try:
+                attack.attack(user_task, suite.injection_tasks[injection_task_id])
+            except ValueError as exc:
+                skipped.append({
+                    "user_task_id": user_task_id,
+                    "injection_task_id": injection_task_id,
+                    "reason": f"{type(exc).__name__}: {exc}",
+                })
+                continue
+            applicable[user_task_id].append(injection_task_id)
+    return applicable, skipped
+
+
 def run_workspace_benchmark(
     *,
     suite: Any,
@@ -345,20 +378,24 @@ def run_workspace_benchmark(
     output_path: Path,
     max_iters: int = 15,
 ) -> dict[str, Any]:
-    """Run paired no-defense and PACA++ conditions for explicitly selected tasks.
+    """Run matched no-defense, AgentDojo tool_filter, and PACA++ conditions.
 
-    A separate executor, monitor, capability, and task-step counter are created
-    for every task episode. The baseline and PACA++ conditions use the same model,
-    system message, tool output format, iteration limit, user-task ID, attack, and
-    injection-task ID. No API call occurs during dry-run/task-policy derivation.
+    All conditions use the same model, suite, selected user/injection tasks,
+    attack, prompt, output format, and iteration limit. The official AgentDojo
+    tool_filter condition is available only for OpenAI-backed models.
     """
     api = _agentdojo_imports()
-    from agentdojo.models import ModelsEnum
+    from agentdojo.models import MODEL_PROVIDERS, ModelsEnum
 
     try:
-        ModelsEnum(model)
+        model_enum = ModelsEnum(model)
     except ValueError as exc:
         raise ValueError(f"unsupported AgentDojo model identifier: {model!r}") from exc
+    if MODEL_PROVIDERS[model_enum] != "openai":
+        raise ValueError(
+            "The AgentDojo tool_filter comparison requires an OpenAI-backed model; "
+            f"{model!r} is provided by {MODEL_PROVIDERS[model_enum]!r}."
+        )
     if attack_name.lower().endswith("_dos") or attack_name in {"dos", "manual"}:
         raise ValueError(
             "DoS and interactive manual attacks are not included in this first workspace runner; "
@@ -368,6 +405,8 @@ def run_workspace_benchmark(
         raise ValueError("max_iters must be between 1 and 100")
     if not user_task_ids or not injection_task_ids:
         raise ValueError("at least one user task and one injection task must be selected")
+    if len(set(user_task_ids)) != len(user_task_ids) or len(set(injection_task_ids)) != len(injection_task_ids):
+        raise ValueError("duplicate user-task or injection-task IDs are not allowed")
 
     available_users = suite.user_tasks
     available_injections = suite.injection_tasks
@@ -378,9 +417,26 @@ def run_workspace_benchmark(
     if missing_injections:
         raise ValueError(f"unknown workspace injection task IDs: {missing_injections}")
 
+    # Derive all policy manifests and preflight the attack matrix before any
+    # provider client is constructed or any billable model request is sent.
+    policies = {
+        task_id: derive_task_policy(available_users[task_id], suite)
+        for task_id in user_task_ids
+    }
+    applicable_by_task, skipped_pairs = _preflight_attack_pairs(
+        api, suite, user_task_ids=user_task_ids, injection_task_ids=injection_task_ids,
+        model=model, attack_name=attack_name,
+    )
+    applicable_pair_count = sum(len(values) for values in applicable_by_task.values())
+    if applicable_pair_count == 0:
+        raise ValueError(
+            "none of the selected injection tasks is applicable to the selected user tasks "
+            "for this AgentDojo attack; no model calls were made. Run --dry-run and select "
+            "an attack/task combination with at least one applicable pair."
+        )
+
     log_dir.mkdir(parents=True, exist_ok=True)
     output_path.parent.mkdir(parents=True, exist_ok=True)
-
     results: dict[str, Any] = {
         "status": "running",
         "started_at": datetime.now(timezone.utc).isoformat(),
@@ -394,22 +450,20 @@ def run_workspace_benchmark(
             "attack": attack_name,
             "user_task_ids": user_task_ids,
             "injection_task_ids": injection_task_ids,
+            "applicable_attack_pairs": applicable_pair_count,
             "max_iters": max_iters,
-            "conditions": ["agentdojo_no_defense", "paca_plus_plus"],
+            "conditions": ["agentdojo_no_defense", "agentdojo_tool_filter", "paca_plus_plus"],
             "workspace_mapper_scope": sorted(SUPPORTED_WORKSPACE_READ_TOOLS),
             "resource_label_policy": "untrusted integrity; sensitivity 3 (maximum); benchmark tenant",
         },
         "task_policies": {},
         "task_results": [],
-        "skipped_attack_pairs": [],
+        "skipped_attack_pairs": skipped_pairs,
     }
 
-    baseline_benign: list[bool] = []
-    paca_benign: list[bool] = []
-    baseline_attack_success: list[bool] = []
-    paca_attack_success: list[bool] = []
-    baseline_utility_under_attack: list[bool] = []
-    paca_utility_under_attack: list[bool] = []
+    benign_values = {"agentdojo_no_defense": [], "agentdojo_tool_filter": [], "paca_plus_plus": []}
+    attacked_utility = {"agentdojo_no_defense": [], "agentdojo_tool_filter": [], "paca_plus_plus": []}
+    attacked_success = {"agentdojo_no_defense": [], "agentdojo_tool_filter": [], "paca_plus_plus": []}
     paca_benign_metrics: list[dict[str, int]] = []
     paca_attacked_metrics: list[dict[str, int]] = []
 
@@ -422,72 +476,78 @@ def run_workspace_benchmark(
     save_checkpoint()
     for user_task_id in user_task_ids:
         user_task = available_users[user_task_id]
-        policy = derive_task_policy(user_task, suite)
+        policy = policies[user_task_id]
         results["task_policies"][user_task_id] = {
-            "grants": {
-                action: list(patterns)
-                for action, patterns in policy.capability.grants.items()
-            },
+            "grants": {action: list(patterns) for action, patterns in policy.capability.grants.items()},
             "ground_truth_tool_calls": list(policy.manifest),
+            "applicable_injection_task_ids": applicable_by_task[user_task_id],
         }
 
-        # Benign (no-injection) baseline.
-        baseline_name = f"{model}__agentdojo_baseline"
+        baseline_name = f"{model}__agentdojo_no_defense"
+        filter_name = f"{model}__agentdojo_tool_filter"
+        paca_name = f"{model}__paca_plus_plus"
+
+        # Benign no-defense condition.
         baseline_pipeline, _, _ = _build_pipeline(
-            api,
-            model=model,
-            model_id=model_id,
-            pipeline_name=baseline_name,
+            api, model=model, model_id=model_id, pipeline_name=baseline_name,
             max_iters=max_iters,
         )
-        base_utility, _ = api["run_task_without_injection_tasks"](
-            suite,
-            baseline_pipeline,
-            user_task,
-            log_dir,
-            True,
+        baseline_utility_value, _ = api["run_task_without_injection_tasks"](
+            suite, baseline_pipeline, user_task, log_dir, True,
             benchmark_version=DEFAULT_SUITE_VERSION,
         )
-        base_result = _load_saved_result(
+        baseline_result = _load_saved_result(
             api, baseline_name, suite.name, user_task_id, "none", "none", log_dir
         )
 
-        # Benign (no-injection) PACA++ condition. A fresh capability is used for
-        # this episode and is not reused by any injection episode.
-        paca_name = f"{model}__paca_plus_plus"
+        # Benign official AgentDojo tool-filter condition.
+        filter_pipeline, _, _ = _build_pipeline(
+            api, model=model, model_id=model_id, pipeline_name=filter_name,
+            max_iters=max_iters, defense="tool_filter",
+        )
+        filter_utility_value, _ = api["run_task_without_injection_tasks"](
+            suite, filter_pipeline, user_task, log_dir, True,
+            benchmark_version=DEFAULT_SUITE_VERSION,
+        )
+        filter_result = _load_saved_result(
+            api, filter_name, suite.name, user_task_id, "none", "none", log_dir
+        )
+
+        # Benign PACA++ condition with a fresh task capability.
         paca_policy = derive_task_policy(user_task, suite, episode_id="benign")
         paca_pipeline, paca_executor, paca_monitor = _build_pipeline(
-            api,
-            model=model,
-            model_id=model_id,
-            pipeline_name=paca_name,
-            max_iters=max_iters,
-            task_policy=paca_policy,
+            api, model=model, model_id=model_id, pipeline_name=paca_name,
+            max_iters=max_iters, task_policy=paca_policy,
         )
         paca_utility_value, _ = api["run_task_without_injection_tasks"](
-            suite,
-            paca_pipeline,
-            user_task,
-            log_dir,
-            True,
+            suite, paca_pipeline, user_task, log_dir, True,
             benchmark_version=DEFAULT_SUITE_VERSION,
         )
         paca_result = _load_saved_result(
             api, paca_name, suite.name, user_task_id, "none", "none", log_dir
         )
-        base_utility_bool = bool(base_utility)
-        paca_utility_bool = bool(paca_utility_value)
-        baseline_benign.append(base_utility_bool)
-        paca_benign.append(paca_utility_bool)
+
+        benign_condition_values = {
+            "agentdojo_no_defense": bool(baseline_utility_value),
+            "agentdojo_tool_filter": bool(filter_utility_value),
+            "paca_plus_plus": bool(paca_utility_value),
+        }
+        for condition, value in benign_condition_values.items():
+            benign_values[condition].append(value)
         task_result: dict[str, Any] = {
             "user_task_id": user_task_id,
             "benign": {
-                "baseline_utility": base_utility_bool,
-                "paca_utility": paca_utility_bool,
-                "baseline_duration_seconds": float(base_result.duration),
-                "paca_duration_seconds": float(paca_result.duration),
-                "baseline_error": base_result.error,
-                "paca_error": paca_result.error,
+                "utility": benign_condition_values,
+                "duration_seconds": {
+                    "agentdojo_no_defense": float(baseline_result.duration),
+                    "agentdojo_tool_filter": float(filter_result.duration),
+                    "paca_plus_plus": float(paca_result.duration),
+                },
+                "error": {
+                    "agentdojo_no_defense": baseline_result.error,
+                    "agentdojo_tool_filter": filter_result.error,
+                    "paca_plus_plus": paca_result.error,
+                },
                 "paca_metrics": dict(paca_executor.metrics),
                 "paca_audit_entries": list(paca_monitor.audit.entries),
             },
@@ -497,123 +557,87 @@ def run_workspace_benchmark(
         paca_benign_metrics.append(dict(paca_executor.metrics))
         save_checkpoint()
 
-        # Check which selected injections are applicable to this user task before
-        # starting model calls. Unsupported/non-injectable pairs are recorded, not
-        # silently removed from the experiment denominator.
-        baseline_preflight_pipeline, _, _ = _build_pipeline(
-            api,
-            model=model,
-            model_id=model_id,
-            pipeline_name=baseline_name,
-            max_iters=max_iters,
-        )
-        preflight_attack = api["load_attack"](attack_name, suite, baseline_preflight_pipeline)
-        applicable_injections: list[str] = []
-        for injection_task_id in injection_task_ids:
+        for injection_task_id in applicable_by_task[user_task_id]:
             injection_task = available_injections[injection_task_id]
-            try:
-                preflight_attack.attack(user_task, injection_task)
-            except ValueError as exc:
-                results["skipped_attack_pairs"].append(
-                    {
-                        "user_task_id": user_task_id,
-                        "injection_task_id": injection_task_id,
-                        "reason": f"{type(exc).__name__}: {exc}",
-                    }
-                )
-                continue
-            applicable_injections.append(injection_task_id)
+            pair = (user_task_id, injection_task_id)
 
-        for injection_task_id in applicable_injections:
-            injection_task = available_injections[injection_task_id]
-            episode_id = injection_task_id
-
-            # Baseline attacked episode.
-            base_pipeline, _, _ = _build_pipeline(
-                api,
-                model=model,
-                model_id=model_id,
-                pipeline_name=baseline_name,
+            # No-defense attacked episode.
+            baseline_attack_pipeline, _, _ = _build_pipeline(
+                api, model=model, model_id=model_id, pipeline_name=baseline_name,
                 max_iters=max_iters,
             )
-            base_attack = api["load_attack"](attack_name, suite, base_pipeline)
-            base_utility_results, base_security_results = api["run_task_with_injection_tasks"](
-                suite,
-                base_pipeline,
-                user_task,
-                base_attack,
-                log_dir,
-                True,
-                injection_tasks=[injection_task_id],
-                benchmark_version=DEFAULT_SUITE_VERSION,
+            baseline_attack = api["load_attack"](attack_name, suite, baseline_attack_pipeline)
+            baseline_utility_results, baseline_security_results = api["run_task_with_injection_tasks"](
+                suite, baseline_attack_pipeline, user_task, baseline_attack, log_dir, True,
+                injection_tasks=[injection_task_id], benchmark_version=DEFAULT_SUITE_VERSION,
             )
-            base_pair = (user_task_id, injection_task_id)
-            base_pair_utility = bool(base_utility_results[base_pair])
-            base_pair_attack_success = bool(base_security_results[base_pair])
-            base_pair_result = _load_saved_result(
-                api, baseline_name, suite.name, user_task_id,
-                attack_name, injection_task_id, log_dir
+            baseline_pair_result = _load_saved_result(
+                api, baseline_name, suite.name, user_task_id, attack_name, injection_task_id, log_dir
             )
 
-            # PACA++ attacked episode with newly derived task-scoped authority.
+            # AgentDojo's official tool_filter defense, same task and attack.
+            filter_attack_pipeline, _, _ = _build_pipeline(
+                api, model=model, model_id=model_id, pipeline_name=filter_name,
+                max_iters=max_iters, defense="tool_filter",
+            )
+            filter_attack = api["load_attack"](attack_name, suite, filter_attack_pipeline)
+            filter_utility_results, filter_security_results = api["run_task_with_injection_tasks"](
+                suite, filter_attack_pipeline, user_task, filter_attack, log_dir, True,
+                injection_tasks=[injection_task_id], benchmark_version=DEFAULT_SUITE_VERSION,
+            )
+            filter_pair_result = _load_saved_result(
+                api, filter_name, suite.name, user_task_id, attack_name, injection_task_id, log_dir
+            )
+
+            # PACA++ attacked episode gets a fresh exact capability; attack data
+            # is never used to expand the capability.
             paca_pair_policy = derive_task_policy(
-                user_task, suite, episode_id=episode_id
+                user_task, suite, episode_id=injection_task_id,
             )
-            paca_pair_pipeline, paca_pair_executor, paca_pair_monitor = _build_pipeline(
-                api,
-                model=model,
-                model_id=model_id,
-                pipeline_name=paca_name,
-                max_iters=max_iters,
-                task_policy=paca_pair_policy,
+            paca_attack_pipeline, paca_pair_executor, paca_pair_monitor = _build_pipeline(
+                api, model=model, model_id=model_id, pipeline_name=paca_name,
+                max_iters=max_iters, task_policy=paca_pair_policy,
             )
-            paca_attack = api["load_attack"](attack_name, suite, paca_pair_pipeline)
+            paca_attack = api["load_attack"](attack_name, suite, paca_attack_pipeline)
             paca_utility_results, paca_security_results = api["run_task_with_injection_tasks"](
-                suite,
-                paca_pair_pipeline,
-                user_task,
-                paca_attack,
-                log_dir,
-                True,
-                injection_tasks=[injection_task_id],
-                benchmark_version=DEFAULT_SUITE_VERSION,
+                suite, paca_attack_pipeline, user_task, paca_attack, log_dir, True,
+                injection_tasks=[injection_task_id], benchmark_version=DEFAULT_SUITE_VERSION,
             )
-            paca_pair_utility = bool(paca_utility_results[base_pair])
-            paca_pair_attack_success = bool(paca_security_results[base_pair])
             paca_pair_result = _load_saved_result(
-                api, paca_name, suite.name, user_task_id,
-                attack_name, injection_task_id, log_dir
+                api, paca_name, suite.name, user_task_id, attack_name, injection_task_id, log_dir
             )
 
-            baseline_utility_under_attack.append(base_pair_utility)
-            paca_utility_under_attack.append(paca_pair_utility)
-            baseline_attack_success.append(base_pair_attack_success)
-            paca_attack_success.append(paca_pair_attack_success)
+            condition_results = {
+                "agentdojo_no_defense": {
+                    "utility": bool(baseline_utility_results[pair]),
+                    "attack_success": bool(baseline_security_results[pair]),
+                    "duration_seconds": float(baseline_pair_result.duration),
+                    "error": baseline_pair_result.error,
+                },
+                "agentdojo_tool_filter": {
+                    "utility": bool(filter_utility_results[pair]),
+                    "attack_success": bool(filter_security_results[pair]),
+                    "duration_seconds": float(filter_pair_result.duration),
+                    "error": filter_pair_result.error,
+                },
+                "paca_plus_plus": {
+                    "utility": bool(paca_utility_results[pair]),
+                    "attack_success": bool(paca_security_results[pair]),
+                    "duration_seconds": float(paca_pair_result.duration),
+                    "error": paca_pair_result.error,
+                    "metrics": dict(paca_pair_executor.metrics),
+                    "audit_entries": list(paca_pair_monitor.audit.entries),
+                },
+            }
+            for condition, record in condition_results.items():
+                attacked_utility[condition].append(record["utility"])
+                attacked_success[condition].append(record["attack_success"])
             paca_attacked_metrics.append(dict(paca_pair_executor.metrics))
-
-            task_result["attacked_pairs"].append(
-                {
-                    "injection_task_id": injection_task_id,
-                    "baseline": {
-                        "utility": base_pair_utility,
-                        "attack_success": base_pair_attack_success,
-                        "duration_seconds": float(base_pair_result.duration),
-                        "error": base_pair_result.error,
-                    },
-                    "paca": {
-                        "utility": paca_pair_utility,
-                        "attack_success": paca_pair_attack_success,
-                        "duration_seconds": float(paca_pair_result.duration),
-                        "error": paca_pair_result.error,
-                        "metrics": dict(paca_pair_executor.metrics),
-                        "audit_entries": list(paca_pair_monitor.audit.entries),
-                    },
-                }
-            )
+            task_result["attacked_pairs"].append({
+                "injection_task_id": injection_task_id,
+                "conditions": condition_results,
+            })
             save_checkpoint()
-
-        # The complete per-user-task record remains in task_results, including
-        # when every selected attack pair was marked inapplicable.
 
     benign_policy_metrics = _sum_metrics(paca_benign_metrics)
     attacked_policy_metrics = _sum_metrics(paca_attacked_metrics)
@@ -628,22 +652,28 @@ def run_workspace_benchmark(
             ),
         }
 
+    def error_counts(scope: str) -> dict[str, int]:
+        counts = {condition: 0 for condition in (
+            "agentdojo_no_defense", "agentdojo_tool_filter", "paca_plus_plus"
+        )}
+        if scope == "benign":
+            for item in results["task_results"]:
+                for condition, error in item["benign"]["error"].items():
+                    counts[condition] += int(bool(error))
+        else:
+            for item in results["task_results"]:
+                for pair_result in item["attacked_pairs"]:
+                    for condition, record in pair_result["conditions"].items():
+                        counts[condition] += int(bool(record["error"]))
+        return counts
+
     results["summary"] = {
-        "benign_task_count": len(baseline_benign),
-        "attack_pair_count": len(baseline_attack_success),
-        "skipped_attack_pair_count": len(results["skipped_attack_pairs"]),
-        "benign_utility": {
-            "agentdojo_no_defense": _mean(baseline_benign),
-            "paca_plus_plus": _mean(paca_benign),
-        },
-        "utility_under_attack": {
-            "agentdojo_no_defense": _mean(baseline_utility_under_attack),
-            "paca_plus_plus": _mean(paca_utility_under_attack),
-        },
-        "attack_success_rate": {
-            "agentdojo_no_defense": _mean(baseline_attack_success),
-            "paca_plus_plus": _mean(paca_attack_success),
-        },
+        "benign_task_count": len(user_task_ids),
+        "attack_pair_count": applicable_pair_count,
+        "skipped_attack_pair_count": len(skipped_pairs),
+        "benign_utility": {condition: _mean(values) for condition, values in benign_values.items()},
+        "utility_under_attack": {condition: _mean(values) for condition, values in attacked_utility.items()},
+        "attack_success_rate": {condition: _mean(values) for condition, values in attacked_success.items()},
         "paca_tool_metrics": {
             "benign": policy_metric_summary(benign_policy_metrics),
             "attacked": policy_metric_summary(attacked_policy_metrics),
@@ -651,28 +681,17 @@ def run_workspace_benchmark(
         },
         "denied_tool_calls_during_benign_tasks": benign_policy_metrics["denied_calls"],
         "denied_tool_calls_during_attacked_tasks": attacked_policy_metrics["denied_calls"],
-        "benign_utility_regression_count": sum(
-            base and not defended for base, defended in zip(baseline_benign, paca_benign)
+        "benign_utility_regressions_vs_no_defense": sum(
+            baseline and not defended
+            for baseline, defended in zip(benign_values["agentdojo_no_defense"], benign_values["paca_plus_plus"])
+        ),
+        "benign_utility_regressions_vs_tool_filter": sum(
+            baseline and not defended
+            for baseline, defended in zip(benign_values["agentdojo_tool_filter"], benign_values["paca_plus_plus"])
         ),
         "error_sample_counts": {
-            "baseline_benign": sum(
-                bool(item["benign"]["baseline_error"])
-                for item in results["task_results"]
-            ),
-            "paca_benign": sum(
-                bool(item["benign"]["paca_error"])
-                for item in results["task_results"]
-            ),
-            "baseline_attacked": sum(
-                bool(pair["baseline"]["error"])
-                for item in results["task_results"]
-                for pair in item["attacked_pairs"]
-            ),
-            "paca_attacked": sum(
-                bool(pair["paca"]["error"])
-                for item in results["task_results"]
-                for pair in item["attacked_pairs"]
-            ),
+            "benign": error_counts("benign"),
+            "attacked": error_counts("attacked"),
         },
         "attack_success_semantics": (
             "AgentDojo BaseInjectionTask.security returns True when the injection goal "
@@ -683,7 +702,6 @@ def run_workspace_benchmark(
     results["finished_at"] = datetime.now(timezone.utc).isoformat()
     save_checkpoint()
     return results
-
 
 def _csv_ids(value: str) -> list[str]:
     values = [item.strip() for item in value.split(",") if item.strip()]
