@@ -140,3 +140,21 @@ def test_runner_dry_run_emits_task_manifest_without_constructing_llm_pipeline(ca
     assert payload["task_policies"]["user_task_1"]["grants"] == {
         "read_calendar": ["calendar:day:2024-05-15"]
     }
+
+
+def test_runner_agentdojo_benchmark_function_signatures_are_available():
+    import inspect
+
+    from paca.integrations.agentdojo_benchmark import _agentdojo_imports
+
+    api = _agentdojo_imports()
+    assert "benchmark_version" in inspect.signature(
+        api["run_task_without_injection_tasks"]
+    ).parameters
+    assert "benchmark_version" in inspect.signature(
+        api["run_task_with_injection_tasks"]
+    ).parameters
+    assert "injection_tasks" in inspect.signature(
+        api["run_task_with_injection_tasks"]
+    ).parameters
+    assert "logdir" in inspect.signature(api["load_task_results"]).parameters
