@@ -14,6 +14,7 @@ dependencies = []
 
 [project.optional-dependencies]
 dev = ["pytest>=8.0"]
+agentdojo = ["agentdojo==0.1.35"]
 
 [project.scripts]
 paca = "paca.cli:main"
