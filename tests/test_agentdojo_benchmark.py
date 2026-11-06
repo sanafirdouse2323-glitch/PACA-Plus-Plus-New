@@ -127,7 +127,7 @@ def test_runner_dry_run_emits_task_manifest_without_constructing_llm_pipeline(ca
     injection_id = next(iter(suite.injection_tasks))
 
     result = main([
-        "--model", "gpt-4o-2024-05-13",
+        "--model", "gpt-4o-mini-2024-07-18",
         "--user-tasks", "user_task_1",
         "--injection-tasks", injection_id,
         "--dry-run",
@@ -140,6 +140,78 @@ def test_runner_dry_run_emits_task_manifest_without_constructing_llm_pipeline(ca
     assert payload["task_policies"]["user_task_1"]["grants"] == {
         "read_calendar": ["calendar:day:2024-05-15"]
     }
+    assert set(payload["applicable_injection_task_ids_by_user_task"]) == {"user_task_1"}
+    assert isinstance(payload["skipped_attack_pairs"], list)
+
+
+def test_runner_reports_preflight_pairs_without_constructing_a_model_client():
+    from paca.integrations.agentdojo_benchmark import (
+        _agentdojo_imports,
+        _preflight_attack_pairs,
+    )
+
+    suite = get_suite("v1.2.2", "workspace")
+    api = _agentdojo_imports()
+    applicable, skipped = _preflight_attack_pairs(
+        api,
+        suite,
+        user_task_ids=["user_task_1", "user_task_16"],
+        injection_task_ids=list(suite.injection_tasks),
+        model="gpt-4o-mini-2024-07-18",
+        attack_name="tool_knowledge",
+    )
+
+    assert set(applicable) == {"user_task_1", "user_task_16"}
+    assert all(isinstance(items, list) for items in applicable.values())
+    assert all(
+        item["user_task_id"] in applicable
+        for item in skipped
+    )
+
+
+def test_build_pipeline_passes_official_tool_filter_defense_to_agentdojo():
+    from types import SimpleNamespace
+
+    from paca.integrations.agentdojo_benchmark import _build_pipeline
+
+    class FakeConfig:
+        def __init__(self, **kwargs):
+            self.kwargs = kwargs
+
+    class FakeExecutor:
+        pass
+
+    class FakeToolsLoop:
+        def __init__(self):
+            self.elements = [FakeExecutor()]
+            self.max_iters = None
+
+    class FakePipeline:
+        @staticmethod
+        def from_config(config):
+            FakePipeline.last_config = config
+            return SimpleNamespace(name=None, elements=[FakeToolsLoop()])
+
+    api = {
+        "PipelineConfig": FakeConfig,
+        "AgentPipeline": FakePipeline,
+        "ToolsExecutionLoop": FakeToolsLoop,
+        "ToolsExecutor": FakeExecutor,
+    }
+
+    pipeline, executor, monitor = _build_pipeline(
+        api,
+        model="gpt-4o-mini-2024-07-18",
+        model_id=None,
+        pipeline_name="gpt-4o-mini-2024-07-18__tool_filter",
+        max_iters=12,
+        defense="tool_filter",
+    )
+
+    assert FakePipeline.last_config.kwargs["defense"] == "tool_filter"
+    assert pipeline.name == "gpt-4o-mini-2024-07-18__tool_filter"
+    assert executor is None
+    assert monitor is None
 
 
 def test_runner_agentdojo_benchmark_function_signatures_are_available():
