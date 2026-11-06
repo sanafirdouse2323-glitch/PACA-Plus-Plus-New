@@ -409,13 +409,14 @@ def run_workspace_benchmark(
     paca_attack_success: list[bool] = []
     baseline_utility_under_attack: list[bool] = []
     paca_utility_under_attack: list[bool] = []
-    paca_metrics: list[dict[str, int]] = []
+    paca_benign_metrics: list[dict[str, int]] = []
+    paca_attacked_metrics: list[dict[str, int]] = []
 
     def save_checkpoint() -> None:
-        output_path.write_text(
-            json.dumps(results, indent=2, sort_keys=True, ensure_ascii=False),
-            encoding="utf-8",
-        )
+        serialized = json.dumps(results, indent=2, sort_keys=True, ensure_ascii=False)
+        temporary_path = output_path.with_name(output_path.name + ".tmp")
+        temporary_path.write_text(serialized, encoding="utf-8")
+        temporary_path.replace(output_path)
 
     save_checkpoint()
     for user_task_id in user_task_ids:
@@ -492,7 +493,7 @@ def run_workspace_benchmark(
             "attacked_pairs": [],
         }
         results["task_results"].append(task_result)
-        paca_metrics.append(dict(paca_executor.metrics))
+        paca_benign_metrics.append(dict(paca_executor.metrics))
         save_checkpoint()
 
         # Check which selected injections are applicable to this user task before
@@ -587,7 +588,7 @@ def run_workspace_benchmark(
             paca_utility_under_attack.append(paca_pair_utility)
             baseline_attack_success.append(base_pair_attack_success)
             paca_attack_success.append(paca_pair_attack_success)
-            paca_metrics.append(dict(paca_pair_executor.metrics))
+            paca_attacked_metrics.append(dict(paca_pair_executor.metrics))
 
             task_result["attacked_pairs"].append(
                 {
@@ -613,8 +614,19 @@ def run_workspace_benchmark(
         # The complete per-user-task record remains in task_results, including
         # when every selected attack pair was marked inapplicable.
 
-    all_policy_metrics = _sum_metrics(paca_metrics)
-    metric_denominator = all_policy_metrics["tool_calls_seen"]
+    benign_policy_metrics = _sum_metrics(paca_benign_metrics)
+    attacked_policy_metrics = _sum_metrics(paca_attacked_metrics)
+    all_policy_metrics = _sum_metrics([*paca_benign_metrics, *paca_attacked_metrics])
+
+    def policy_metric_summary(metrics: dict[str, int]) -> dict[str, Any]:
+        calls = metrics["tool_calls_seen"]
+        return {
+            **metrics,
+            "mean_policy_decision_ms_per_tool_call": (
+                metrics["policy_decision_ns"] / 1_000_000 / calls if calls else None
+            ),
+        }
+
     results["summary"] = {
         "benign_task_count": len(baseline_benign),
         "attack_pair_count": len(baseline_attack_success),
@@ -632,15 +644,35 @@ def run_workspace_benchmark(
             "paca_plus_plus": _mean(paca_attack_success),
         },
         "paca_tool_metrics": {
-            **all_policy_metrics,
-            "mean_policy_decision_ms_per_tool_call": (
-                all_policy_metrics["policy_decision_ns"] / 1_000_000 / metric_denominator
-                if metric_denominator else None
-            ),
+            "benign": policy_metric_summary(benign_policy_metrics),
+            "attacked": policy_metric_summary(attacked_policy_metrics),
+            "combined": policy_metric_summary(all_policy_metrics),
         },
-        "benign_utility_regressions_vs_baseline": sum(
+        "denied_tool_calls_during_benign_tasks": benign_policy_metrics["denied_calls"],
+        "denied_tool_calls_during_attacked_tasks": attacked_policy_metrics["denied_calls"],
+        "benign_utility_regression_count": sum(
             base and not defended for base, defended in zip(baseline_benign, paca_benign)
         ),
+        "error_sample_counts": {
+            "baseline_benign": sum(
+                bool(item["benign"]["baseline_error"])
+                for item in results["task_results"]
+            ),
+            "paca_benign": sum(
+                bool(item["benign"]["paca_error"])
+                for item in results["task_results"]
+            ),
+            "baseline_attacked": sum(
+                bool(pair["baseline"]["error"])
+                for item in results["task_results"]
+                for pair in item["attacked_pairs"]
+            ),
+            "paca_attacked": sum(
+                bool(pair["paca"]["error"])
+                for item in results["task_results"]
+                for pair in item["attacked_pairs"]
+            ),
+        },
         "attack_success_semantics": (
             "AgentDojo BaseInjectionTask.security returns True when the injection goal "
             "was achieved; lower attack_success_rate is better."
