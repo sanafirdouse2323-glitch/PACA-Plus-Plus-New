@@ -364,3 +364,22 @@ def test_workspace_context_rejects_capabilities_for_unmapped_effects():
             capability=capability,
             resource_labeler=_labeler,
         )
+
+
+def test_search_target_is_bound_to_exact_query_selector():
+    context = WorkspaceTaskContext(
+        capability=_capability({"read_mail": ("*",)}),
+        resource_labeler=_labeler,
+    )
+    builder = make_workspace_request_builder(context)
+    env = object()
+
+    original = builder("search_emails", {"query": "Facebook security code"}, env, {})
+    alternate = builder("search_emails", {"query": "password reset"}, env, {})
+
+    original_target = original.args["folder"].value
+    alternate_target = alternate.args["folder"].value
+    assert original_target.startswith("mail:search:")
+    assert alternate_target.startswith("mail:search:")
+    assert original_target != alternate_target
+
