@@ -80,7 +80,9 @@ Supported workspace tools:
 
 - Email: `get_unread_emails`, `get_sent_emails`, `get_received_emails`,
   `get_draft_emails`, `search_emails`, `search_contacts_by_name`,
-  `search_contacts_by_email`.
+  `search_contacts_by_email`. Note that `get_unread_emails` also marks returned
+  messages as read in AgentDojo's environment; it is mapped to the separate
+  PACA++ `mark_mail_read` action rather than ordinary `read_mail`.
 - Calendar: `get_current_day`, `get_day_calendar_events`,
   `search_calendar_events`.
 - Cloud drive: `get_file_by_id`, `list_files`, `search_files`,
@@ -167,7 +169,8 @@ The mapper creates these capability targets:
 
 | Source | Tool operation | Target scope |
 |---|---|---|
-| Mail | Unread, sent, received, drafts | `mail:inbox:unread`, `mail:sent`, `mail:received`, `mail:drafts` |
+| Mail | Mark unread messages read | `mail:inbox:unread` (separate `mark_mail_read` grant) |
+| Mail | Sent, received, drafts | `mail:sent`, `mail:received`, `mail:drafts` (`read_mail` grant) |
 | Mail | Search messages or contacts | `mail:search`, `mail:contacts:name`, `mail:contacts:email` |
 | Calendar | Current day | `calendar:current_day` |
 | Calendar | Events for one day | `calendar:day:<YYYY-MM-DD>` |
@@ -188,6 +191,12 @@ PACA++ `Label` from trusted evaluation metadata. If it raises or returns a non-L
 the executor denies the call. The mapper conservatively marks model-provided query,
 date, and file-ID arguments as untrusted and joins them with labels from prior tool
 outputs when available.
+
+The mapper also checks its supported argument-key contracts against the installed
+AgentDojo workspace schemas in CI. In particular, `get_unread_emails` is not treated
+as a pure read: AgentDojo marks the returned messages as read. A task using that tool
+must grant `mark_mail_read: ("mail:inbox:unread",)`; granting only `read_mail` is
+insufficient. This keeps the read-receipt state change explicit in the capability.
 
 The mapper is strict about argument keys and required values. Search queries must be
 non-empty; calendar dates must be valid `YYYY-MM-DD` strings. Unexpected arguments,
