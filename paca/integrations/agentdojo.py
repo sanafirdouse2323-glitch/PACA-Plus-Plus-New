@@ -114,6 +114,7 @@ class PacaToolsExecutor(ToolsExecutor):
         # proof that an external effect completed successfully.
         self.metrics: dict[str, int] = {
             "tool_calls_seen": 0,
+            "policy_evaluations": 0,
             "denied_calls": 0,
             "authorized_dispatches": 0,
             "dispatch_attempts": 0,
@@ -195,6 +196,7 @@ class PacaToolsExecutor(ToolsExecutor):
                 tool_call_results.append(self._deny_result(tool_call, "Tool arguments are not a mapping."))
                 continue
 
+            self.metrics["policy_evaluations"] += 1
             policy_started_ns = time.perf_counter_ns()
             try:
                 execution_args = copy.deepcopy(dict(supplied_args))
