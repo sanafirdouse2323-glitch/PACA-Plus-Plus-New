@@ -62,10 +62,10 @@ the checked-in `docs/` snapshot. Run `python -m paca bench docs` to regenerate t
   of real products or an independent benchmark suite.
 - High scores on a defence's own suite are expected; useful outputs include the **ablation**
   (which check uniquely stops which attack), residual cases, benign completion, and false blocks.
-- Stronger evidence requires adapters for independent agent frameworks and benchmark suites,
-  a pre-registered threat model and success criteria, and reporting of utility-under-attack,
-  false blocks, adapter overhead, and reproducibility. This repository does not yet contain
-  those external integrations.
+- This repository now includes an optional AgentDojo ToolsExecutor adapter, with a
+  pinned dependency and integration tests. It inserts PACA++ before AgentDojo function
+  dispatch, but the application must still provide a correct task-specific request mapper.
+  This is not yet a completed independent AgentDojo benchmark result.
 
 Explicit non-goals for this prototype: direct jailbreaks, system-prompt extraction, adversarial suffixes,
 weight backdoors / training poisoning, membership inference, model extraction, AI-enabled phishing/deepfakes.
@@ -90,8 +90,11 @@ Integration contract: **labels are assigned by your connectors/memory store, nev
 If an agent framework lets the model attach its own labels, the guarantees do not hold.
 
 **Execution and approval boundaries:** this repository contains an in-process reference monitor
-and a deterministic simulator; it does not yet contain adapters for a real LLM/agent framework or an
-independent production executor. The scenario harness supplies read content to `Session.ingest`
+and a deterministic simulator. An optional AgentDojo ToolsExecutor adapter now inserts
+the monitor before AgentDojo function dispatch. It is not a generic agent adapter: an
+application must provide a task-specific request builder, trusted provenance labels, and
+capability issuance. It also does not provide an independent production executor. The
+scenario harness supplies read content to `Session.ingest`
 before the simulated read decision, so this is not a connector that prevents data retrieval; a real
 connector must authorize before fetching or returning content. In this request model, `fetch_url`
 treats its declared `query` field as outbound data; implicit HTTP headers, cookies, credentials,
@@ -116,6 +119,17 @@ them across every transformation; it does not establish the truth of a source or
 a compromised adapter. The audit chain detects record alteration within the retained chain, but
 is not an external, append-only log service.
 
+## External framework integration
+
+An optional adapter is available for the independently maintained AgentDojo benchmark.
+It mediates AgentDojo function dispatch through PACA++ and fails closed when a tool call
+cannot be mapped to a valid PACA++ request. Installation, policy-mapping requirements,
+pipeline insertion instructions, limitations, and a reproducible evaluation protocol
+are documented in [docs/agentdojo-integration.md](docs/agentdojo-integration.md).
+
+The adapter is not a claim that PACA++ has passed AgentDojo. No independent AgentDojo
+scores are published until matched runs have actually completed.
+
 ## DSL
 ```
 C5: deny any when flow.excess > 0 with obligation audit_log   # data more sensitive than destination clearance
@@ -138,5 +152,6 @@ provenance code in `obligations.py`, a README as `tests/test_parser.py`), two pa
 not parse. v0.3 rebuilds the package cleanly, fixes `deny` semantics (an unmatched deny used to return `permit`)
 and operator precedence, and adds the monitor, labels, scenarios and benchmark.
 
-Maturity: research prototype (Python, in-process, simulated benchmark, no solver-backed verification,
-no real LLM or external executor integration).
+Maturity: research prototype (Python, in-process monitor, self-authored deterministic benchmark,
+optional AgentDojo tool-executor adapter, no verified general-purpose task mapper, no independent
+end-to-end benchmark results, no production executor, and no solver-backed verification).
