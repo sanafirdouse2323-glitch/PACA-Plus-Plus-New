@@ -789,6 +789,22 @@ def main(argv: list[str] | None = None) -> int:
             max_iters=args.max_iters,
         )
     except Exception as exc:
+        if args.output.exists():
+            try:
+                partial = json.loads(args.output.read_text(encoding="utf-8"))
+                partial["status"] = "failed"
+                partial["finished_at"] = datetime.now(timezone.utc).isoformat()
+                # Do not copy arbitrary provider exception text into a result file:
+                # it may contain request details or credentials.
+                partial["failure_type"] = type(exc).__name__
+                temporary_path = args.output.with_name(args.output.name + ".tmp")
+                temporary_path.write_text(
+                    json.dumps(partial, indent=2, sort_keys=True, ensure_ascii=False),
+                    encoding="utf-8",
+                )
+                temporary_path.replace(args.output)
+            except Exception:
+                pass
         parser.exit(2, f"benchmark failed ({type(exc).__name__}): {exc}\n")
 
     print(json.dumps(result["summary"], indent=2))
