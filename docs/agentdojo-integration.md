@@ -187,16 +187,29 @@ as such.
 
 The resource-label callback receives one of `mail`, `calendar`, or `drive`, a copy
 of the normalised tool arguments, and the AgentDojo environment. It must return a
-PACA++ `Label` from trusted evaluation metadata. If it raises or returns a non-Label,
-the executor denies the call. The mapper conservatively marks model-provided query,
-date, and file-ID arguments as untrusted and joins them with labels from prior tool
-outputs when available.
+PACA++ `Label` from trusted evaluation metadata, with `integrity="untrusted"` and
+the task capability's tenant included in the label. Missing tenant or trusted-integrity
+resource labels are rejected before dispatch. For list/search operations that may
+return multiple records, the callback must conservatively join the sensitivity,
+tenant, and origin labels of every record that could be returned; do not label a
+collection based only on its search string. If the callback raises or returns an
+invalid label, the executor denies the call. The mapper conservatively marks
+model-provided query, date, and file-ID arguments as untrusted and joins them with
+labels from prior tool outputs when available.
+
+The workspace context also rejects capabilities containing actions outside this
+mapper's four-action allowlist (`read_mail`, `mark_mail_read`, `read_calendar`,
+`read_drive`), malformed grant patterns, invalid call budgets, or an initial step
+outside the capability's lifetime. Unsupported effect actions must be implemented
+and reviewed as separate mappings rather than smuggled into this read-scoped mapper.
 
 The mapper also checks its supported argument-key contracts against the installed
 AgentDojo workspace schemas in CI. In particular, `get_unread_emails` is not treated
 as a pure read: AgentDojo marks the returned messages as read. A task using that tool
 must grant `mark_mail_read: ("mail:inbox:unread",)`; granting only `read_mail` is
-insufficient. This keeps the read-receipt state change explicit in the capability.
+insufficient. This keeps the read-receipt state change explicit in the capability. The
+workspace mapper validates that all supplied capability grants use only its supported
+workspace actions and validates the resource label's untrusted integrity and tenant.
 
 The mapper is strict about argument keys and required values. Search queries must be
 non-empty; calendar dates must be valid `YYYY-MM-DD` strings. Unexpected arguments,
