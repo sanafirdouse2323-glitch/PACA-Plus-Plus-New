@@ -18,6 +18,7 @@ agentdojo = ["agentdojo==0.1.35"]
 
 [project.scripts]
 paca = "paca.cli:main"
+paca-agentdojo = "paca.integrations.agentdojo_benchmark:main"
 
 [tool.setuptools]
 packages = ["paca", "paca.policies", "paca.integrations"]
