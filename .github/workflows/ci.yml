@@ -105,16 +105,16 @@ jobs:
           assert tasks["supported_tasks"]
           supported_ids = {item["user_task_id"] for item in tasks["supported_tasks"]}
           assert {"user_task_1", "user_task_16"}.issubset(supported_ids)
-          injection_id = injections["injection_task_ids"][0]
+          injection_ids = ",".join(injections["injection_task_ids"])
           print(f"Discovered {len(injections['injection_task_ids'])} injection tasks")
           print(f"Discovered {len(tasks['supported_tasks'])} supported workspace tasks")
-          Path("/tmp/selected-injection-id.txt").write_text(injection_id)
+          Path("/tmp/all-injection-ids.txt").write_text(injection_ids)
           PY
-          injection_id="$(cat /tmp/selected-injection-id.txt)"
+          injection_ids="$(cat /tmp/all-injection-ids.txt)"
           paca-agentdojo \
-            --model gpt-4o-2024-05-13 \
+            --model gpt-4o-mini-2024-07-18 \
             --user-tasks user_task_1,user_task_16 \
-            --injection-tasks "$injection_id" \
+            --injection-tasks "$injection_ids" \
             --attack tool_knowledge \
             --dry-run > /tmp/agentdojo-dry-run.json
           python - <<'PY'
@@ -123,7 +123,7 @@ jobs:
 
           manifest = json.loads(Path("/tmp/agentdojo-dry-run.json").read_text())
           assert manifest["status"] == "dry_run"
-          assert manifest["injection_task_ids"] == [Path("/tmp/selected-injection-id.txt").read_text()]
+          assert manifest["model"] == "gpt-4o-mini-2024-07-18"
           assert manifest["task_policies"]["user_task_1"]["grants"] == {
               "read_calendar": ["calendar:day:2024-05-15"]
           }
@@ -131,5 +131,84 @@ jobs:
           assert len(email_grants) == 1
           assert email_grants[0].startswith("mail:search:")
           assert len(email_grants[0].rsplit(":", 1)[-1]) == 24
-          print("Dry-run manifests for user_task_1 and user_task_16 verified; no model calls were made.")
+          applicable = manifest["applicable_injection_task_ids_by_user_task"]
+          selected = sorted({item for ids in applicable.values() for item in ids})
+          assert selected, "no tool_knowledge injection task applies to selected user tasks"
+          Path("/tmp/selected-compatible-injection-ids.txt").write_text(",".join(selected))
+          print(f"Preflight identified {sum(len(ids) for ids in applicable.values())} applicable attack pairs.")
+          print("Dry-run manifests for both tasks verified; no model calls were made.")
           PY
+
+  agentdojo-real-benchmark:
+    if: github.event_name == 'pull_request'
+    needs: agentdojo-integration
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install PACA++ and pinned AgentDojo dependency
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev,agentdojo]"
+
+      - name: Check whether an OpenAI credential is configured
+        id: credential
+        shell: bash
+        run: |
+          if [ -z "$OPENAI_API_KEY" ]; then
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::OPENAI_API_KEY is not configured; live AgentDojo model runs are skipped."
+          else
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Preflight bounded live experiment
+        if: steps.credential.outputs.configured == 'true'
+        shell: bash
+        run: |
+          injection_ids="$(cat /tmp/selected-compatible-injection-ids.txt)"
+          paca-agentdojo \
+            --model gpt-4o-mini-2024-07-18 \
+            --user-tasks user_task_1,user_task_16 \
+            --injection-tasks "$injection_ids" \
+            --attack tool_knowledge \
+            --dry-run > /tmp/agentdojo-live-preflight.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          data = json.loads(Path("/tmp/agentdojo-live-preflight.json").read_text())
+          pairs = data["applicable_injection_task_ids_by_user_task"]
+          assert any(pairs.values()), "no compatible attack/task pairs to execute"
+          print("Preflight passed; no model call was made in this step.")
+          PY
+
+      - name: Run matched AgentDojo baseline, tool_filter, and PACA++ benchmark
+        if: steps.credential.outputs.configured == 'true'
+        run: |
+          injection_ids="$(cat /tmp/selected-compatible-injection-ids.txt)"
+          paca-agentdojo \
+            --model gpt-4o-mini-2024-07-18 \
+            --user-tasks user_task_1,user_task_16 \
+            --injection-tasks "$injection_ids" \
+            --attack tool_knowledge \
+            --max-iters 12 \
+            --log-dir runs/agentdojo-real/logs \
+            --output runs/agentdojo-real/results.json
+
+      - name: Upload raw AgentDojo results and logs
+        if: always() && steps.credential.outputs.configured == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: agentdojo-real-benchmark
+          path: runs/agentdojo-real/
+          if-no-files-found: warn
