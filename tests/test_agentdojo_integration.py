@@ -352,3 +352,107 @@ def test_agentdojo_adapter_does_not_overwrite_output_labels_when_call_id_repeats
     assert labels["call-1:prior"].sensitivity == 1
     assert labels["call-1:1"].sensitivity == 3
     assert aggregate_prior_output_labels(state).sensitivity == 3
+
+
+
+def test_agentdojo_adapter_rejects_monitor_with_effect_token_check_disabled():
+    monitor = Monitor(disable={"C13"})
+
+    with pytest.raises(ValueError, match="C13 effect-token verification cannot be disabled"):
+        PacaToolsExecutor(monitor, lambda *args: None)
+
+
+def test_agentdojo_adapter_fails_closed_when_request_builder_mutates_arguments():
+    cap = Capability(
+        "cap-mutation", "user@example.test", "tenant-a", "task-mutation", "assistant",
+        {"read_file": ("/tenant-a/report.txt",)}, expires=100,
+    )
+
+    def request_builder(function_name, arguments, env, extra_args):
+        # Simulate a mapper accidentally replacing an attacker-selected target
+        # with an allowed one while preparing the policy request.
+        arguments["path"] = "/tenant-a/report.txt"
+        return Request(
+            "read_file",
+            {"path": Arg(arguments["path"], Label("untrusted", origins=frozenset({"tool_call"})))},
+            cap,
+            step=1,
+            resource=Label("untrusted", sensitivity=1, tenant="tenant-a"),
+        )
+
+    runtime = RuntimeStub(["read_report"])
+    executor = PacaToolsExecutor(Monitor(), request_builder)
+    _, _, _, messages, _ = _run(
+        executor,
+        runtime,
+        "read_report",
+        {"path": "/tenant-a/attacker-selected.txt"},
+    )
+
+    assert runtime.calls == []
+    assert "request_builder must not mutate tool arguments" in messages[-1]["error"]
+
+
+def test_agentdojo_adapter_fails_closed_when_effect_token_verification_fails(monkeypatch):
+    cap = Capability(
+        "cap-verify-failure", "user@example.test", "tenant-a", "task-verify-failure", "assistant",
+        {"read_file": ("/tenant-a/report.txt",)}, expires=100,
+    )
+
+    def request_builder(function_name, arguments, env, extra_args):
+        return Request(
+            "read_file",
+            {"path": Arg(arguments["path"], Label("untrusted"))},
+            cap,
+            step=1,
+            resource=Label("untrusted", sensitivity=1, tenant="tenant-a"),
+        )
+
+    runtime = RuntimeStub(["read_report"])
+    monitor = Monitor()
+    monkeypatch.setattr(monitor, "verify", lambda request, decision: False)
+    executor = PacaToolsExecutor(monitor, request_builder)
+    _, _, _, messages, _ = _run(
+        executor,
+        runtime,
+        "read_report",
+        {"path": "/tenant-a/report.txt"},
+    )
+
+    assert runtime.calls == []
+    assert "effect-token verification failed" in messages[-1]["error"]
+
+
+def test_agentdojo_adapter_advances_steps_for_multiple_calls_in_one_dispatch():
+    cap = Capability(
+        "cap-multi-call", "user@example.test", "tenant-a", "task-multi-call", "assistant",
+        {"read_file": ("/tenant-a/report.txt",)}, expires=100,
+    )
+
+    def request_builder(function_name, arguments, env, extra_args):
+        return Request(
+            "read_file",
+            {"path": Arg(arguments["path"], Label("untrusted"))},
+            cap,
+            step=1,
+            resource=Label("untrusted", sensitivity=1, tenant="tenant-a"),
+        )
+
+    runtime = RuntimeStub(["read_report"])
+    monitor = Monitor()
+    executor = PacaToolsExecutor(monitor, request_builder)
+    calls = [
+        FunctionCall(function="read_report", args={"path": "/tenant-a/report.txt"}, id="multi-1"),
+        FunctionCall(function="read_report", args={"path": "/tenant-a/report.txt"}, id="multi-2"),
+    ]
+    messages = [{
+        "role": "assistant",
+        "content": None,
+        "tool_calls": calls,
+    }]
+
+    _, _, _, result_messages, _ = executor.query("task", runtime, object(), messages, {})
+
+    assert len(runtime.calls) == 2
+    assert len(result_messages) == 3
+    assert [entry["step"] for entry in monitor.audit.entries if "step" in entry] == [1, 2]
