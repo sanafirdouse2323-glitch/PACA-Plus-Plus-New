@@ -132,13 +132,15 @@ benchmark runner are available for the independently maintained AgentDojo benchm
 Install the optional dependency with `pip install -e ".[dev,agentdojo]"`, then use
 `paca-agentdojo --list-supported-tasks` and `paca-agentdojo --list-injection-tasks`
 to inspect the installed suite. The runner requires explicit user-task and injection-task
-IDs and can produce a dry-run policy manifest before any model calls. Its supported
+IDs and can preflight applicable attack/task pairs and task policies without model calls. It compares
+AgentDojo with no defence, AgentDojo's official `tool_filter`, and PACA++. Its supported
 scope, configuration, metrics, limitations, and evaluation protocol are documented in
 [docs/agentdojo-integration.md](docs/agentdojo-integration.md).
 
-CI validates the runner and integrations; it does not call an LLM provider. No independent
-AgentDojo effectiveness scores are published until an operator runs matched experiments
-with a configured model provider and retains the raw task-level results.
+CI validates the runner and integrations without an LLM provider. A separate bounded real-model
+benchmark job runs only when the repository's `OPENAI_API_KEY` secret is configured; it retains
+raw task-level results as a CI artifact. No independent AgentDojo effectiveness scores are claimed
+until that actual run completes successfully and its failed/skipped samples are inspected.
 
 ## DSL
 ```
@@ -164,5 +166,5 @@ and operator precedence, and adds the monitor, labels, scenarios and benchmark.
 
 Maturity: research prototype (Python, in-process monitor, self-authored deterministic benchmark,
 optional AgentDojo tool-executor adapter, limited task-scoped workspace read/search mapper,
-paired AgentDojo benchmark runner not yet executed against a real LLM in this repository,
+paired AgentDojo benchmark runner (real-model evidence is reported separately and is not inferred from CI adapter tests),
 no full workspace write/effect mapping, no production executor, and no solver-backed verification).
