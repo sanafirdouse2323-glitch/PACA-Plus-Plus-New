@@ -251,9 +251,9 @@ class Monitor:
         if req.resource is not None:
             contributing_tenants.update(req.resource.tenants)
         cross = any(tenant != cap.tenant for tenant in contributing_tenants)
-        # A plain fetch_url request retrieves remote data; it does not disclose
-        # caller data. It is classified as egress only when an outbound query/payload
-        # is present, matching the is_egress calculation above.
+        # In this simulator's request model, fetch_url is a read unless it carries
+        # the modeled query payload. A real connector must also represent implicit
+        # headers, credentials, cookies, and other outbound data in its request.
         action_class = spec["cls"]
         if req.action == "fetch_url" and not is_egress:
             action_class = "read"
