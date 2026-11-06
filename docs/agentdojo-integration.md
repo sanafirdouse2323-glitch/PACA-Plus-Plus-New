@@ -292,7 +292,9 @@ paca-agentdojo \
 ```
 
 Replace `YOUR_SELECTED_INJECTION_IDS` with one or more comma-separated IDs
-returned by `--list-injection-tasks`. Do not use a guessed or hand-typed task ID.
+returned by `--list-injection-tasks` that also appear in the dry-run output under
+`applicable_injection_task_ids_by_user_task`. Do not use a guessed or hand-typed
+task ID. The dry run also reports incompatible user-task/injection-task pairs.
 The two example user tasks above are included in the supported read-scoped task
 set; the runner will reject any selected user task whose trusted ground-truth
 tool calls include an operation outside the mapper.
@@ -304,7 +306,7 @@ LLM pipeline, call a model, or require provider credentials. The `--model`
 value is still required to make the intended model configuration explicit in
 the manifest.
 
-### Run the paired benchmark
+### Run the three-condition benchmark
 
 After the dry run, configure `OPENAI_API_KEY` securely in the execution
 environment, then run the same task and injection selections without
