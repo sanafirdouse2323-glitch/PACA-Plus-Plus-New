@@ -12,6 +12,7 @@ from .provenance import Arg, Label
 # action -> effect class, which argument names the target / payload / extra control values.
 ACTIONS: Dict[str, Dict[str, Any]] = {
     "read_mail":      dict(cls="read",        target="folder",   required=["folder"]),
+    "mark_mail_read": dict(cls="write",       target="folder",   required=["folder"]),
     "read_calendar":  dict(cls="read",        target="resource", required=["resource"]),
     "read_drive":     dict(cls="read",        target="resource", required=["resource"]),
     "read_file":      dict(cls="read",        target="path",     required=["path"]),
