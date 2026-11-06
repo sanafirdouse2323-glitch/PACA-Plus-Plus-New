@@ -203,6 +203,8 @@ class PacaToolsExecutor(ToolsExecutor):
                 if decision.verdict == "needs_approval" and self.approval_provider is not None:
                     approval = self.approval_provider(request, decision, env, state)
                     if approval is not None:
+                        if not isinstance(approval, str) or not approval.strip():
+                            raise TypeError("approval_provider must return non-empty authenticated evidence or None")
                         request.approval = approval
                         decision = self.monitor.decide(request)
 
