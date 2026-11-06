@@ -229,7 +229,7 @@ from agentdojo.agent_pipeline.tool_execution import ToolsExecutionLoop
 
 pipeline = AgentPipeline.from_config(
     PipelineConfig(
-        llm="gpt-4o-2024-05-13",
+        llm="gpt-4o-mini-2024-07-18",
         model_id=None,
         defense=None,
         tool_delimiter="tool",
@@ -284,7 +284,7 @@ Prepare an experiment without calling an LLM:
 
 ```bash
 paca-agentdojo \
-  --model gpt-4o-2024-05-13 \
+  --model gpt-4o-mini-2024-07-18 \
   --user-tasks user_task_1,user_task_16 \
   --injection-tasks YOUR_SELECTED_INJECTION_IDS \
   --attack tool_knowledge \
@@ -297,8 +297,9 @@ The two example user tasks above are included in the supported read-scoped task
 set; the runner will reject any selected user task whose trusted ground-truth
 tool calls include an operation outside the mapper.
 
-The dry run validates the selected task IDs and emits each task's exact
-ground-truth-derived capability manifest. It does not construct an AgentDojo
+The dry run validates the selected task IDs, preflights attack/task compatibility
+without constructing a model client, and emits each task's exact ground-truth-derived
+capability manifest plus the applicable injection-task IDs. It does not construct an AgentDojo
 LLM pipeline, call a model, or require provider credentials. The `--model`
 value is still required to make the intended model configuration explicit in
 the manifest.
@@ -311,7 +312,7 @@ injection selections without `--dry-run`:
 
 ```bash
 paca-agentdojo \
-  --model gpt-4o-2024-05-13 \
+  --model gpt-4o-mini-2024-07-18 \
   --user-tasks user_task_1,user_task_16 \
   --injection-tasks YOUR_SELECTED_INJECTION_IDS \
   --attack tool_knowledge \
@@ -338,7 +339,8 @@ reported as task-count differences. AgentDojo's recorded runtime errors are
 retained and counted separately rather than silently removed from denominators.
 
 The summary reports benign utility, utility under attack, and attack success
-rate for both conditions. In AgentDojo, the injection task's security checker
+rate separately for all three conditions: no defence, AgentDojo `tool_filter`,
+and PACA++. In AgentDojo, the injection task's security checker
 returns `True` when the injected goal was achieved; therefore a lower
 attack-success rate is better. AgentDojo currently treats certain model/API
 errors conservatively as a successful injection in its benchmark helper. The
@@ -400,9 +402,11 @@ benchmark's ground-truth attack flag is not an authenticated approval mechanism.
 
 ## Reproducible comparison protocol
 
-Use the same AgentDojo release (v1.2.2 suite data), model snapshot, suite, user-task
-selection, injection-task selection, attack implementation, system prompt, tool-output
-format, maximum iteration count, and retry policy for every condition.
+Use the same AgentDojo release (v1.2.2 suite data), supported model snapshot, suite,
+user-task selection, injection-task selection, attack implementation, system prompt,
+tool-output format, maximum iteration count, and retry policy for every condition.
+The runner implements the no-defense, `tool_filter`, and PACA++ conditions; it does
+not yet execute the optional spotlighting condition.
 
 At minimum, report these conditions separately:
 
