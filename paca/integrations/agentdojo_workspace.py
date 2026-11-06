@@ -23,17 +23,26 @@ WorkspaceResourceLabeler = Callable[[str, dict[str, Any], Any], Label]
 # (PACA action, source label domain, target scope, accepted args, required args)
 # The names and argument keys are taken from AgentDojo's v1 workspace tools.
 _MAIL_TOOLS: dict[str, tuple[str, frozenset[str], frozenset[str]]] = {
-    "get_unread_emails": ("mail:inbox:unread", frozenset(), frozenset()),
-    "get_sent_emails": ("mail:sent", frozenset(), frozenset()),
-    "get_received_emails": ("mail:received", frozenset(), frozenset()),
-    "get_draft_emails": ("mail:drafts", frozenset(), frozenset()),
-    "search_emails": ("mail:search", frozenset({"query", "sender"}), frozenset({"query"})),
+    "get_unread_emails": (
+        "mark_mail_read",
+        "mail:inbox:unread",
+        frozenset(),
+        frozenset(),
+    ),
+    "get_sent_emails": ("read_mail", "mail:sent", frozenset(), frozenset()),
+    "get_received_emails": ("read_mail", "mail:received", frozenset(), frozenset()),
+    "get_draft_emails": ("read_mail", "mail:drafts", frozenset(), frozenset()),
+    "search_emails": (
+        "read_mail", "mail:search", frozenset({"query", "sender"}), frozenset({"query"})
+    ),
     "search_contacts_by_name": (
+        "read_mail",
         "mail:contacts:name",
         frozenset({"query"}),
         frozenset({"query"}),
     ),
     "search_contacts_by_email": (
+        "read_mail",
         "mail:contacts:email",
         frozenset({"query"}),
         frozenset({"query"}),
@@ -198,7 +207,7 @@ def make_workspace_request_builder(context: WorkspaceTaskContext):
         normalized = copy.deepcopy(dict(arguments))
 
         if function_name in _MAIL_TOOLS:
-            target, allowed, required = _MAIL_TOOLS[function_name]
+            action, target, allowed, required = _MAIL_TOOLS[function_name]
             _validate_arguments(function_name, normalized, allowed, required)
             if function_name == "search_emails":
                 _required_string(normalized, "query")
@@ -219,7 +228,7 @@ def make_workspace_request_builder(context: WorkspaceTaskContext):
                 request_args[name] = Arg(value, _argument_label(extra_args, name))
             resource_label = _resource_label(context, "mail", normalized, env)
             return Request(
-                action="read_mail",
+                action=action,
                 args=request_args,
                 cap=capability,
                 step=context.initial_step,
