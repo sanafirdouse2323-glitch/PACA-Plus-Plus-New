@@ -15,7 +15,7 @@ python -m paca bench docs       # runs the benchmark, writes docs/index.html + d
 python -m paca demo C02 paca    # step-by-step trace of one scenario
 python -m paca list
 ```
-Open `docs/index.html` for the interactive demo (also deployable on GitHub Pages: Settings -> Pages -> `/docs`).
+Open `docs/index.html` for the checked-in historical interactive report (also deployable on GitHub Pages: Settings -> Pages -> `/docs`). Its embedded scores and traces are not the latest benchmark output. Regenerate it locally with `python -m paca bench docs`, or use the `paca-benchmark-regenerated` artifact attached to the latest successful CI run.
 
 ## What it does
 
@@ -23,7 +23,7 @@ Open `docs/index.html` for the interactive demo (also deployable on GitHub Pages
 |---|---|---|
 | Task-bound, target-bound, expiring **capabilities** (default deny) | `runtime.py`, `monitor.py` C1/C2 | stale authority, goal hijack, cross-stage drift, cost DoS |
 | **Provenance labels** that only get worse when data is combined (integrity, sensitivity, tenant, origins); unlabelled `Arg` values default to untrusted | `provenance.py` | provenance laundering, fragmentation, memory poisoning |
-| Policy rules in the PACA DSL over those labels (`examples/agent_policy.paca`) | `engine.py` | indirect injection, exfiltration, confused deputy, SSRF, config tampering |
+| Policy rules in the PACA DSL over those labels (packaged default: `paca/policies/agent_policy.paca`; identical example copy: `examples/agent_policy.paca`) | `engine.py`, `monitor.py` | indirect injection, exfiltration, confused deputy, SSRF, config tampering |
 | **Manifest pinning** (hash+version of each tool authorised for the task) | C3 | MCP poisoning/rug-pull, tool-selection hijack, supply chain |
 | **Delegation attenuation**, fan-out limit, quarantine after repeated denials | C8/C11/C12 | multi-agent escalation, worms, approval fatigue |
 | **Effect tokens**: HMAC over the exact action+args, verified by the executor; approvals bound to the same digest | C13 | planner/critic swap, TOCTOU, replayed approvals |
@@ -48,7 +48,7 @@ approves all prompts.
 | Sandbox + scoped permissions | 80.0% | 93.3% | 78.6% | 92.9% | 100.0% | 0.27 |
 | **PACA++ v0.3** | **10.0%** | **10.0%** | **3.6%** | **3.6%** | **100.0%** | **0.18** |
 
-Overall ASR includes all 30 attack scenarios. In-scope ASR excludes the two author-designated
+ASR is the percentage of attack scenarios in which at least one simulated attacker effect executes; lower is better. Overall ASR includes all 30 attack scenarios. In-scope ASR excludes the two author-designated
 residual scenarios, leaving 28. In the regenerated PACA++ results, the in-scope success is
 `E02` (five simulated attacker effects before containment); the two residual successes are
 `R01` and `R02` (one effect each). These are results of this deterministic simulation, not
@@ -101,7 +101,7 @@ authorizes using a separately stored label before looking up the stored value, b
 in-memory test harness, not an integrated memory-store adapter. Inbound communication through
 `Session.receive` and agent planning are not independently mediated by a real runtime in this prototype.
 
-Filesystem grant matching performs lexical path validation only; a real executor must also prevent
+The monitor's C14 check verifies that required arguments are present and that the target is a non-empty string. It does not validate every action-specific payload type or semantic constraint; a real executor must enforce those schemas before acting. Filesystem grant matching performs lexical path validation only; a real executor must also prevent
 symlink escapes and TOCTOU races. Network integrations must resolve and re-check destinations and
 redirects at connection time to reduce DNS-rebinding and redirect-based SSRF. A deployment must route
 every consequential effect through an executor that verifies and consumes the monitor's single-use
