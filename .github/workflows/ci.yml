@@ -176,7 +176,14 @@ jobs:
         if: steps.credential.outputs.configured == 'true'
         shell: bash
         run: |
-          injection_ids="$(cat /tmp/selected-compatible-injection-ids.txt)"
+          paca-agentdojo --list-injection-tasks > /tmp/all-agentdojo-injection-tasks.json
+          injection_ids="$(python - <<'PY'
+          import json
+          from pathlib import Path
+          tasks = json.loads(Path("/tmp/all-agentdojo-injection-tasks.json").read_text())
+          print(",".join(tasks["injection_task_ids"]))
+          PY
+          )"
           paca-agentdojo \
             --model gpt-4o-mini-2024-07-18 \
             --user-tasks user_task_1,user_task_16 \
@@ -188,7 +195,10 @@ jobs:
           from pathlib import Path
           data = json.loads(Path("/tmp/agentdojo-live-preflight.json").read_text())
           pairs = data["applicable_injection_task_ids_by_user_task"]
-          assert any(pairs.values()), "no compatible attack/task pairs to execute"
+          selected = sorted({item for values in pairs.values() for item in values})
+          assert selected, "no compatible attack/task pairs to execute"
+          Path("/tmp/selected-compatible-injection-ids.txt").write_text(",".join(selected))
+          print(f"Preflight selected {len(selected)} injection IDs across {sum(len(v) for v in pairs.values())} applicable pairs.")
           print("Preflight passed; no model call was made in this step.")
           PY
 
