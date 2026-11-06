@@ -1,0 +1,20 @@
+# PACA++ policy for selected simulated reference-monitor requests.
+# Task-bound capabilities restrict actions; these rules add risk checks and obligations.
+# Rule IDs denote author-defined risk categories; the monitor builds the `action`, `dest`, `flow`, `control`,
+# `payload`, `target` attributes from provenance labels, not from anything the model says.
+
+C4a: deny any when action.cls == destructive and control.integrity == untrusted   # goal hijack / confused deputy
+C4b: deny any when action.cls == exec and control.integrity == untrusted          # command / structured-output injection
+C4c: deny any when action.cls == delegate and payload.integrity == untrusted      # untrusted delegated authority
+C4d: deny any when action.cls == invoke and control.integrity == untrusted        # tool-selection hijack
+C4e: deny any when action.cls == setting and payload.integrity == untrusted       # untrusted setting value
+C4f: deny any when action.cls == egress and control.integrity == untrusted and flow.max_sens > 0   # untrusted recipient + non-public data
+C4g: permit any when action.cls == egress and control.integrity == untrusted and flow.max_sens == 0 with obligation require_approval
+C5:  deny any when flow.excess > 0 with obligation audit_log                      # data more sensitive than destination clearance
+C6:  deny any when flow.cross_tenant == true                                      # tenant boundary
+C7:  deny any when dest.internal == true                                          # SSRF / metadata endpoints
+C9:  deny any when target.scope == core and payload.integrity == untrusted        # untrusted data into instruction memory
+C10a: deny any when target.protected == true and payload.integrity == untrusted   # agent/CI configuration tampering
+C10b: permit any when target.protected == true with obligation require_approval
+C15: permit merge_pr with obligation require_approval                             # human gate on irreversible release actions
+C0:  permit any with obligation audit_log                                         # every decision is audited

@@ -1,14 +1,14 @@
 [build-system]
-requires = ["setuptools>=68", "wheel"]
+requires = ["setuptools>=77", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "paca-plus-plus"
 version = "0.3.0"
-description = "Provenance-anchored continuous authorization for autonomous LLM agents (reference monitor + catalog-driven benchmark)"
+description = "Provenance-anchored authorization reference monitor and deterministic simulator for selected LLM-agent workflows"
 readme = "README.md"
 requires-python = ">=3.10"
-license = { text = "MIT" }
+license = "MIT"
 keywords = ["authorization", "agents", "prompt-injection", "provenance", "llm-security"]
 dependencies = []
 
@@ -19,7 +19,10 @@ dev = ["pytest>=8.0"]
 paca = "paca.cli:main"
 
 [tool.setuptools]
-packages = ["paca"]
+packages = ["paca", "paca.policies"]
+
+[tool.setuptools.package-data]
+paca = ["policies/*.paca"]
 
 [tool.pytest.ini_options]
 pythonpath = ["."]

@@ -1,9 +1,9 @@
-"""Deterministic agent-session simulator.
+"""Deterministic simulator for selected LLM-agent authorization workflows.
 
-Threat model used by the benchmark (stated, deliberately pessimistic): the model is *fully
-hijacked* by any injected content it reads - so a defence only scores if it stops the terminal
-effect, which is the evaluation the catalog recommends. Defences never see the `evil` flag;
-it is ground truth for scoring and for the simulated 'vigilant human'.
+The benchmark uses a deliberately pessimistic threat model: injected content fully hijacks
+the simulated model, and a defence succeeds only when it blocks the terminal effect.
+Defences never see the `evil` flag; it is ground truth used only for scoring and the
+simulated human decision.
 """
 from __future__ import annotations
 
@@ -26,9 +26,9 @@ class Scenario:
     id: str
     title: str
     kind: str                 # attack | benign
-    section: str              # catalog section letter, or R (residual) / B (benign)
-    klass: str                # catalog attack class
-    ref: str                  # catalog citations
+    section: str              # author-defined grouping letter
+    klass: str                # author-defined risk category
+    ref: str                  # provisional source key; not a verified citation
     summary: str
     fn: Callable[["Session"], None]
     residual: bool = False
@@ -89,13 +89,25 @@ class Session:
         self.step += n
         self._log("time", text=f"{n} steps pass")
 
-    def lit(self, v: Any) -> Arg:                    # a value the user typed / configured
-        return Arg(v, Label(origins=frozenset({"user"})))
+    def lit(self, v: Any) -> Arg:                    # an explicitly user-typed / configured value
+        return Arg(v, Label("trusted", origins=frozenset({"user"})))
+
+    @staticmethod
+    def _as_arg(value: Any) -> Arg:
+        """Keep explicit labels; treat unlabelled runtime/model values as untrusted."""
+        return value if isinstance(value, Arg) else Arg(value)
 
     def lift(self, src: Arg, v: Any) -> Arg:         # value the model extracted from `src`
         return Arg(v, src.label)
 
-    def derive(self, v: Any, *srcs: Arg) -> Arg:
+    def derive(self, v: Any, *srcs: Optional[Arg]) -> Arg:
+        # A scripted agent step may still emit a guess after a denied read. Preserve any
+        # available labels and mark the missing source as untrusted; never substitute the
+        # denied content into the simulated run.
+        if any(src is None for src in srcs):
+            labels = [src.label for src in srcs if isinstance(src, Arg)]
+            labels.append(Label("untrusted", origins=frozenset({"unavailable_source"})))
+            return Arg(v, Label.join(*labels))
         return derive(v, *srcs)
 
     def say(self, text: str, style: Optional[str] = None) -> Arg:
@@ -116,33 +128,52 @@ class Session:
         return Arg(content, self._label(source, sens, tenant))
 
     def ingest(self, via: str, target: str, content: str, source: str, sens: int = 0, tenant: Optional[str] = None,
-               style: Optional[str] = None, evil: bool = False, required: bool = False) -> Arg:
+               style: Optional[str] = None, evil: bool = False, required: bool = False) -> Optional[Arg]:
         """Read through an authorised read action; the returned data carries the connector's label."""
         lab = self._label(source, sens, tenant)
         if self.d.scan(source, content, style):
             self.halted = True
         arg = Arg(content, lab)
         key = {"read_mail": "folder", "read_file": "path", "fetch_url": "url"}[via]
-        self._exec(via, {key: Arg(target, Label(origins=frozenset({"user"})))}, evil, required, None,
-                   resource=lab, shown_content=(content, lab.short()))
-        return arg
+        executed = self._exec(via, {key: self._as_arg(target)}, evil, required, None,
+                              resource=lab, shown_content=(content, lab.short()))
+        return arg if executed else None
 
-    def mem_read(self, key: str) -> Optional[Arg]:
-        a = self.world.memory.get(key)
-        self._log("memread", key=key, found=a is not None, label=a.label.short() if a else None)
-        return a
+    def mem_read(self, key: Any) -> Optional[Arg]:
+        """Authorize using label metadata before touching the stored value."""
+        key_arg = self._as_arg(key)
+        key_value = key_arg.value
+        label = self.world.memory_labels.get(key_value) if isinstance(key_value, str) else None
+        executed = self._exec(
+            "mem_read", {"key": key_arg}, False, False, None,
+            resource=label,
+        )
+        if not executed:
+            self._log("memread", key=key, found=None, denied=True, label=None)
+            return None
+        if label is None:
+            self._log("memread", key=key, found=False, denied=False, label=None)
+            return None
+
+        # This value lookup occurs only after the monitor has allowed and verified the read.
+        value = self.world.memory.get(key_value)
+        if value is None or value.label != label:
+            self._log("memread", key=key, found=None, denied=True, label=None)
+            return None
+        self._log("memread", key=key, found=True, denied=False, label=label.short())
+        return value
 
     # ---------------------------------------------------------------- actions
     def act(self, action: str, *, tool: Optional[Tool] = None, evil: bool = False, required: bool = False,
             blind: bool = False, cap: Optional[Capability] = None, **args: Any) -> bool:
-        wrapped = {k: (v if isinstance(v, Arg) else self.lit(v)) for k, v in args.items()}
+        wrapped = {k: self._as_arg(v) for k, v in args.items()}
         if tool is not None and action == "call_tool" and "tool" not in wrapped:
-            wrapped["tool"] = self.lit(tool.name)
+            wrapped["tool"] = self._as_arg(tool.name)
         return self._exec(action, wrapped, evil, required, tool, blind=blind, cap=cap)
 
     def act_swapped(self, action: str, approved: Dict[str, Any], actual: Dict[str, Any], evil: bool = True) -> bool:
         """Planner/critic scenario: the effect is authorised for `approved` args but executed with `actual`."""
-        w = lambda d: {k: (v if isinstance(v, Arg) else self.lit(v)) for k, v in d.items()}
+        w = lambda d: {k: self._as_arg(v) for k, v in d.items()}
         return self._exec(action, w(approved), evil, False, None, swap=w(actual))
 
     def _exec(self, action, args, evil, required, tool, blind=False, cap=None, resource=None, swap=None,
@@ -178,13 +209,16 @@ class Session:
         if executed:
             self.world.effects.append(Effect(action, final.values(), evil, self.step))
             if action == "mem_write":
-                self.world.memory[str(final.values()["key"])] = final.args["value"]
+                key = str(final.values()["key"])
+                value = final.args["value"]
+                self.world.memory[key] = value
+                self.world.memory_labels[key] = value.label
             if required:
                 self.required_done += 1
         self._log("act", action=action, args=self._show(final.args), verdict=d.verdict, executed=executed,
                   evil=evil, human=human, checks=[{"id": v.check, "sev": v.severity, "msg": v.msg} for v in d.violations],
-                  swapped=bool(swap), content=shown_content[0][:90] if shown_content else None,
-                  label=shown_content[1] if shown_content else None)
+                  swapped=bool(swap), content=shown_content[0][:90] if shown_content and executed else None,
+                  label=shown_content[1] if shown_content and executed else None)
         return executed
 
 

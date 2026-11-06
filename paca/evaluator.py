@@ -8,24 +8,28 @@ from __future__ import annotations
 import re
 from typing import Any, Dict, Iterable, List
 
+_MISSING = object()
+
 from .ast import EvaluationResult, Expression, Policy, ProvenanceRecord
 
 
 def _lookup(context: Dict[str, Any], entity: str, attribute: str) -> Any:
     if not isinstance(context, dict):
-        return None
+        return _MISSING
     flat = f"{entity}.{attribute}"
     if flat in context:
         return context[flat]
     bucket = context.get(entity)
     if isinstance(bucket, dict):
-        return bucket.get(attribute)
+        return bucket[attribute] if attribute in bucket else _MISSING
     if bucket is not None and hasattr(bucket, attribute):
         return getattr(bucket, attribute)
-    return None
+    return _MISSING
 
 
 def _compare(actual: Any, op: str, expected: Any) -> bool:
+    if actual is _MISSING:
+        return False
     try:
         if op == "==":
             return actual == expected
@@ -42,17 +46,18 @@ def _compare(actual: Any, op: str, expected: Any) -> bool:
             return actual is not None and expected in actual
         if op == "matches":
             return actual is not None and re.search(str(expected), str(actual)) is not None
-    except TypeError:
-        return False          # fail closed on incomparable types
+    except (TypeError, re.error):
+        return False          # fail closed on incomparable types and malformed regular expressions
     raise ValueError(f"Unsupported operator: {op!r}")
 
 
 def _eval_expr(expr: Expression, ctx: Dict[str, Any]):
     actual = _lookup(ctx, expr.entity, expr.attribute)
     ok = _compare(actual, expr.operator, expr.value)
-    rec = ProvenanceRecord("context", expr.entity, expr.attribute, actual,
+    shown_actual = "<missing>" if actual is _MISSING else actual
+    rec = ProvenanceRecord("context", expr.entity, expr.attribute, shown_actual,
                            f"{expr.entity}.{expr.attribute} {expr.operator} {expr.value!r}")
-    return ok, f"{expr.entity}.{expr.attribute} {expr.operator} {expr.value!r} => {'pass' if ok else 'fail'} (actual={actual!r})", rec
+    return ok, f"{expr.entity}.{expr.attribute} {expr.operator} {expr.value!r} => {'pass' if ok else 'fail'} (actual={shown_actual!r})", rec
 
 
 def evaluate_policy(policy: Policy | str, context: Dict[str, Any],

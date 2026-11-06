@@ -22,6 +22,10 @@ def compile_policy(policy: Policy | str) -> Dict[str, Any]:
         "name": policy.name,
         "action": policy.action,
         "effect": policy.effect,
+        "connectors": list(policy.connectors),
+        "priority": policy.priority,
+        "description": policy.description,
+        "metadata": dict(policy.metadata),
         "conditions": [
             {
                 "entity": expr.entity,
@@ -33,6 +37,11 @@ def compile_policy(policy: Policy | str) -> Dict[str, Any]:
         ],
     }
 
+    all_obligations = policy.obligations or ([policy.obligation] if policy.obligation else [])
+    compiled["obligations"] = [
+        {"name": item.name, "parameter": item.parameter, "metadata": dict(item.metadata)}
+        for item in all_obligations
+    ]
     if policy.obligation is not None:
         compiled["obligation"] = {
             "name": policy.obligation.name,

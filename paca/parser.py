@@ -55,9 +55,10 @@ def _clean_value(raw: str):
     return value
 
 
-def _split_top_level(expr: str) -> List[str]:
-    """Split on and/or while respecting nested grouping and quoted strings."""
+def _split_top_level(expr: str) -> Tuple[List[str], List[str]]:
+    """Split conditions and connectors in one quote-aware pass."""
     fragments: List[str] = []
+    connectors: List[str] = []
     current: List[str] = []
     depth = 0
     quote: Optional[str] = None
@@ -80,43 +81,34 @@ def _split_top_level(expr: str) -> List[str]:
             current.append(ch)
             i += 1
             continue
-
-        if ch in "([":
+        if ch in "[{":
             depth += 1
             current.append(ch)
             i += 1
             continue
-
-        if ch in ")]":
+        if ch in "]}":
             depth = max(depth - 1, 0)
             current.append(ch)
             i += 1
             continue
 
-        if depth == 0:
-            remaining = expr[i:].lower()
-            if remaining.startswith(" and "):
-                fragment = "".join(current).strip()
-                if fragment:
-                    fragments.append(fragment)
+        if depth == 0 and ch.isspace():
+            match = re.match(r"\s+(and|or)\s+", expr[i:], flags=re.IGNORECASE)
+            if match and "".join(current).strip():
+                fragments.append("".join(current).strip())
+                connectors.append(match.group(1).lower())
                 current = []
-                i += 5
+                i += match.end()
                 continue
-            if remaining.startswith(" or "):
-                fragment = "".join(current).strip()
-                if fragment:
-                    fragments.append(fragment)
-                current = []
-                i += 4
-                continue
-
         current.append(ch)
         i += 1
 
     tail = "".join(current).strip()
     if tail:
         fragments.append(tail)
-    return [fragment for fragment in fragments if fragment]
+    if len(connectors) != max(0, len(fragments) - 1):
+        raise ValueError("Malformed condition connector sequence")
+    return fragments, connectors
 
 
 def _parse_condition(fragment: str) -> Expression:
@@ -138,12 +130,10 @@ def _parse_conditions(raw: str) -> Tuple[List[Expression], List[str]]:
     if not raw or not raw.strip():
         return [], []
 
-    fragments = _split_top_level(raw)
+    fragments, connectors = _split_top_level(raw)
     if not fragments:
         return [], []
-
     conditions = [_parse_condition(fragment) for fragment in fragments]
-    connectors = [part.lower() for part in re.findall(r"\s+(and|or)\s+", raw, flags=re.IGNORECASE)]
     return conditions, connectors
 
 
@@ -213,6 +203,26 @@ def parse_policy_file(path: str) -> Policy:
         return parse_policy(handle.read())
 
 
+def _split_comment(line: str) -> Tuple[str, str]:
+    """Split a policy line at the first unquoted comment marker."""
+    quote: Optional[str] = None
+    escaped = False
+    for index, char in enumerate(line):
+        if quote is not None:
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == quote:
+                quote = None
+            continue
+        if char in ("'", '"'):
+            quote = char
+        elif char == "#":
+            return line[:index], line[index + 1:]
+    return line, ""
+
+
 _NAMED_RE = re.compile(r"^(?P<name>[A-Za-z][A-Za-z0-9_.-]*)\s*:\s+(?P<rest>(?:permit|deny)\b.*)$", re.I | re.S)
 
 
@@ -225,7 +235,7 @@ def parse_policy_set(text: str, name: str = "default", strategy: str = "deny_ove
     """
     pset = PolicySet(name=name, strategy=strategy, default_decision=default_decision)
     for lineno, raw in enumerate(text.splitlines(), 1):
-        line, _, note = raw.partition("#")
+        line, note = _split_comment(raw)
         line = line.strip()
         if not line:
             continue

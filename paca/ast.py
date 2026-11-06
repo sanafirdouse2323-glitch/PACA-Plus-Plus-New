@@ -47,9 +47,9 @@ class EvaluationResult:
     provenance: List[ProvenanceRecord] = field(default_factory=list)
     policy_id: Optional[str] = None
     obligations: List[str] = field(default_factory=list)
-    matched_policies: List[str] = field(default_factory=list)
-    fired: List[tuple] = field(default_factory=list)          # (effect, policy_name) of every applicable rule
-    obligation_map: Dict[str, List[str]] = field(default_factory=dict)  # policy_name -> obligation names
+    matched_policies: List[str] = field(default_factory=list)  # all applicable rule names
+    fired: List[tuple] = field(default_factory=list)          # effective (effect, policy_name) rules after conflict resolution
+    obligation_map: Dict[str, List[str]] = field(default_factory=dict)  # effective policy_name -> obligation names
 
 
 @dataclass(frozen=True)

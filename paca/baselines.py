@@ -1,8 +1,8 @@
-"""Simplified models of control classes commonly deployed for LLM agents.
+"""Hand-authored comparison models for selected LLM-agent control classes.
 
-These are NOT the real products: each is a deliberately explicit, inspectable model of one
-control *class* from the catalog's "Provider and platform record" (input filter, role-based
-tool allow-list, sandbox + scoped permissions). Edit the constants to make them stricter.
+These are small, inspectable simulations of an input filter, role-based tool allow-list,
+and sandbox-style scoped permissions. They are not implementations, measurements, or
+representations of any specific commercial product.
 """
 from __future__ import annotations
 
@@ -50,8 +50,8 @@ class NoGuard(Baseline):
 
 
 class PromptFilter(Baseline):
-    """Input/prompt-attack classifier: catches 'classic' injections in user input and retrieved
-    documents; does not see tool results, tool definitions, agent messages or memory ([22])."""
+    """Toy input classifier for selected classic-pattern user and retrieved-content examples.
+    It does not inspect tool results, tool definitions, agent messages or memory."""
     name, label = "filter", "Prompt filter"
 
     def scan(self, source, text, style):
@@ -69,9 +69,8 @@ class StaticRBAC(Baseline):
 
 
 class SandboxScoped(Baseline):
-    """Sandbox + scoped permissions + permission prompts (Claude-Code / Copilot-agent style, [16][20]):
-    role tools, network allow-list, filesystem scope, command allow-list, prompts for destructive
-    actions. Blind to data provenance, sensitivity and task boundaries."""
+    """Toy sandbox-style model with role, network, filesystem and command allow-lists.
+    It prompts for destructive actions and is blind to data provenance, sensitivity and task boundaries."""
     name, label = "sandbox", "Sandbox + scoped permissions"
 
     def decide(self, req):
