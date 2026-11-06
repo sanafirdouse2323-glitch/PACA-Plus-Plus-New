@@ -45,6 +45,9 @@ env, extra_args) callback. It is responsible for:
 6. Propagating provenance into later tool-call payloads. When fine-grained lineage is
    unavailable, use aggregate_prior_output_labels(extra_args) as a conservative
    fallback; this can cause false blocks but must not silently upgrade data to trusted.
+7. Providing an integer Request.step. The adapter advances it monotonically for each
+   call made with the same capability; capability expiry values must use the same
+   step scale. Use a distinct capability ID for each task.
 
 The adapter binds the full normalized AgentDojo tool argument object into the request
 digest under a reserved field. It then verifies and consumes the PACA++ token before
@@ -60,13 +63,21 @@ request_builder and monitor must be constructed for the selected benchmark task 
 environment. This example deliberately does not invent a universal policy mapper.
 
 ~~~python
+from pathlib import Path
+
 from agentdojo.agent_pipeline.agent_pipeline import AgentPipeline, PipelineConfig
 from agentdojo.agent_pipeline.tool_execution import ToolsExecutionLoop
 from agentdojo.attacks.attack_registry import load_attack
-from agentdojo.benchmark import benchmark_suite_with_injections, benchmark_suite_without_injections
+from agentdojo.benchmark import benchmark_suite_with_injections
 from agentdojo.task_suite.load_suites import get_suite
 
 from paca.integrations.agentdojo import PacaToolsExecutor
+
+# Application-specific components: these must be implemented for the selected
+# benchmark task and environment using trusted task grants and connector labels.
+# Do not derive either one from injected content or model-generated claims.
+monitor = make_task_scoped_monitor()
+request_builder = make_workspace_request_builder()
 
 suite = get_suite("v1.2.2", "workspace")
 pipeline = AgentPipeline.from_config(
@@ -84,16 +95,23 @@ tools_loop = next(
     element for element in pipeline.elements
     if isinstance(element, ToolsExecutionLoop)
 )
-# Replace only the first loop element (the stock ToolsExecutor).
 tools_loop.elements = [
     PacaToolsExecutor(monitor=monitor, request_builder=request_builder),
     *tools_loop.elements[1:],
 ]
 
-# Then call AgentDojo's benchmark_suite_with_injections(...) with this pipeline,
-# suite, selected attack, and log directory. For a benign run, use
-# benchmark_suite_without_injections(...).
+attack = load_attack("tool_knowledge", suite, pipeline)
+results = benchmark_suite_with_injections(
+    agent_pipeline=pipeline,
+    suite=suite,
+    attack=attack,
+    logdir=Path("./runs/paca-agentdojo"),
+    force_rerun=True,
+    benchmark_version="v1.2.2",
+)
+print(results)
 ~~~
+
 
 The model provider must be configured using AgentDojo's supported environment
 variables/API credentials. The sample model name is illustrative; keep the model,
