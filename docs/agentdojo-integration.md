@@ -68,30 +68,140 @@ C13 effect-token verification is a structural requirement for this external exec
 and cannot be disabled through Monitor's policy-check ablation setting. The adapter
 rejects such a Monitor configuration at construction time.
 
-## Insert the adapter into an AgentDojo pipeline
+## Task-scoped workspace read mapper
 
-The following shows the insertion point against the AgentDojo AgentPipeline factory.
-request_builder and monitor must be constructed for the selected benchmark task and
-environment. This example deliberately does not invent a universal policy mapper.
+The repository includes `paca.integrations.agentdojo_workspace`, a concrete mapper
+for a deliberately limited subset of AgentDojo's `v1.2.2` workspace suite. It maps
+read/search calls into PACA++ read actions and fails closed for every unlisted tool.
+It does not yet authorise writes, deletes, email sends, file sharing, or calendar
+mutations.
 
-~~~python
-from pathlib import Path
+Supported workspace tools:
 
-from agentdojo.agent_pipeline.agent_pipeline import AgentPipeline, PipelineConfig
-from agentdojo.agent_pipeline.tool_execution import ToolsExecutionLoop
-from agentdojo.attacks.attack_registry import load_attack
-from agentdojo.benchmark import benchmark_suite_with_injections
+- Email: `get_unread_emails`, `get_sent_emails`, `get_received_emails`,
+  `get_draft_emails`, `search_emails`, `search_contacts_by_name`,
+  `search_contacts_by_email`.
+- Calendar: `get_current_day`, `get_day_calendar_events`,
+  `search_calendar_events`.
+- Cloud drive: `get_file_by_id`, `list_files`, `search_files`,
+  `search_files_by_filename`.
+
+The workspace suite also contains mutating tools. They are intentionally not in
+`SUPPORTED_WORKSPACE_READ_TOOLS`; calls such as `send_email`, `delete_email`,
+`create_calendar_event`, `cancel_calendar_event`, `reschedule_calendar_event`,
+`add_calendar_event_participants`, `create_file`, `append_to_file`,
+`delete_file`, and `share_file` are denied by this read-scoped mapper. This makes
+the mapper suitable only for user-task slices whose legitimate tool calls are within
+the supported read set. It is not a full workspace-suite policy.
+
+### Configure a task-scoped mapper
+
+The task capability and source labels are mandatory trusted inputs. The mapper does
+not infer access rights from task text, tool names, file names, email contents,
+calendar descriptions, or model output.
+
+```python
 from agentdojo.task_suite.load_suites import get_suite
 
 from paca.integrations.agentdojo import PacaToolsExecutor
-
-# Application-specific components: these must be implemented for the selected
-# benchmark task and environment using trusted task grants and connector labels.
-# Do not derive either one from injected content or model-generated claims.
-monitor = make_task_scoped_monitor()
-request_builder = make_workspace_request_builder()
+from paca.integrations.agentdojo_workspace import (
+    WorkspaceTaskContext,
+    make_workspace_request_builder,
+)
+from paca.monitor import Monitor
+from paca.provenance import Label
+from paca.runtime import Capability
 
 suite = get_suite("v1.2.2", "workspace")
+
+# Example authority for one read-only calendar task. This capability must be
+# constructed from trusted benchmark/user-task setup, not from injected content.
+capability = Capability(
+    cap_id="workspace-user-task-1",
+    principal="benchmark-user",
+    tenant="workspace-v1.2.2",
+    task_id="workspace:user_task_1",
+    role="assistant",
+    grants={
+        "read_calendar": ("calendar:day:2024-05-15",),
+    },
+    expires=20,
+    max_calls=10,
+)
+
+# Illustrative fixture-side labels only. Replace these with labels supplied by
+# the evaluation's trusted fixture/connector metadata.
+source_labels = {
+    "mail": Label(
+        integrity="untrusted", sensitivity=2, tenant="workspace-v1.2.2",
+        origins=frozenset({"agentdojo_fixture:mail"}),
+    ),
+    "calendar": Label(
+        integrity="untrusted", sensitivity=1, tenant="workspace-v1.2.2",
+        origins=frozenset({"agentdojo_fixture:calendar"}),
+    ),
+    "drive": Label(
+        integrity="untrusted", sensitivity=2, tenant="workspace-v1.2.2",
+        origins=frozenset({"agentdojo_fixture:drive"}),
+    ),
+}
+
+def label_workspace_resource(source, arguments, env):
+    # A real experiment may inspect a trusted sidecar keyed by file ID, date,
+    # or fixture record. Never classify from text written by the model.
+    return source_labels[source]
+
+context = WorkspaceTaskContext(
+    capability=capability,
+    resource_labeler=label_workspace_resource,
+)
+request_builder = make_workspace_request_builder(context)
+monitor = Monitor()
+
+# Insert PacaToolsExecutor before AgentDojo's runtime dispatcher in the
+# ToolsExecutionLoop, as shown in the next section.
+executor = PacaToolsExecutor(monitor, request_builder)
+```
+
+The mapper creates these capability targets:
+
+| Source | Tool operation | Target scope |
+|---|---|---|
+| Mail | Unread, sent, received, drafts | `mail:inbox:unread`, `mail:sent`, `mail:received`, `mail:drafts` |
+| Mail | Search messages or contacts | `mail:search`, `mail:contacts:name`, `mail:contacts:email` |
+| Calendar | Current day | `calendar:current_day` |
+| Calendar | Events for one day | `calendar:day:<YYYY-MM-DD>` |
+| Calendar | Search events | `calendar:search:<YYYY-MM-DD>` or `calendar:search:all` |
+| Drive | Retrieve one file | `drive:file:<file_id>` |
+| Drive | List or search files | `drive:list:all`, `drive:search:content`, `drive:search:filename` |
+
+Grant patterns should be as narrow as the task allows. For example, the exact grant
+`read_calendar: ("calendar:day:2024-05-15",)` permits that date target, not other
+calendar days. A search target covers the relevant mailbox/calendar/drive search
+operation; search terms are separately included as untrusted, digest-bound request
+arguments. Broad search grants therefore authorise broader reads and must be reported
+as such.
+
+The resource-label callback receives one of `mail`, `calendar`, or `drive`, a copy
+of the normalised tool arguments, and the AgentDojo environment. It must return a
+PACA++ `Label` from trusted evaluation metadata. If it raises or returns a non-Label,
+the executor denies the call. The mapper conservatively marks model-provided query,
+date, and file-ID arguments as untrusted and joins them with labels from prior tool
+outputs when available.
+
+The mapper is strict about argument keys and required values. Search queries must be
+non-empty; calendar dates must be valid `YYYY-MM-DD` strings. Unexpected arguments,
+unknown tool names, and unsupported mutating tools fail closed.
+
+### Insert the adapter into an AgentDojo pipeline
+
+The following shows the insertion point against AgentDojo's AgentPipeline factory.
+Use the actual task-scoped `monitor` and `request_builder` configured above.
+
+~~~python
+from agentdojo.agent_pipeline.agent_pipeline import AgentPipeline, PipelineConfig
+from agentdojo.agent_pipeline.tool_execution import ToolsExecutionLoop
+
 pipeline = AgentPipeline.from_config(
     PipelineConfig(
         llm="gpt-4o-2024-05-13",
@@ -111,30 +221,22 @@ tools_loop.elements = [
     PacaToolsExecutor(monitor=monitor, request_builder=request_builder),
     *tools_loop.elements[1:],
 ]
-
-attack = load_attack("tool_knowledge", suite, pipeline)
-results = benchmark_suite_with_injections(
-    agent_pipeline=pipeline,
-    suite=suite,
-    attack=attack,
-    logdir=Path("./runs/paca-agentdojo"),
-    force_rerun=True,
-    benchmark_version="v1.2.2",
-)
-print(results)
 ~~~
 
-
-The names `make_task_scoped_monitor()` and `make_workspace_request_builder()`
-in this example are placeholders for application-supplied implementations; they are
-not functions exported by PACA++ or AgentDojo. The mapper must be written and reviewed
-for the concrete suite/task before running the experiment.
-
 The model provider must be configured using AgentDojo's supported environment
-variables/API credentials. The sample model name is illustrative; keep the model,
-suite version, tasks, attack, and model settings identical across baseline and PACA++
-runs. This documentation does not claim that an AgentDojo benchmark run was executed
-as part of this repository's CI.
+variables/API credentials. The sample model name is illustrative; use an identical
+model and configuration for each matched experimental condition.
+
+**Evaluation boundary:** the initial PACA++ workspace experiment must select benign
+user tasks whose legitimate ground-truth tool calls are all in
+`SUPPORTED_WORKSPACE_READ_TOOLS`. Attacked runs may then test whether malicious
+instructions attempt unsupported mutating calls. Report this as a read-scoped,
+task-authorised experiment, not as coverage of all AgentDojo workspace tasks. Do not
+compare its utility denominator with a full-suite baseline unless the task selection
+is identical.
+
+This mapper and its tests do not execute an LLM benchmark and do not establish
+independent attack-success or utility measurements.
 
 ## Approval behavior
 
