@@ -358,10 +358,10 @@ def run_workspace_benchmark(
         ModelsEnum(model)
     except ValueError as exc:
         raise ValueError(f"unsupported AgentDojo model identifier: {model!r}") from exc
-    if attack_name.lower().endswith("_dos") or attack_name == "dos":
+    if attack_name.lower().endswith("_dos") or attack_name in {"dos", "manual"}:
         raise ValueError(
-            "DoS attacks are not included in this first workspace runner; "
-            "choose a non-DoS registered attack such as tool_knowledge."
+            "DoS and interactive manual attacks are not included in this first workspace runner; "
+            "choose a non-interactive, non-DoS registered attack such as tool_knowledge."
         )
     if max_iters < 1 or max_iters > 100:
         raise ValueError("max_iters must be between 1 and 100")
@@ -417,6 +417,7 @@ def run_workspace_benchmark(
             encoding="utf-8",
         )
 
+    save_checkpoint()
     for user_task_id in user_task_ids:
         user_task = available_users[user_task_id]
         policy = derive_task_policy(user_task, suite)
@@ -483,12 +484,16 @@ def run_workspace_benchmark(
                 "paca_utility": paca_utility_bool,
                 "baseline_duration_seconds": float(base_result.duration),
                 "paca_duration_seconds": float(paca_result.duration),
+                "baseline_error": base_result.error,
+                "paca_error": paca_result.error,
                 "paca_metrics": dict(paca_executor.metrics),
                 "paca_audit_entries": list(paca_monitor.audit.entries),
             },
             "attacked_pairs": [],
         }
+        results["task_results"].append(task_result)
         paca_metrics.append(dict(paca_executor.metrics))
+        save_checkpoint()
 
         # Check which selected injections are applicable to this user task before
         # starting model calls. Unsupported/non-injectable pairs are recorded, not
@@ -603,18 +608,10 @@ def run_workspace_benchmark(
                     },
                 }
             )
-            results["task_results"].append(
-                {
-                    "user_task_id": user_task_id,
-                    "attacked_pair": task_result["attacked_pairs"][-1],
-                }
-            )
             save_checkpoint()
 
-        # Always retain the benign result, including when no selected attack is
-        # applicable to this task.
-        results.setdefault("benign_task_results", []).append(task_result["benign"])
-        save_checkpoint()
+        # The complete per-user-task record remains in task_results, including
+        # when every selected attack pair was marked inapplicable.
 
     all_policy_metrics = _sum_metrics(paca_metrics)
     metric_denominator = all_policy_metrics["tool_calls_seen"]
