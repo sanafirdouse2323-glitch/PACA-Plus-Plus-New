@@ -12,6 +12,8 @@ from .provenance import Arg, Label
 # action -> effect class, which argument names the target / payload / extra control values.
 ACTIONS: Dict[str, Dict[str, Any]] = {
     "read_mail":      dict(cls="read",        target="folder",   required=["folder"]),
+    "read_calendar":  dict(cls="read",        target="resource", required=["resource"]),
+    "read_drive":     dict(cls="read",        target="resource", required=["resource"]),
     "read_file":      dict(cls="read",        target="path",     required=["path"]),
     "fetch_url":      dict(cls="egress",      target="url",     payload=["query"], required=["url"]),   # egress only if payload present
     "send_email":     dict(cls="egress",      target="to",      payload=["body", "attachment"], required=["to", "body"]),
