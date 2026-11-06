@@ -46,15 +46,27 @@ env, extra_args) callback. It is responsible for:
    unavailable, use aggregate_prior_output_labels(extra_args) as a conservative
    fallback; this can cause false blocks but must not silently upgrade data to trusted.
 7. Providing an integer Request.step. The adapter advances it monotonically for each
-   call made with the same capability; capability expiry values must use the same
-   step scale. Use a distinct capability ID for each task.
+   call made with the same capability within this executor instance; capability expiry
+   values must use the same step scale. Use a distinct capability ID for each task.
+
+The counter is in memory and is reset when the executor is recreated or the process
+restarts. The adapter and reference monitor are not a concurrent, multi-worker
+coordination service. Serialize calls through one executor instance per task. A
+deployment that needs concurrent or restart-safe execution must provide an atomic,
+durable step allocator and coordinate capability call budgets and token state outside
+this adapter.
 
 The adapter binds the full normalized AgentDojo tool argument object into the request
-digest under a reserved field. It then verifies and consumes the PACA++ token before
-calling runtime.run_function with that exact argument snapshot. The reserved field
-is included in the monitor's digest but is not interpreted as a policy attribute;
+digest under a reserved field. It rejects a request builder that mutates the normalized
+argument copy, then verifies and consumes the PACA++ token before calling
+runtime.run_function with the original normalized argument snapshot. The reserved
+field is included in the monitor's digest but is not interpreted as a policy attribute;
 the request builder must still map each security-relevant value to the correct action
 and provenance fields.
+
+C13 effect-token verification is a structural requirement for this external executor
+and cannot be disabled through Monitor's policy-check ablation setting. The adapter
+rejects such a Monitor configuration at construction time.
 
 ## Insert the adapter into an AgentDojo pipeline
 
@@ -144,6 +156,14 @@ benchmark's ground-truth attack flag is not an authenticated approval mechanism.
   exact LLM data lineage.
 - The tool's underlying function remains responsible for validating action-specific
   semantics and ensuring the actual external effect matches the authorised request.
+- A single-use PACA++ effect token prevents reuse of that token; it does not deduplicate
+  separately authorised requests. Connectors for non-idempotent effects (for example,
+  sending messages or making payments) must implement their own idempotency keys or
+  equivalent duplicate-effect protection.
+- The adapter does not provide transactional rollback when a connector fails after
+  dispatch. Such failures can have an uncertain or partial external outcome.
+- This adapter and the in-memory Monitor state are intended for serialized, single-
+  executor use. They are not safe to treat as a concurrent multi-worker coordinator.
 - This adapter does not wrap AgentDojo's hosted model provider, nor does it eliminate
   model/provider nondeterminism.
 - A green adapter test is an integration/API smoke test, not an independent security
