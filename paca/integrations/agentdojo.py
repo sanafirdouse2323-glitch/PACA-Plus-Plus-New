@@ -4,6 +4,10 @@ This module is optional and imports AgentDojo only when requested. The adapter p
 PACA++ immediately before AgentDojo's FunctionsRuntime dispatch. Applications must
 provide an explicit request builder: this module cannot infer task authority or data
 sensitivity from arbitrary tool names and model arguments.
+
+The adapter is intended for serialized use of one executor instance per task. Its
+capability-step counter is process-local: it does not provide durable coordination
+across executor instances, worker processes, or restarts.
 """
 from __future__ import annotations
 
@@ -82,6 +86,12 @@ class PacaToolsExecutor(ToolsExecutor):
         result_labeler: ResultLabeler | None = None,
         tool_output_formatter: Callable[[Any], str] | None = None,
     ) -> None:
+        if not isinstance(monitor, Monitor):
+            raise TypeError("monitor must be a PACA++ Monitor instance")
+        if "C13" in monitor.disable:
+            raise ValueError(
+                "C13 effect-token verification cannot be disabled for external tool execution"
+            )
         if not callable(request_builder):
             raise TypeError("request_builder must be callable")
         if approval_provider is not None and not callable(approval_provider):
@@ -172,12 +182,18 @@ class PacaToolsExecutor(ToolsExecutor):
                         execution_args[key] = ast.literal_eval(value)
                 argument_snapshot = _canonical_json(execution_args)
 
+                builder_arguments = copy.deepcopy(execution_args)
                 request = self.request_builder(
                     function_name,
-                    copy.deepcopy(execution_args),
+                    builder_arguments,
                     env,
                     state,
                 )
+                # A mapper must describe the same normalized call that will execute.
+                # Reject accidental or deliberate mutation rather than allowing the
+                # policy request to diverge from the bound execution snapshot.
+                if _canonical_json(builder_arguments) != argument_snapshot:
+                    raise ValueError("request_builder must not mutate tool arguments")
                 if not isinstance(request, Request):
                     raise TypeError("request_builder did not return a PACA++ Request")
                 if isinstance(request.step, bool) or not isinstance(request.step, int):
@@ -218,6 +234,9 @@ class PacaToolsExecutor(ToolsExecutor):
 
                 bound_args = request.args[RAW_ARGUMENTS_KEY].value
                 if _canonical_json(bound_args) != argument_snapshot:
+                    # Consume the token created by decide(), but fail verification
+                    # because the request no longer matches its authorised digest.
+                    self.monitor.verify(request, decision)
                     tool_call_results.append(self._deny_result(
                         tool_call,
                         "PACA++ argument binding changed; tool was not executed.",
