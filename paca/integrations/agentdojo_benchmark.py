@@ -772,6 +772,20 @@ def main(argv: list[str] | None = None) -> int:
         parser.error(f"unknown injection task IDs: {missing_injections}")
 
     if args.dry_run:
+        try:
+            applicable_by_task, skipped_pairs = _preflight_attack_pairs(
+                api,
+                suite,
+                user_task_ids=args.user_tasks,
+                injection_task_ids=args.injection_tasks,
+                model=args.model,
+                attack_name=args.attack,
+            )
+        except Exception as exc:
+            parser.error(
+                f"could not preflight the selected AgentDojo attack/task matrix "
+                f"({type(exc).__name__}): {exc}"
+            )
         print(json.dumps(
             {
                 "status": "dry_run",
@@ -780,6 +794,8 @@ def main(argv: list[str] | None = None) -> int:
                 "model": args.model,
                 "attack": args.attack,
                 "injection_task_ids": args.injection_tasks,
+                "applicable_injection_task_ids_by_user_task": applicable_by_task,
+                "skipped_attack_pairs": skipped_pairs,
                 "task_policies": {
                     task_id: {
                         "ground_truth_tool_calls": list(policy.manifest),
