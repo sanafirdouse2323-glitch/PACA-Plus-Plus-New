@@ -70,3 +70,23 @@ jobs:
           /tmp/paca-wheel-env/bin/pip install dist/*.whl
           cd /tmp
           /tmp/paca-wheel-env/bin/python -c "from paca.monitor import Monitor; m = Monitor(); assert m.rules.policies"
+
+
+  agentdojo-integration:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install PACA++ and pinned AgentDojo integration dependency
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev,agentdojo]"
+
+      - name: Run AgentDojo adapter tests
+        run: pytest -q tests/test_agentdojo_integration.py
