@@ -171,19 +171,22 @@ The mapper creates these capability targets:
 |---|---|---|
 | Mail | Mark unread messages read | `mail:inbox:unread` (separate `mark_mail_read` grant) |
 | Mail | Sent, received, drafts | `mail:sent`, `mail:received`, `mail:drafts` (`read_mail` grant) |
-| Mail | Search messages or contacts | `mail:search`, `mail:contacts:name`, `mail:contacts:email` |
+| Mail | Search messages or contacts | `mail:search:<selector-digest>`, `mail:contacts:name:<selector-digest>`, `mail:contacts:email:<selector-digest>` |
 | Calendar | Current day | `calendar:current_day` |
 | Calendar | Events for one day | `calendar:day:<YYYY-MM-DD>` |
-| Calendar | Search events | `calendar:search:<YYYY-MM-DD>` or `calendar:search:all` |
+| Calendar | Search events | `calendar:search:<YYYY-MM-DD-or-all>:<selector-digest>` |
 | Drive | Retrieve one file | `drive:file:<file_id>` |
-| Drive | List or search files | `drive:list:all`, `drive:search:content`, `drive:search:filename` |
+| Drive | List or search files | `drive:list:all`, `drive:search:content:<selector-digest>`, `drive:search:filename:<selector-digest>` |
 
 Grant patterns should be as narrow as the task allows. For example, the exact grant
 `read_calendar: ("calendar:day:2024-05-15",)` permits that date target, not other
-calendar days. A search target covers the relevant mailbox/calendar/drive search
-operation; search terms are separately included as untrusted, digest-bound request
-arguments. Broad search grants therefore authorise broader reads and must be reported
-as such.
+calendar days. Search targets include a truncated SHA-256 selector digest computed
+from the complete normalised argument object (including an optional sender or date).
+The digest is bound into the PACA++ request and capability target, so a different
+query does not match the task's search grant. This is intentionally strict: a model
+that paraphrases or broadens the ground-truth query can be denied and may lose benign
+utility. The runner reports such utility regressions instead of weakening the grant
+automatically. `list_files` remains an explicitly broad collection-read operation.
 
 The resource-label callback receives one of `mail`, `calendar`, or `drive`, a copy
 of the normalised tool arguments, and the AgentDojo environment. It must return a
@@ -260,6 +263,88 @@ is identical.
 This mapper and its tests do not execute an LLM benchmark and do not establish
 independent attack-success or utility measurements.
 
+## Reproducible benchmark runner
+
+The repository now provides an executable paired runner:
+
+`paca-agentdojo`
+
+It runs the stock AgentDojo pipeline without a defence and the PACA++-wrapped
+pipeline against the same explicitly selected workspace task and injection-task
+pairs. For every PACA++ episode it creates a fresh in-process monitor, executor,
+capability, and step counter. The capability is derived only from that workspace
+user task's ground-truth calls on the clean, uninjected fixture. Injection-task
+ground truth and model-generated calls are never used to mint authority.
+
+First install the pinned optional dependency:
+
+~~~bash
+python -m pip install -e ".[dev,agentdojo]"
+~~~
+
+Discover the exact task IDs available in the installed suite release:
+
+~~~bash
+paca-agentdojo --list-supported-tasks
+paca-agentdojo --list-injection-tasks
+~~~
+
+Review a task policy without making model calls:
+
+~~~bash
+paca-agentdojo \
+  --model gpt-4o-2024-05-13 \
+  --user-tasks user_task_1,user_task_16 \
+  --injection-tasks INJECTION_TASK_ID_FROM_LIST \
+  --attack tool_knowledge \
+  --dry-run
+~~~
+
+Replace `INJECTION_TASK_ID_FROM_LIST` with one or more actual IDs returned by
+`--list-injection-tasks`. The runner rejects any selected user task whose trusted
+ground-truth tool calls include an operation outside the supported mapper.
+
+Run the paired benchmark after configuring the chosen provider's credentials using
+AgentDojo's supported environment variables:
+
+~~~bash
+paca-agentdojo \
+  --model gpt-4o-2024-05-13 \
+  --user-tasks user_task_1,user_task_16 \
+  --injection-tasks INJECTION_TASK_ID_FROM_LIST \
+  --attack tool_knowledge \
+  --log-dir runs/agentdojo \
+  --output runs/agentdojo/paca-comparison.json
+~~~
+
+For a local model, use AgentDojo's `local` or `openai-compatible` model identifier
+and supply the corresponding `--model-id` and endpoint environment variables.
+Do not put API keys in command-line arguments, task manifests, or result files.
+
+The runner uses AgentDojo's own user-task utility and injection-task security checks.
+It records raw task-pair outcomes, the exact task capability manifest, suite/model/
+attack configuration, task durations, PACA++ audit entries, denied calls, token-
+verified dispatch attempts, execution errors, approval requests, and measured
+policy-decision time. Its summary reports benign utility, utility under attack,
+and attack success rate for both conditions. In AgentDojo, the injection task's
+security checker returns `True` when the injected goal was achieved; therefore a
+lower attack-success rate is better. Denominators and skipped attack pairs are
+reported explicitly.
+
+The workspace fixture does not provide PACA++ confidentiality labels. The runner
+therefore labels all returned workspace data as untrusted and at maximum PACA++
+sensitivity (3), with a benchmark tenant identifier. This is a deliberately
+conservative experiment policy, not a claim that AgentDojo has native data-sensitivity
+metadata.
+
+The first runner intentionally excludes DoS attack classes and does not cover
+workspace tasks that require writes, deletes, sends, sharing, or calendar mutations.
+It does not measure OPA, NeMo Guardrails, OpenAI Agents SDK, or AgentDojo's other
+defence settings. Those are separate integrations/conditions. CI tests the runner
+and mapper APIs with the pinned AgentDojo dependency; CI does not call an LLM API
+and does not generate benchmark scores. An actual result file is created only when
+the operator runs the command with configured model credentials.
+
 ## Approval behavior
 
 The adapter fails closed on needs_approval unless an approval_provider is supplied.
@@ -290,8 +375,12 @@ benchmark's ground-truth attack flag is not an authenticated approval mechanism.
   executor use. They are not safe to treat as a concurrent multi-worker coordinator.
 - This adapter does not wrap AgentDojo's hosted model provider, nor does it eliminate
   model/provider nondeterminism.
-- A green adapter test is an integration/API smoke test, not an independent security
-  result or a deployment certification.
+- A green adapter or runner test is an integration/API test, not an independent
+  security result, a completed LLM benchmark, or a deployment certification.
+- The benchmark runner's `authorized_dispatches` metric counts calls whose PACA++
+  effect token was verified before dispatch. It does not prove that the external
+  function completed its effect. A runtime exception can leave an uncertain or
+  partial outcome; these are reported separately as dispatch exceptions.
 
 ## Reproducible comparison protocol
 
