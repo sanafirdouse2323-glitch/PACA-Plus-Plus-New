@@ -479,6 +479,7 @@ def test_agentdojo_adapter_metrics_count_verified_dispatches():
     _run(executor, runtime, "read_report", {"path": "/tenant-a/report.txt"})
 
     assert executor.metrics["tool_calls_seen"] == 1
+    assert executor.metrics["policy_evaluations"] == 1
     assert executor.metrics["denied_calls"] == 0
     assert executor.metrics["authorized_dispatches"] == 1
     assert executor.metrics["dispatch_attempts"] == 1
