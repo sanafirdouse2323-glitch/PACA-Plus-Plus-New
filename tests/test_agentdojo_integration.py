@@ -390,7 +390,8 @@ def test_agentdojo_adapter_fails_closed_when_request_builder_mutates_arguments()
     )
 
     assert runtime.calls == []
-    assert "request_builder must not mutate tool arguments" in messages[-1]["error"]
+    assert "integration error (ValueError)" in messages[-1]["error"]
+    assert "attacker-selected" not in messages[-1]["error"]
 
 
 def test_agentdojo_adapter_fails_closed_when_effect_token_verification_fails(monkeypatch):
