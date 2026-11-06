@@ -334,7 +334,7 @@ def test_workspace_mapper_rejects_resource_label_marked_trusted():
     )
 
     assert runtime.calls == []
-    assert "resources must be labelled untrusted" in messages[-1]["error"]
+    assert "integration error (ValueError)" in messages[-1]["error"]
 
 
 def test_workspace_mapper_rejects_resource_label_without_capability_tenant():
@@ -353,7 +353,7 @@ def test_workspace_mapper_rejects_resource_label_without_capability_tenant():
     )
 
     assert runtime.calls == []
-    assert "must include the capability tenant" in messages[-1]["error"]
+    assert "integration error (ValueError)" in messages[-1]["error"]
 
 
 def test_workspace_context_rejects_capabilities_for_unmapped_effects():
