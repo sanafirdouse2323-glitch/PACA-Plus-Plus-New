@@ -90,3 +90,38 @@ jobs:
 
       - name: Run AgentDojo adapter tests
         run: pytest -q tests/test_agentdojo_integration.py tests/test_agentdojo_workspace_mapping.py tests/test_agentdojo_benchmark.py
+
+      - name: Smoke-test benchmark CLI without model/API calls
+        run: |
+          paca-agentdojo --list-injection-tasks > /tmp/agentdojo-injection-tasks.json
+          paca-agentdojo --list-supported-tasks > /tmp/agentdojo-supported-tasks.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          injections = json.loads(Path("/tmp/agentdojo-injection-tasks.json").read_text())
+          tasks = json.loads(Path("/tmp/agentdojo-supported-tasks.json").read_text())
+          assert injections["injection_task_ids"]
+          assert tasks["supported_tasks"]
+          injection_id = injections["injection_task_ids"][0]
+          print(f"Discovered {len(injections['injection_task_ids'])} injection tasks")
+          print(f"Discovered {len(tasks['supported_tasks'])} supported workspace tasks")
+          Path("/tmp/selected-injection-id.txt").write_text(injection_id)
+          PY
+          injection_id="$(cat /tmp/selected-injection-id.txt)"
+          paca-agentdojo \
+            --model gpt-4o-2024-05-13 \
+            --user-tasks user_task_1 \
+            --injection-tasks "$injection_id" \
+            --dry-run > /tmp/agentdojo-dry-run.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          manifest = json.loads(Path("/tmp/agentdojo-dry-run.json").read_text())
+          assert manifest["status"] == "dry_run"
+          assert manifest["task_policies"]["user_task_1"]["grants"] == {
+              "read_calendar": ["calendar:day:2024-05-15"]
+          }
+          print("Dry-run task capability manifest verified; no model calls were made.")
+          PY
