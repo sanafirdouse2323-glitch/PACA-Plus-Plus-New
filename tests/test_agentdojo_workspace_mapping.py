@@ -160,8 +160,8 @@ def test_workspace_mapper_denies_cross_tenant_resource_label():
         return Label(
             "untrusted",
             sensitivity=2,
-            tenant="different-tenant",
-            origins=frozenset({"untrusted-or-wrong-tenant-fixture"}),
+            tenants=frozenset({"workspace-tenant", "different-tenant"}),
+            origins=frozenset({"untrusted-cross-tenant-fixture"}),
         )
 
     (_, _, _, messages, _), runtime, _ = _executor(
@@ -315,3 +315,52 @@ def test_unread_mail_read_receipt_needs_separate_capability_action():
     assert runtime.calls == []
     assert "C1" in messages[-1]["error"]
     assert monitor.audit.entries[-1]["verdict"] == "deny"
+
+
+def test_workspace_mapper_rejects_resource_label_marked_trusted():
+    def trusted_labeler(source, arguments, env):
+        return Label(
+            "trusted",
+            sensitivity=1,
+            tenant="workspace-tenant",
+            origins=frozenset({"incorrectly-trusted-fixture"}),
+        )
+
+    (_, _, _, messages, _), runtime, _ = _executor(
+        "get_sent_emails",
+        {},
+        {"read_mail": ("mail:sent",)},
+        labeler=trusted_labeler,
+    )
+
+    assert runtime.calls == []
+    assert "resources must be labelled untrusted" in messages[-1]["error"]
+
+
+def test_workspace_mapper_rejects_resource_label_without_capability_tenant():
+    def missing_tenant_labeler(source, arguments, env):
+        return Label(
+            "untrusted",
+            sensitivity=1,
+            origins=frozenset({"missing-tenant-fixture"}),
+        )
+
+    (_, _, _, messages, _), runtime, _ = _executor(
+        "get_sent_emails",
+        {},
+        {"read_mail": ("mail:sent",)},
+        labeler=missing_tenant_labeler,
+    )
+
+    assert runtime.calls == []
+    assert "must include the capability tenant" in messages[-1]["error"]
+
+
+def test_workspace_context_rejects_capabilities_for_unmapped_effects():
+    capability = _capability({"send_email": ("attacker@example.test",)})
+
+    with pytest.raises(ValueError, match="unsupported workspace capability action"):
+        WorkspaceTaskContext(
+            capability=capability,
+            resource_labeler=_labeler,
+        )
