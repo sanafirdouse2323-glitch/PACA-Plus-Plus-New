@@ -105,7 +105,8 @@ jobs:
           assert tasks["supported_tasks"]
           supported_ids = {item["user_task_id"] for item in tasks["supported_tasks"]}
           assert {"user_task_1", "user_task_16"}.issubset(supported_ids)
-          injection_id = injections["injection_task_ids"][0]          print(f"Discovered {len(injections['injection_task_ids'])} injection tasks")
+          injection_id = injections["injection_task_ids"][0]
+          print(f"Discovered {len(injections['injection_task_ids'])} injection tasks")
           print(f"Discovered {len(tasks['supported_tasks'])} supported workspace tasks")
           Path("/tmp/selected-injection-id.txt").write_text(injection_id)
           PY
