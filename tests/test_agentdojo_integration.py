@@ -457,3 +457,45 @@ def test_agentdojo_adapter_advances_steps_for_multiple_calls_in_one_dispatch():
     assert len(runtime.calls) == 2
     assert len(result_messages) == 3
     assert [entry["step"] for entry in monitor.audit.entries if "step" in entry] == [1, 2]
+
+
+def test_agentdojo_adapter_metrics_count_verified_dispatches():
+    cap = Capability(
+        "cap-metrics-allow", "user@example.test", "tenant-a", "task-metrics-allow", "assistant",
+        {"read_file": ("/tenant-a/report.txt",)}, expires=100,
+    )
+
+    def request_builder(function_name, arguments, env, extra_args):
+        return Request(
+            "read_file",
+            {"path": Arg(arguments["path"], Label("untrusted"))},
+            cap,
+            step=1,
+            resource=Label("untrusted", sensitivity=1, tenant="tenant-a"),
+        )
+
+    runtime = RuntimeStub(["read_report"])
+    executor = PacaToolsExecutor(Monitor(), request_builder)
+    _run(executor, runtime, "read_report", {"path": "/tenant-a/report.txt"})
+
+    assert executor.metrics["tool_calls_seen"] == 1
+    assert executor.metrics["denied_calls"] == 0
+    assert executor.metrics["authorized_dispatches"] == 1
+    assert executor.metrics["dispatch_attempts"] == 1
+    assert executor.metrics["policy_decision_ns"] > 0
+
+
+def test_agentdojo_adapter_metrics_count_fail_closed_mapper_denials():
+    def request_builder(function_name, arguments, env, extra_args):
+        raise ValueError("unmapped task operation")
+
+    runtime = RuntimeStub(["unknown_workspace_operation"])
+    executor = PacaToolsExecutor(Monitor(), request_builder)
+    _run(executor, runtime, "unknown_workspace_operation", {"target": "outside-scope"})
+
+    assert runtime.calls == []
+    assert executor.metrics["tool_calls_seen"] == 1
+    assert executor.metrics["denied_calls"] == 1
+    assert executor.metrics["authorized_dispatches"] == 0
+    assert executor.metrics["dispatch_attempts"] == 0
+    assert executor.metrics["policy_decision_ns"] > 0
