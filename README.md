@@ -225,3 +225,17 @@ These checks are also executed automatically in the GitHub Actions workflow.
 PACA++ is free to use for academic research, education, and other non-commercial purposes under the [PACA++ Academic and Non-Commercial License](LICENSE). **Commercial use requires prior written permission and a separate agreement that includes an agreed royalty or revenue share.** This is a source-available licence, not an OSI-approved open-source licence.
 
 A prior version was published under MIT. This update does not revoke rights already granted to anyone who received an earlier MIT-licensed copy.
+
+
+## Versioned releases
+
+Pushing a Git tag in the form `vX.Y.Z` starts the release workflow. The tag must
+exactly match the version in `pyproject.toml` and `paca.__version__`. The workflow
+runs the test suite and static checks, builds and smoke-tests a wheel and source
+distribution, attaches those files and a `SHA256SUMS` file to the GitHub Release,
+and publishes versioned container tags to GitHub Container Registry.
+
+This workflow publishes GitHub Release assets and container images; it does **not**
+publish the package to PyPI. The release workflow does not run a live-model
+AgentDojo benchmark. Its AgentDojo tests are adapter/integration tests without
+LLM-provider calls.
