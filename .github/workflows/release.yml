@@ -86,15 +86,20 @@ jobs:
 
           python -m venv /tmp/paca-wheel-env
           /tmp/paca-wheel-env/bin/python -m pip install --upgrade pip
-          /tmp/paca-wheel-env/bin/python -m pip install "${wheel}[api]"
+          /tmp/paca-wheel-env/bin/python -m pip install "$wheel" "fastapi>=0.110.0" "uvicorn[standard]>=0.30.0"
           (
             cd /tmp
             /tmp/paca-wheel-env/bin/python - <<'PY'
-          from importlib.metadata import version
+          from importlib.metadata import distribution, version
 
           import paca
           from paca_executor import app
 
+          metadata = distribution("paca-plus-plus").metadata
+          requirements = metadata.get_all("Requires-Dist") or []
+          assert "api" in (metadata.get_all("Provides-Extra") or [])
+          assert any(item.lower().startswith("fastapi") and "extra" in item for item in requirements)
+          assert any(item.lower().startswith("uvicorn[standard]") and "extra" in item for item in requirements)
           assert version("paca-plus-plus") == "0.3.2"
           assert paca.__version__ == "0.3.2"
           assert app.title == "PACA++ Reference Decision API"
@@ -104,15 +109,20 @@ jobs:
 
           python -m venv /tmp/paca-sdist-env
           /tmp/paca-sdist-env/bin/python -m pip install --upgrade pip
-          /tmp/paca-sdist-env/bin/python -m pip install "${sdist}[api]"
+          /tmp/paca-sdist-env/bin/python -m pip install "$sdist" "fastapi>=0.110.0" "uvicorn[standard]>=0.30.0"
           (
             cd /tmp
             /tmp/paca-sdist-env/bin/python - <<'PY'
-          from importlib.metadata import version
+          from importlib.metadata import distribution, version
 
           import paca
           from paca_executor import app
 
+          metadata = distribution("paca-plus-plus").metadata
+          requirements = metadata.get_all("Requires-Dist") or []
+          assert "api" in (metadata.get_all("Provides-Extra") or [])
+          assert any(item.lower().startswith("fastapi") and "extra" in item for item in requirements)
+          assert any(item.lower().startswith("uvicorn[standard]") and "extra" in item for item in requirements)
           assert version("paca-plus-plus") == "0.3.2"
           assert paca.__version__ == "0.3.2"
           assert app.title == "PACA++ Reference Decision API"
