@@ -1,0 +1,225 @@
+name: PACA++ Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  pull_request:
+    branches: [main]
+    paths:
+      - ".github/workflows/release.yml"
+      - "pyproject.toml"
+      - "paca/**"
+      - "paca_executor.py"
+      - "tests/**"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: paca-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  validate-and-build:
+    name: Validate release and build Python distributions
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out tagged source
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install project, development, API, and AgentDojo test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev,api,agentdojo]"
+
+      - name: Verify tag and version metadata
+        env:
+          RELEASE_TAG: ${{ github.event_name == 'push' && github.ref_name || '' }}
+        run: |
+          python - <<'PY'
+          import os
+          import tomllib
+          from pathlib import Path
+
+          import paca
+
+          with Path("pyproject.toml").open("rb") as file:
+              project_version = tomllib.load(file)["project"]["version"]
+
+          expected_tag = f"v{project_version}"
+          actual_tag = os.environ["RELEASE_TAG"]
+
+          if paca.__version__ != project_version:
+              raise SystemExit(
+                  f"paca.__version__ ({paca.__version__!r}) does not match "
+                  f"pyproject version ({project_version!r})."
+              )
+          if actual_tag and actual_tag != expected_tag:
+              raise SystemExit(
+                  f"Release tag {actual_tag!r} does not match "
+                  f"pyproject version {project_version!r}; expected {expected_tag!r}."
+              )
+
+          if actual_tag:
+              print(f"Validated release tag {actual_tag} against package version {project_version}.")
+          else:
+              print(f"Validated package version {project_version} for pull-request checks.")
+          PY
+
+      - name: Run complete test suite
+        run: python -m pytest -q
+
+      - name: Run lint and type checks
+        run: |
+          python -m ruff check paca_executor.py
+          python -m mypy --follow-imports=silent paca_executor.py
+
+      - name: Build wheel and source distribution
+        run: |
+          python -m pip install --upgrade build
+          python -m build --sdist --wheel --outdir dist
+
+      - name: Install and smoke-test the built wheel and source distribution
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          wheel="$(find dist -maxdepth 1 -type f -name '*.whl' -print -quit)"
+          sdist="$(find dist -maxdepth 1 -type f -name '*.tar.gz' -print -quit)"
+          test -n "$wheel"
+          test -n "$sdist"
+
+          python -m venv /tmp/paca-wheel-env
+          /tmp/paca-wheel-env/bin/python -m pip install --upgrade pip
+          /tmp/paca-wheel-env/bin/python -m pip install "$wheel" "fastapi>=0.110.0" "uvicorn[standard]>=0.30.0"
+          (
+            cd /tmp
+            /tmp/paca-wheel-env/bin/python - <<'PY'
+          from importlib.metadata import distribution, version
+
+          import paca
+          from paca_executor import app
+
+          metadata = distribution("paca-plus-plus").metadata
+          requirements = metadata.get_all("Requires-Dist") or []
+          assert "api" in (metadata.get_all("Provides-Extra") or [])
+          assert any(item.lower().startswith("fastapi") and "extra" in item for item in requirements)
+          assert any(item.lower().startswith("uvicorn[standard]") and "extra" in item for item in requirements)
+          assert version("paca-plus-plus") == "0.3.2"
+          assert paca.__version__ == "0.3.2"
+          assert app.title == "PACA++ Reference Decision API"
+          print("Wheel installation and import smoke test passed.")
+          PY
+          )
+
+          python -m venv /tmp/paca-sdist-env
+          /tmp/paca-sdist-env/bin/python -m pip install --upgrade pip
+          /tmp/paca-sdist-env/bin/python -m pip install "$sdist" "fastapi>=0.110.0" "uvicorn[standard]>=0.30.0"
+          (
+            cd /tmp
+            /tmp/paca-sdist-env/bin/python - <<'PY'
+          from importlib.metadata import distribution, version
+
+          import paca
+          from paca_executor import app
+
+          metadata = distribution("paca-plus-plus").metadata
+          requirements = metadata.get_all("Requires-Dist") or []
+          assert "api" in (metadata.get_all("Provides-Extra") or [])
+          assert any(item.lower().startswith("fastapi") and "extra" in item for item in requirements)
+          assert any(item.lower().startswith("uvicorn[standard]") and "extra" in item for item in requirements)
+          assert version("paca-plus-plus") == "0.3.2"
+          assert paca.__version__ == "0.3.2"
+          assert app.title == "PACA++ Reference Decision API"
+          print("Source distribution installation and import smoke test passed.")
+          PY
+          )
+
+      - name: Generate SHA-256 checksums
+        run: sha256sum dist/*.whl dist/*.tar.gz > dist/SHA256SUMS
+
+      - name: Upload Python release assets
+        uses: actions/upload-artifact@v4
+        with:
+          name: paca-python-distributions
+          path: dist/
+          if-no-files-found: error
+          retention-days: 14
+
+  publish-github-release:
+    if: github.event_name == 'push'
+    name: Publish GitHub Release
+    needs: validate-and-build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download validated Python distributions
+        uses: actions/download-artifact@v4
+        with:
+          name: paca-python-distributions
+          path: dist/
+
+      - name: Create or update GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$RELEASE_TAG" dist/* --clobber --repo "$GITHUB_REPOSITORY"
+          else
+            gh release create "$RELEASE_TAG" dist/* \
+              --verify-tag \
+              --generate-notes \
+              --title "PACA++ $RELEASE_TAG" \
+              --repo "$GITHUB_REPOSITORY"
+          fi
+
+  publish-container:
+    if: github.event_name == 'push'
+    name: Publish versioned container image
+    needs: publish-github-release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Check out tagged source
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
+      - name: Generate image tags and labels
+        id: metadata
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}
+          tags: |
+            type=ref,event=tag
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest
+
+      - name: Build and push release image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.metadata.outputs.tags }}
+          labels: ${{ steps.metadata.outputs.labels }}

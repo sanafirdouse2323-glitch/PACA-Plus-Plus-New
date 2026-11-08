@@ -6,5 +6,5 @@ from .evaluator import evaluate_policy, evaluate_policy_set
 from .parser import parse_policy, parse_policy_file, parse_policy_set
 from .provenance import Arg, Label, ProvenanceGraph, derive
 
-__version__ = "0.3.1"
+__version__ = "0.3.2"
 __all__ = [n for n in dir() if not n.startswith("_")]
