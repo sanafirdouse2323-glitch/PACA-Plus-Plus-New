@@ -220,10 +220,8 @@ mypy paca paca_executor.py
 
 These checks are also executed automatically in the GitHub Actions workflow.
 
-## Licensing
+## License
 
-**Current code and PACA++ v0.3.1:** The root [MIT License](LICENSE) applies to the code already distributed under MIT, including the v0.3.1 repository and image. MIT permits commercial use subject to its notice conditions; this project cannot retrospectively require royalties from recipients of those MIT copies.
+PACA++ is free to use for academic research, education, and other non-commercial purposes under the [PACA++ Academic and Non-Commercial License](LICENSE). **Commercial use requires prior written permission and a separate agreement that includes an agreed royalty or revenue share.** This is a source-available licence, not an OSI-approved open-source licence.
 
-**Future components:** The project is considering free academic/non-commercial access for separately identified new components, with commercial use available only under a separate written agreement that may include negotiated fees or revenue sharing. The proposed terms are a draft only and are not yet applied to any source file or release. See [LICENSING.md](LICENSING.md) and [LICENSE-ACADEMIC-DRAFT.md](LICENSE-ACADEMIC-DRAFT.md).
-
-The proposed non-commercial terms are source-available, not OSI-defined open source. Do not assume they replace the MIT terms for existing files.
+A prior version was published under MIT. This update does not revoke rights already granted to anyone who received an earlier MIT-licensed copy.

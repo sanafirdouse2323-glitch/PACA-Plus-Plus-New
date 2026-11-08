@@ -1,21 +1,33 @@
-MIT License
+PACA++ ACADEMIC AND NON-COMMERCIAL LICENSE
+Version 1.0 — 8 November 2026
 
 Copyright (c) 2026 PACA++ contributors
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+1. FREE ACADEMIC AND NON-COMMERCIAL USE
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+You may use, run, study, copy, modify, and share this software, including modified versions, free of charge, for academic research, education, teaching, learning, scholarly publication, and other non-commercial purposes.
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+When sharing the software or modified versions, you must:
+- include this license and the copyright notice;
+- clearly identify changes you made; and
+- pass on the same non-commercial conditions to recipients.
+
+2. COMMERCIAL USE REQUIRES PERMISSION AND A REVENUE SHARE
+
+You may not use, modify, distribute, host, sell, or include this software in a commercial product or service, or use it for a commercial business purpose, without first obtaining written permission from the copyright holder.
+
+Any commercial permission must be set out in a separate written agreement and must include a royalty or revenue-share arrangement. The percentage, calculation, reporting, and payment terms must be agreed in writing before commercial use begins. No commercial-use permission is granted automatically by this license.
+
+3. OWNERSHIP AND OTHER RIGHTS
+
+The copyright holder retains ownership of the software. This license does not grant trademark rights or rights to third-party materials included with or used by the software. Those materials remain subject to their own licences.
+
+4. NO WARRANTY
+
+The software is provided "AS IS", without warranties or conditions of any kind, to the maximum extent permitted by applicable law. The copyright holder is not liable for claims or damages arising from use of the software, to the maximum extent permitted by applicable law.
+
+5. SCOPE
+
+This is a source-available, non-commercial license. It is not an OSI-approved open-source license because it restricts commercial use.
+
+A prior version of PACA++ was published with an MIT license. This version of the license applies to copies first distributed under these terms. It does not revoke permissions that may already have been granted to recipients of earlier MIT-licensed copies.
