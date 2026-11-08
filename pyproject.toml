@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "paca-plus-plus"
-version = "0.3.0"
+version = "0.3.1"
 description = "Provenance-anchored authorization reference monitor and deterministic simulator for selected LLM-agent workflows"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -13,7 +13,8 @@ keywords = ["authorization", "agents", "prompt-injection", "provenance", "llm-se
 dependencies = []
 
 [project.optional-dependencies]
-dev = ["pytest>=8.0"]
+dev = ["pytest>=8.0", "httpx>=0.27.0", "ruff>=0.6.0", "mypy>=1.11.0"]
+api = ["fastapi>=0.110.0", "uvicorn[standard]>=0.30.0"]
 agentdojo = ["agentdojo==0.1.35"]
 
 [project.scripts]
@@ -22,6 +23,7 @@ paca-agentdojo = "paca.integrations.agentdojo_benchmark:main"
 
 [tool.setuptools]
 packages = ["paca", "paca.policies", "paca.integrations"]
+py-modules = ["paca_executor"]
 
 [tool.setuptools.package-data]
 paca = ["policies/*.paca"]
