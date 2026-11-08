@@ -2,8 +2,15 @@ name: PACA++ Release
 
 on:
   push:
+    branches: [main]
     tags:
       - "v*"
+    paths:
+      - ".github/workflows/release.yml"
+      - "pyproject.toml"
+      - "paca/**"
+      - "paca_executor.py"
+      - "tests/**"
   pull_request:
     branches: [main]
     paths:
@@ -24,8 +31,12 @@ jobs:
   validate-and-build:
     name: Validate release and build Python distributions
     runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.metadata.outputs.version }}
+      release_tag: ${{ steps.metadata.outputs.release_tag }}
+      major_minor: ${{ steps.metadata.outputs.major_minor }}
     steps:
-      - name: Check out tagged source
+      - name: Check out source
         uses: actions/checkout@v4
 
       - name: Set up Python
@@ -38,9 +49,12 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -e ".[dev,api,agentdojo]"
 
-      - name: Verify tag and version metadata
+      - name: Verify package version and derive release tag
+        id: metadata
         env:
-          RELEASE_TAG: ${{ github.event_name == 'push' && github.ref_name || '' }}
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_REF_TYPE: ${{ github.ref_type }}
+          EVENT_REF_NAME: ${{ github.ref_name }}
         run: |
           python - <<'PY'
           import os
@@ -52,24 +66,32 @@ jobs:
           with Path("pyproject.toml").open("rb") as file:
               project_version = tomllib.load(file)["project"]["version"]
 
-          expected_tag = f"v{project_version}"
-          actual_tag = os.environ["RELEASE_TAG"]
-
           if paca.__version__ != project_version:
               raise SystemExit(
                   f"paca.__version__ ({paca.__version__!r}) does not match "
                   f"pyproject version ({project_version!r})."
               )
-          if actual_tag and actual_tag != expected_tag:
-              raise SystemExit(
-                  f"Release tag {actual_tag!r} does not match "
-                  f"pyproject version {project_version!r}; expected {expected_tag!r}."
-              )
 
-          if actual_tag:
-              print(f"Validated release tag {actual_tag} against package version {project_version}.")
-          else:
-              print(f"Validated package version {project_version} for pull-request checks.")
+          expected_tag = f"v{project_version}"
+          event_name = os.environ["EVENT_NAME"]
+          event_ref_type = os.environ["EVENT_REF_TYPE"]
+          event_ref_name = os.environ["EVENT_REF_NAME"]
+
+          if event_name == "push" and event_ref_type == "tag":
+              if event_ref_name != expected_tag:
+                  raise SystemExit(
+                      f"Tag {event_ref_name!r} does not match package version; "
+                      f"expected {expected_tag!r}."
+                  )
+
+          major_minor = ".".join(project_version.split(".")[:2])
+          output = Path(os.environ["GITHUB_OUTPUT"])
+          with output.open("a", encoding="utf-8") as file:
+              file.write(f"version={project_version}\n")
+              file.write(f"release_tag={expected_tag}\n")
+              file.write(f"major_minor={major_minor}\n")
+
+          print(f"Validated PACA++ package version {project_version}; release tag is {expected_tag}.")
           PY
 
       - name: Run complete test suite
@@ -152,10 +174,73 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+  ensure-release-tag:
+    name: Create or verify the matching version tag
+    if: github.event_name == 'push'
+    needs: validate-and-build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      release_tag: ${{ steps.tag.outputs.release_tag }}
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Create or verify annotated release tag
+        id: tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.validate-and-build.outputs.release_tag }}
+          TARGET_SHA: ${{ github.sha }}
+          EVENT_REF_TYPE: ${{ github.ref_type }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [ "$EVENT_REF_TYPE" = "tag" ]; then
+            git fetch --force origin "refs/tags/$RELEASE_TAG:refs/tags/$RELEASE_TAG"
+            tagged_sha="$(git rev-parse "$RELEASE_TAG^{commit}")"
+            if [ "$tagged_sha" != "$TARGET_SHA" ]; then
+              echo "Existing release tag $RELEASE_TAG points to $tagged_sha, not $TARGET_SHA." >&2
+              exit 1
+            fi
+          else
+            if ref_json="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$RELEASE_TAG" 2>/dev/null)"; then
+              ref_type="$(printf '%s' "$ref_json" | jq -r '.object.type')"
+              ref_sha="$(printf '%s' "$ref_json" | jq -r '.object.sha')"
+              if [ "$ref_type" = "tag" ]; then
+                tagged_sha="$(gh api "repos/$GITHUB_REPOSITORY/git/tags/$ref_sha" --jq '.object.sha')"
+              else
+                tagged_sha="$ref_sha"
+              fi
+              if [ "$tagged_sha" != "$TARGET_SHA" ]; then
+                echo "Refusing to move existing tag $RELEASE_TAG: it points to $tagged_sha, not $TARGET_SHA." >&2
+                exit 1
+              fi
+            else
+              tag_object="$(gh api --method POST "repos/$GITHUB_REPOSITORY/git/tags" \
+                -f "tag=$RELEASE_TAG" \
+                -f "message=PACA++ $RELEASE_TAG" \
+                -f "object=$TARGET_SHA" \
+                -f "type=commit")"
+              tag_object_sha="$(printf '%s' "$tag_object" | jq -r '.sha')"
+              test -n "$tag_object_sha"
+              gh api --method POST "repos/$GITHUB_REPOSITORY/git/refs" \
+                -f "ref=refs/tags/$RELEASE_TAG" \
+                -f "sha=$tag_object_sha" >/dev/null
+            fi
+          fi
+
+          echo "release_tag=$RELEASE_TAG" >> "$GITHUB_OUTPUT"
+          echo "Verified release tag $RELEASE_TAG at $TARGET_SHA."
+
   publish-github-release:
     if: github.event_name == 'push'
     name: Publish GitHub Release
-    needs: validate-and-build
+    needs: [validate-and-build, ensure-release-tag]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -169,7 +254,7 @@ jobs:
       - name: Create or update GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
-          RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_TAG: ${{ needs.ensure-release-tag.outputs.release_tag }}
         shell: bash
         run: |
           set -euo pipefail
@@ -186,13 +271,13 @@ jobs:
   publish-container:
     if: github.event_name == 'push'
     name: Publish versioned container image
-    needs: publish-github-release
+    needs: [validate-and-build, ensure-release-tag, publish-github-release]
     runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write
     steps:
-      - name: Check out tagged source
+      - name: Check out source
         uses: actions/checkout@v4
 
       - name: Set up Docker Buildx
@@ -209,11 +294,11 @@ jobs:
         id: metadata
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/${{ github.repository }}
+          images: ghcr.io/sanafirdouse2323-glitch/paca-plus-plus-new
           tags: |
-            type=ref,event=tag
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=${{ needs.ensure-release-tag.outputs.release_tag }}
+            type=raw,value=${{ needs.validate-and-build.outputs.version }}
+            type=raw,value=${{ needs.validate-and-build.outputs.major_minor }}
             type=raw,value=latest
 
       - name: Build and push release image
