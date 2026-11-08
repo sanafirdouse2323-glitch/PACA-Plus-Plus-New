@@ -4,6 +4,14 @@ on:
   push:
     tags:
       - "v*"
+  pull_request:
+    branches: [main]
+    paths:
+      - ".github/workflows/release.yml"
+      - "pyproject.toml"
+      - "paca/**"
+      - "paca_executor.py"
+      - "tests/**"
 
 permissions:
   contents: read
@@ -32,7 +40,7 @@ jobs:
 
       - name: Verify tag and version metadata
         env:
-          RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_TAG: ${{ github.event_name == 'push' && github.ref_name || '' }}
         run: |
           python - <<'PY'
           import os
@@ -47,18 +55,21 @@ jobs:
           expected_tag = f"v{project_version}"
           actual_tag = os.environ["RELEASE_TAG"]
 
-          if actual_tag != expected_tag:
-              raise SystemExit(
-                  f"Release tag {actual_tag!r} does not match "
-                  f"pyproject version {project_version!r}; expected {expected_tag!r}."
-              )
           if paca.__version__ != project_version:
               raise SystemExit(
                   f"paca.__version__ ({paca.__version__!r}) does not match "
                   f"pyproject version ({project_version!r})."
               )
+          if actual_tag and actual_tag != expected_tag:
+              raise SystemExit(
+                  f"Release tag {actual_tag!r} does not match "
+                  f"pyproject version {project_version!r}; expected {expected_tag!r}."
+              )
 
-          print(f"Validated release tag {actual_tag} against package version {project_version}.")
+          if actual_tag:
+              print(f"Validated release tag {actual_tag} against package version {project_version}.")
+          else:
+              print(f"Validated package version {project_version} for pull-request checks.")
           PY
 
       - name: Run complete test suite
@@ -142,6 +153,7 @@ jobs:
           retention-days: 14
 
   publish-github-release:
+    if: github.event_name == 'push'
     name: Publish GitHub Release
     needs: validate-and-build
     runs-on: ubuntu-latest
@@ -172,6 +184,7 @@ jobs:
           fi
 
   publish-container:
+    if: github.event_name == 'push'
     name: Publish versioned container image
     needs: publish-github-release
     runs-on: ubuntu-latest
