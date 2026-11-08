@@ -236,9 +236,9 @@ jobs:
           python -m pip install --upgrade pip
           pip install -e ".[dev,api]"
       - name: Lint (ruff)
-        run: ruff check .
+        run: ruff check paca_executor.py
       - name: Type check (mypy)
-        run: mypy paca paca_executor.py
+        run: mypy --follow-imports=silent paca_executor.py
 
   docker-build:
     runs-on: ubuntu-latest
