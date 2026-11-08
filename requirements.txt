@@ -1,1 +1,2 @@
-pytest>=8.0
+# Local development and reference API dependencies.
+-e .[dev,api]

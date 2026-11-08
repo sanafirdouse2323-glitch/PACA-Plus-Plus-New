@@ -168,3 +168,54 @@ Maturity: research prototype (Python, in-process monitor, self-authored determin
 optional AgentDojo tool-executor adapter, limited task-scoped workspace read/search mapper,
 paired AgentDojo benchmark runner (real-model evidence is reported separately and is not inferred from CI adapter tests),
 no full workspace write/effect mapping, no production executor, and no solver-backed verification).
+
+## Quick‑Start
+
+### Install the package and local reference API
+```bash
+pip install -e ".[dev,api]"
+```
+
+### Run the reference decision API locally
+```bash
+uvicorn paca_executor:app --host 127.0.0.1 --port 8000
+```
+The API exposes `GET /health` and `POST /decide` at **http://127.0.0.1:8000**.
+
+### Run the container image
+The workflow builds the Docker image on pull requests and pushes it to GitHub Container Registry only after a push to `main`.
+```bash
+docker pull ghcr.io/sanafirdouse2323-glitch/paca-plus-plus-new:latest
+docker run --rm -p 127.0.0.1:8000:8000 ghcr.io/sanafirdouse2323-glitch/paca-plus-plus-new:latest
+```
+Binding the published host port to `127.0.0.1` keeps this local demonstration endpoint off public host interfaces.
+
+### Example decision request
+```bash
+curl -X POST http://127.0.0.1:8000/decide \
+  -H "Content-Type: application/json" \
+  -d '{
+        "action": "read_file",
+        "args": {"path": "/acme/reports/summary.txt"},
+        "capability": {
+          "id": "c1",
+          "principal": "local-demo-user",
+          "tenant": "acme",
+          "task": "task1",
+          "role": "assistant",
+          "grants": {"read_file": ["/acme/reports/summary.txt"]},
+          "expires": 30
+        }
+      }'
+```
+The response reports the decision, fired checks, violations, digest, obligations, and whether the in-process reference token matched the same request. `effect_executed` is always `false`: the API does not read or write files, send mail, call tools, or perform any other external effect.
+
+**Security boundary warning:** this is a local reference/demo API, not a production executor. It accepts capability data from the caller, does not authenticate a capability issuer, and cannot assign trusted resource labels on behalf of real connectors. The `expires` field is a monitor step limit, not a wall-clock expiry; a real integration must supply a trusted, monotonic step counter. Capability-use state and the audit state are process-local and are lost on restart. Do not expose it to untrusted networks or use its response as the sole authorization gate for real effects. A production integration must authenticate callers, obtain signed/task-scoped capabilities from a trusted issuer, assign provenance in trusted connectors, validate action-specific schemas, persist required state, and have the actual effect executor verify and consume a single-use token immediately before every side effect.
+
+### Lint & type‑check
+```bash
+ruff check .
+mypy paca paca_executor.py
+```
+
+These checks are also executed automatically in the GitHub Actions workflow.
