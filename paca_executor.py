@@ -41,7 +41,7 @@ class DecisionInput(StrictModel):
 
 app = FastAPI(
     title="PACA++ Reference Decision API",
-    version="0.3.1",
+    version="0.3.2",
     description=(
         "Local demonstration decision API only. It does not execute tools or "
         "external side effects and is not a production authorization boundary."
