@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from fastapi.testclient import TestClient
 
+import paca
 from paca_executor import app
 
 
@@ -28,6 +29,7 @@ def test_health_endpoint_reports_service_status() -> None:
     response = client.get("/health")
 
     assert response.status_code == 200
+    assert app.version == paca.__version__
     assert response.json() == {
         "status": "ok",
         "service": "paca-reference-decision-api",
