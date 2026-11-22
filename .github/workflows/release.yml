@@ -5,12 +5,6 @@ on:
     branches: [main]
     tags:
       - "v*"
-    paths:
-      - ".github/workflows/release.yml"
-      - "pyproject.toml"
-      - "paca/**"
-      - "paca_executor.py"
-      - "tests/**"
   pull_request:
     branches: [main]
     paths:
@@ -109,6 +103,8 @@ jobs:
 
       - name: Install and smoke-test the built wheel and source distribution
         shell: bash
+        env:
+          EXPECTED_VERSION: ${{ steps.metadata.outputs.version }}
         run: |
           set -euo pipefail
 
@@ -123,20 +119,22 @@ jobs:
           (
             cd /tmp
             /tmp/paca-wheel-env/bin/python - <<'PY'
+          import os
           from importlib.metadata import distribution, version
 
           import paca
           from paca_executor import app
 
+          expected = os.environ["EXPECTED_VERSION"]
           metadata = distribution("paca-plus-plus").metadata
           requirements = metadata.get_all("Requires-Dist") or []
           assert "api" in (metadata.get_all("Provides-Extra") or [])
           assert any(item.lower().startswith("fastapi") and "extra" in item for item in requirements)
           assert any(item.lower().startswith("uvicorn[standard]") and "extra" in item for item in requirements)
-          assert version("paca-plus-plus") == "0.3.2"
-          assert paca.__version__ == "0.3.2"
+          assert version("paca-plus-plus") == expected
+          assert paca.__version__ == expected
           assert app.title == "PACA++ Reference Decision API"
-          print("Wheel installation and import smoke test passed.")
+          print(f"Wheel installation and import smoke test passed for {expected}.")
           PY
           )
 
@@ -146,20 +144,22 @@ jobs:
           (
             cd /tmp
             /tmp/paca-sdist-env/bin/python - <<'PY'
+          import os
           from importlib.metadata import distribution, version
 
           import paca
           from paca_executor import app
 
+          expected = os.environ["EXPECTED_VERSION"]
           metadata = distribution("paca-plus-plus").metadata
           requirements = metadata.get_all("Requires-Dist") or []
           assert "api" in (metadata.get_all("Provides-Extra") or [])
           assert any(item.lower().startswith("fastapi") and "extra" in item for item in requirements)
           assert any(item.lower().startswith("uvicorn[standard]") and "extra" in item for item in requirements)
-          assert version("paca-plus-plus") == "0.3.2"
-          assert paca.__version__ == "0.3.2"
+          assert version("paca-plus-plus") == expected
+          assert paca.__version__ == expected
           assert app.title == "PACA++ Reference Decision API"
-          print("Source distribution installation and import smoke test passed.")
+          print(f"Source distribution installation and import smoke test passed for {expected}.")
           PY
           )
 
@@ -174,73 +174,56 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
-  ensure-release-tag:
-    name: Create or verify the matching version tag
-    if: github.event_name == 'push'
+  verify-release-tag:
+    name: Verify an explicitly pushed, unpublished version tag
+    if: github.event_name == 'push' && github.ref_type == 'tag'
     needs: validate-and-build
     runs-on: ubuntu-latest
     permissions:
-      contents: write
+      contents: read
     outputs:
-      release_tag: ${{ steps.tag.outputs.release_tag }}
+      release_tag: ${{ steps.verify.outputs.release_tag }}
     steps:
-      - name: Check out source
+      - name: Check out source and tags
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Create or verify annotated release tag
-        id: tag
+      - name: Verify tag target and reject an already published release
+        id: verify
         env:
           GH_TOKEN: ${{ github.token }}
-          RELEASE_TAG: ${{ needs.validate-and-build.outputs.release_tag }}
+          EXPECTED_TAG: ${{ needs.validate-and-build.outputs.release_tag }}
+          EVENT_TAG: ${{ github.ref_name }}
           TARGET_SHA: ${{ github.sha }}
-          EVENT_REF_TYPE: ${{ github.ref_type }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
         shell: bash
         run: |
           set -euo pipefail
 
-          if [ "$EVENT_REF_TYPE" = "tag" ]; then
-            git fetch --force origin "refs/tags/$RELEASE_TAG:refs/tags/$RELEASE_TAG"
-            tagged_sha="$(git rev-parse "$RELEASE_TAG^{commit}")"
-            if [ "$tagged_sha" != "$TARGET_SHA" ]; then
-              echo "Existing release tag $RELEASE_TAG points to $tagged_sha, not $TARGET_SHA." >&2
-              exit 1
-            fi
-          else
-            if ref_json="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$RELEASE_TAG" 2>/dev/null)"; then
-              ref_type="$(printf '%s' "$ref_json" | jq -r '.object.type')"
-              ref_sha="$(printf '%s' "$ref_json" | jq -r '.object.sha')"
-              if [ "$ref_type" = "tag" ]; then
-                tagged_sha="$(gh api "repos/$GITHUB_REPOSITORY/git/tags/$ref_sha" --jq '.object.sha')"
-              else
-                tagged_sha="$ref_sha"
-              fi
-              if [ "$tagged_sha" != "$TARGET_SHA" ]; then
-                echo "Refusing to move existing tag $RELEASE_TAG: it points to $tagged_sha, not $TARGET_SHA." >&2
-                exit 1
-              fi
-            else
-              tag_object="$(gh api --method POST "repos/$GITHUB_REPOSITORY/git/tags" \
-                -f "tag=$RELEASE_TAG" \
-                -f "message=PACA++ $RELEASE_TAG" \
-                -f "object=$TARGET_SHA" \
-                -f "type=commit")"
-              tag_object_sha="$(printf '%s' "$tag_object" | jq -r '.sha')"
-              test -n "$tag_object_sha"
-              gh api --method POST "repos/$GITHUB_REPOSITORY/git/refs" \
-                -f "ref=refs/tags/$RELEASE_TAG" \
-                -f "sha=$tag_object_sha" >/dev/null
-            fi
+          if [ "$EVENT_TAG" != "$EXPECTED_TAG" ]; then
+            echo "Refusing release: event tag $EVENT_TAG does not match package tag $EXPECTED_TAG." >&2
+            exit 1
           fi
 
-          echo "release_tag=$RELEASE_TAG" >> "$GITHUB_OUTPUT"
-          echo "Verified release tag $RELEASE_TAG at $TARGET_SHA."
+          tagged_sha="$(git rev-parse "refs/tags/$EXPECTED_TAG^{commit}")"
+          if [ "$tagged_sha" != "$TARGET_SHA" ]; then
+            echo "Refusing release: tag $EXPECTED_TAG resolves to $tagged_sha, not $TARGET_SHA." >&2
+            exit 1
+          fi
+
+          if gh release view "$EXPECTED_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Refusing to overwrite the already published $EXPECTED_TAG release." >&2
+            exit 1
+          fi
+
+          echo "release_tag=$EXPECTED_TAG" >> "$GITHUB_OUTPUT"
+          echo "Verified new release tag $EXPECTED_TAG at $TARGET_SHA."
 
   publish-github-release:
-    if: github.event_name == 'push'
+    if: github.event_name == 'push' && github.ref_type == 'tag'
     name: Publish GitHub Release
-    needs: [validate-and-build, ensure-release-tag]
+    needs: [validate-and-build, verify-release-tag]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -251,27 +234,23 @@ jobs:
           name: paca-python-distributions
           path: dist/
 
-      - name: Create or update GitHub Release
+      - name: Create a new versioned GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
-          RELEASE_TAG: ${{ needs.ensure-release-tag.outputs.release_tag }}
+          RELEASE_TAG: ${{ needs.verify-release-tag.outputs.release_tag }}
         shell: bash
         run: |
           set -euo pipefail
-          if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            gh release upload "$RELEASE_TAG" dist/* --clobber --repo "$GITHUB_REPOSITORY"
-          else
-            gh release create "$RELEASE_TAG" dist/* \
-              --verify-tag \
-              --generate-notes \
-              --title "PACA++ $RELEASE_TAG" \
-              --repo "$GITHUB_REPOSITORY"
-          fi
+          gh release create "$RELEASE_TAG" dist/* \
+            --verify-tag \
+            --generate-notes \
+            --title "PACA++ $RELEASE_TAG" \
+            --repo "$GITHUB_REPOSITORY"
 
   publish-container:
-    if: github.event_name == 'push'
-    name: Publish versioned container image
-    needs: [validate-and-build, ensure-release-tag, publish-github-release]
+    if: github.event_name == 'push' && github.ref_type == 'tag'
+    name: Publish version-specific container images
+    needs: [validate-and-build, verify-release-tag, publish-github-release]
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -290,21 +269,11 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ github.token }}
 
-      - name: Generate image tags and labels
-        id: metadata
-        uses: docker/metadata-action@v5
-        with:
-          images: ghcr.io/sanafirdouse2323-glitch/paca-plus-plus-new
-          tags: |
-            type=raw,value=${{ needs.ensure-release-tag.outputs.release_tag }}
-            type=raw,value=${{ needs.validate-and-build.outputs.version }}
-            type=raw,value=${{ needs.validate-and-build.outputs.major_minor }}
-            type=raw,value=latest
-
-      - name: Build and push release image
+      - name: Build and push version-specific image tags
         uses: docker/build-push-action@v6
         with:
           context: .
           push: true
-          tags: ${{ steps.metadata.outputs.tags }}
-          labels: ${{ steps.metadata.outputs.labels }}
+          tags: |
+            ghcr.io/sanafirdouse2323-glitch/paca-plus-plus-new:${{ needs.verify-release-tag.outputs.release_tag }}
+            ghcr.io/sanafirdouse2323-glitch/paca-plus-plus-new:${{ needs.validate-and-build.outputs.version }}
