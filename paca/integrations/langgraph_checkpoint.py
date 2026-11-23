@@ -713,21 +713,17 @@ class PACAProvenancePostgresSaver(BaseCheckpointSaver):
             before_id = before_configurable.get("checkpoint_id")
             if not isinstance(before_id, str) or not before_id:
                 raise MemoryAccessDenied("checkpoint list cursor is invalid")
-        # list_nodes preserves durable insertion order (SQLite seq), whereas
-        # checkpoint IDs are opaque identifiers and are not lexically ordered.
+        # Match the official PostgresSaver contract: list() orders by
+        # checkpoint_id DESC and applies a strict checkpoint_id < before cursor.
+        # The provider's ordering is not SQLite insertion order; concurrent
+        # evidence/provider commits can occur in a different order.
         nodes = [
             node for node in self.repository.list_nodes(object_id_prefix=object_id)
             if node.object_id == object_id and not self.repository.is_revoked(node.node_id)
         ]
-        nodes.reverse()
+        nodes.sort(key=lambda item: item.version_id, reverse=True)
         if before_id:
-            before_index = next(
-                (index for index, item in enumerate(nodes) if item.version_id == before_id),
-                None,
-            )
-            if before_index is None:
-                raise MemoryAccessDenied("checkpoint list cursor is outside the authorized evidence history")
-            nodes = nodes[before_index + 1:]
+            nodes = [item for item in nodes if item.version_id < before_id]
         if limit is not None and (
             isinstance(limit, bool) or not isinstance(limit, int) or limit < 0
         ):
