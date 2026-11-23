@@ -2429,3 +2429,38 @@ def test_async_runtime_rejects_already_scheduled_task_before_effect_body(tmp_pat
     asyncio.run(exercise())
     assert started == []
     assert tasks and tasks[0].cancelled()
+
+def test_sync_runtime_rejects_already_scheduled_task_before_effect_body(tmp_path):
+    env = _environment(tmp_path)
+    source = _ingest(env, "/acme/public/report.txt", object_id="mem/effect-sync-task")
+    request = Request(
+        "read_file",
+        {"path": source},
+        env["issuer"].verify(env["root"].token).capability,
+        1,
+        tool=_read_file_tool(),
+    )
+    started = []
+    tasks = []
+
+    def executor(_snapshot):
+        async def effect_body():
+            started.append(True)
+            return "must-not-run"
+
+        task = asyncio.create_task(effect_body())
+        tasks.append(task)
+        return task
+
+    async def exercise():
+        with pytest.raises(MemoryAccessDenied, match="synchronous effect executor must not return an awaitable"):
+            _allowing_runtime(env).execute_effect(
+                env["root"].token,
+                request,
+                executor,
+            )
+        await asyncio.gather(*tasks, return_exceptions=True)
+
+    asyncio.run(exercise())
+    assert started == []
+    assert tasks and tasks[0].cancelled()
