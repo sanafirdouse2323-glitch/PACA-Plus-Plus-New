@@ -63,6 +63,11 @@ the checked-in `docs/` snapshot. Run `python -m paca bench docs` to regenerate t
   of real products or an independent benchmark suite.
 - High scores on a defence's own suite are expected; useful outputs include the **ablation**
   (which check uniquely stops which attack), residual cases, benign completion, and false blocks.
+- The **Sandbox + scoped permissions** row is a hand-authored toy comparator, not NVIDIA
+  OpenShell, NVIDIA Sentry or an OpenAI-hosted sandbox. New cross-session and cross-tenant
+  tests are protocol fixtures, not tests of a distributed memory backend. See
+  [the sandbox and external-containment evaluation protocol](docs/CONTAINMENT_EVALUATION.md)
+  for real-integration requirements and explicit non-claims.
 - This repository includes an optional AgentDojo ToolsExecutor adapter, a task-scoped
   mapper for 14 workspace read/search operations, and a paired benchmark runner. The runner
   derives exact action/target grants from each selected user's clean AgentDojo ground-truth
