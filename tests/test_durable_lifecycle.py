@@ -2464,3 +2464,92 @@ def test_sync_runtime_rejects_already_scheduled_task_before_effect_body(tmp_path
     asyncio.run(exercise())
     assert started == []
     assert tasks and tasks[0].cancelled()
+
+def test_sync_runtime_rejects_coroutine_result_before_caller_can_await(tmp_path):
+    env = _environment(tmp_path)
+    request = Request(
+        "read_file",
+        {"path": Arg("/acme/public/report.txt", Label("trusted", tenant="acme"))},
+        env["issuer"].verify(env["root"].token).capability,
+        1,
+        tool=_read_file_tool(),
+    )
+    started = []
+
+    def executor(_snapshot):
+        async def deferred_effect():
+            started.append(True)
+            return "must-not-run"
+
+        return deferred_effect()
+
+    with pytest.raises(MemoryAccessDenied, match="must not return an awaitable"):
+        _allowing_runtime(env).execute_effect(
+            env["root"].token,
+            request,
+            executor,
+        )
+    assert started == []
+
+
+def test_sync_runtime_rejects_lazy_generator_result(tmp_path):
+    env = _environment(tmp_path)
+    request = Request(
+        "read_file",
+        {"path": Arg("/acme/public/report.txt", Label("trusted", tenant="acme"))},
+        env["issuer"].verify(env["root"].token).capability,
+        1,
+        tool=_read_file_tool(),
+    )
+    started = []
+
+    def executor(_snapshot):
+        def deferred_effect():
+            started.append(True)
+            yield "must-not-run"
+
+        return deferred_effect()
+
+    with pytest.raises(MemoryAccessDenied, match="lazy generator"):
+        _allowing_runtime(env).execute_effect(
+            env["root"].token,
+            request,
+            executor,
+        )
+    assert started == []
+
+
+def test_async_runtime_rejects_nested_task_returned_from_authorized_coroutine(tmp_path):
+    env = _environment(tmp_path)
+    source = _ingest(env, "/acme/public/report.txt", object_id="mem/effect-nested-task")
+    request = Request(
+        "read_file",
+        {"path": source},
+        env["issuer"].verify(env["root"].token).capability,
+        1,
+        tool=_read_file_tool(),
+    )
+    started = []
+    tasks = []
+
+    async def executor(_snapshot):
+        async def deferred_effect():
+            started.append(True)
+            return "must-not-run"
+
+        task = asyncio.create_task(deferred_effect())
+        tasks.append(task)
+        return task
+
+    async def exercise():
+        with pytest.raises(MemoryAccessDenied, match="nested deferred result"):
+            await _allowing_runtime(env).aexecute_effect(
+                env["root"].token,
+                request,
+                executor,
+            )
+        await asyncio.gather(*tasks, return_exceptions=True)
+
+    asyncio.run(exercise())
+    assert started == []
+    assert tasks and tasks[0].cancelled()
