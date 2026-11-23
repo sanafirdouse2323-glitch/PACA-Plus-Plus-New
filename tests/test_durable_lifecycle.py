@@ -1552,3 +1552,46 @@ def test_langgraph_namespace_listing_enforces_application_memory_policy(tmp_path
     with pytest.raises(MemoryAccessDenied, match="metadata policy"):
         store.list_namespaces(prefix=("acme",))
     assert reads == []
+
+def test_derived_memory_rejects_input_bytes_not_bound_to_parent_digest(tmp_path):
+    env = _environment(tmp_path)
+    source = _ingest(env, {"text": "original trusted-adapter value"})
+    forged = Arg(
+        {"text": "caller substituted different bytes"},
+        source.label,
+        source.lineage_refs,
+        False,
+    )
+
+    with pytest.raises(MemoryAccessDenied, match="input bytes do not match"):
+        env["memory"].summarise(
+            {"summary": "derived from substituted content"},
+            forged,
+            object_id="mem/forged-derived",
+            version_id="v1",
+            purpose="prepare-report",
+            capability_token=env["root"].token,
+        )
+    assert env["repo"].get_version("mem/forged-derived", "v1") is None
+    assert env["values"].get("mem/forged-derived", "v1") is None
+
+    # A properly persisted intermediate transformation has its own node and
+    # exact digest, so it can safely become the input to a further derivation.
+    first = env["memory"].summarise(
+        {"summary": "legitimate first summary"},
+        source,
+        object_id="mem/legitimate-derived",
+        version_id="v1",
+        purpose="prepare-report",
+        capability_token=env["root"].token,
+    )
+    second = env["memory"].summarise(
+        {"summary": "legitimate second summary"},
+        first,
+        object_id="mem/legitimate-derived-again",
+        version_id="v1",
+        purpose="prepare-report",
+        capability_token=env["root"].token,
+    )
+    assert second.value == {"summary": "legitimate second summary"}
+    assert len(second.lineage_refs) == 1
