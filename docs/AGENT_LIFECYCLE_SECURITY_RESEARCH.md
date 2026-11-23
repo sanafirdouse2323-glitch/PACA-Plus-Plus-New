@@ -1,4 +1,4 @@
-# PACA++ New: Agent-Lifecycle Security Research Programme
+# PAC++ New: Agent-Lifecycle Security Research Programme
 
 **Research scope:** security of LLM-based agents across their lifecycle.  
 **Repository boundary:** this document applies only to `PACA-Plus-Plus-New`. It does not define or implement the enterprise gateway project in the separate `PACA-Plus-Plus` repository.  
@@ -7,7 +7,7 @@
 
 ## 1. Research objective
 
-PACA++ New studies how security-relevant information and authority propagate through an LLM agent over time. The target is not merely to decide whether an isolated tool call is allowed. It is to determine whether an agent's evolving state, memory, plans, delegated work, messages and proposed effects remain consistent with the user's authorised task and the system's current policy.
+PAC++ New studies how security-relevant information and authority propagate through an LLM agent over time. The target is not merely to decide whether an isolated tool call is allowed. It is to determine whether an agent's evolving state, memory, plans, delegated work, messages and proposed effects remain consistent with the user's authorised task and the system's current policy.
 
 The central problem is **lifecycle continuity**:
 
@@ -22,7 +22,7 @@ The research goal is to define, implement and evaluate a reference-monitor archi
 
 This is a systems-security problem. Model alignment, prompt wording and injection classifiers may be useful defence-in-depth, but they are not the authority boundary.
 
-## 2. What the existing PACA++ New repository actually contains
+## 2. What the existing PAC++ New repository actually contains
 
 The current codebase is a research prototype, not a complete agent runtime.
 
@@ -49,8 +49,8 @@ The literature rules out several overly broad novelty claims.
 
 ### 3.1 Tool-call privilege control and information-flow enforcement
 
-- **CaMeL, “Defeating Prompt Injections by Design”** separates trusted control flow from untrusted data, tracks value-level capabilities and checks data flows at tool calls. Its reported AgentDojo results and SaTML 2026 publication make it a direct comparator. PACA++ New must not claim to be the first capability- or provenance-aware agent monitor. [Paper](https://arxiv.org/abs/2503.18813) · [SaTML 2026 publication](https://ieeexplore.ieee.org/abstract/document/11691650/authors)
-- **Progent** generates and updates symbolic privilege policies and uses an SMT check to distinguish policy narrowing from expansion, enforcing monotonic confinement unless an expansion is approved. PACA++ New must not present dynamic tool-scope policy or monotonic privilege narrowing alone as novel. [Paper](https://arxiv.org/abs/2504.11703)
+- **CaMeL, “Defeating Prompt Injections by Design”** separates trusted control flow from untrusted data, tracks value-level capabilities and checks data flows at tool calls. Its reported AgentDojo results and SaTML 2026 publication make it a direct comparator. PAC++ New must not claim to be the first capability- or provenance-aware agent monitor. [Paper](https://arxiv.org/abs/2503.18813) · [SaTML 2026 publication](https://ieeexplore.ieee.org/abstract/document/11691650/authors)
+- **Progent** generates and updates symbolic privilege policies and uses an SMT check to distinguish policy narrowing from expansion, enforcing monotonic confinement unless an expansion is approved. PAC++ New must not present dynamic tool-scope policy or monotonic privilege narrowing alone as novel. [Paper](https://arxiv.org/abs/2504.11703)
 - **AgentDojo** supplies a dynamic tool-using environment with 97 tasks and 629 security test cases; it is an evaluation baseline, not a complete lifecycle assurance proof. [NeurIPS 2024](https://papers.nips.cc/paper_files/paper/2024/hash/97091a5177d8dc64b1da8bf3e1f6fb54-Abstract-Datasets_and_Benchmarks_Track.html)
 - **Agent Security Bench (ASB)** covers multiple domains, tools, attack/defence methods and metrics, including memory and planning attacks. It is a complementary benchmark source. [ICLR 2025](https://mlanthology.org/iclr/2025/zhang2025iclr-agent/)
 - **AgentDyn** highlights that static tasks can under-test dynamic replanning, helpful third-party instructions and open-ended utility. It motivates dynamic, multi-step evaluation rather than relying only on fixed tool-call sequences. [2026 preprint](https://arxiv.org/abs/2602.03117)
@@ -62,7 +62,7 @@ The literature rules out several overly broad novelty claims.
 
 ### 3.3 Multi-agent provenance and boundary laundering
 
-**“Can CaMeLs Talk?” (October 2026)** reports that individually protected agents do not automatically compose: untrusted data can be reinterpreted as trusted input at an agent boundary. Its multi-CaMeL protocol separates trusted instructions and untrusted data in inter-agent communication. PACA++ New must treat this as existing work and compare with it; it cannot claim first cross-agent provenance preservation. [2026 preprint](https://arxiv.org/abs/2610.05640)
+**“Can CaMeLs Talk?” (October 2026)** reports that individually protected agents do not automatically compose: untrusted data can be reinterpreted as trusted input at an agent boundary. Its multi-CaMeL protocol separates trusted instructions and untrusted data in inter-agent communication. PAC++ New must treat this as existing work and compare with it; it cannot claim first cross-agent provenance preservation. [2026 preprint](https://arxiv.org/abs/2610.05640)
 
 ### 3.4 Lifecycle-wide evidence gaps
 
@@ -185,7 +185,7 @@ At minimum compare:
 - a generic sandbox-style scoped-permission comparator for a narrowly defined execution-containment baseline;
 - NVIDIA OpenShell as an external runtime-containment baseline, with NVIDIA Sentry evaluated separately only if the required BlueField hardware is available;
 - an explicitly identified OpenAI-hosted Agents API environment or a documented self-hosted environment, not an ambiguous "OpenAI sandbox" label;
-- PACA++ New ablations: provenance only, authority only, lifecycle checks without revocation, and the complete proposed model.
+- PAC++ New ablations: provenance only, authority only, lifecycle checks without revocation, and the complete proposed model.
 
 **Baseline status:** the repository's `SandboxScoped` is a hand-authored toy comparator, not OpenShell, Sentry or an OpenAI environment. PR #13 adds deterministic shared-artifact and cross-tenant protocol fixtures, not vendor integrations. The real external baselines require pinned runtime versions, configurations and executor adapters. See [Sandbox and External-Containment Evaluation Protocol](CONTAINMENT_EVALUATION.md). Do not label a simplified local approximation as the original system.
 
@@ -196,7 +196,7 @@ At minimum compare:
 - AgentDyn: dynamic replanning and helpful third-party instructions.
 - MPBench: memory-write channels and delayed memory poisoning.
 - MultiAgentDojo: multi-agent communication and boundary-laundering cases, subject to availability and reproducibility.
-- PACA++ New lifecycle extension: cross-session memory reuse, compaction/procedural memory, capability renewal/revocation, delegated subtask chains, message forwarding and policy changes mid-trajectory.
+- PAC++ New lifecycle extension: cross-session memory reuse, compaction/procedural memory, capability renewal/revocation, delegated subtask chains, message forwarding and policy changes mid-trajectory.
 
 Do not assume all benchmark packages or compatible task IDs are installed. Discover exact versions, interfaces and supported tasks before implementation.
 
@@ -261,15 +261,15 @@ Use paired tasks, fixed model/version/configuration, repeated trials where stoch
 
 ## 8. Explicit non-goals and separation from the sibling repository
 
-PACA++ New is not the enterprise authorization gateway. It must not absorb the sibling project's FastAPI/OPA/PostgreSQL gateway, JWT/OIDC service, tenant RLS deployment, gateway UI, enterprise onboarding or production gateway roadmap.
+PAC++ New is not the enterprise authorization gateway. It must not absorb the sibling project's FastAPI/OPA/PostgreSQL gateway, JWT/OIDC service, tenant RLS deployment, gateway UI, enterprise onboarding or production gateway roadmap.
 
-PACA++ New may use authenticated identity or an external protected resource as an assumption or integration boundary in experiments, but its research contribution is the agent's lifecycle state, provenance, authority, memory, communication, planning and effect transitions.
+PAC++ New may use authenticated identity or an external protected resource as an assumption or integration boundary in experiments, but its research contribution is the agent's lifecycle state, provenance, authority, memory, communication, planning and effect transitions.
 
 The optional SQLite ledger, secure filesystem/network primitives and bounded authorization model on the phase-1 branch are supporting components only. They do not redefine the research objective. Avoid building a second enterprise gateway or a second generic transaction service here.
 
 ## 9. Decision gates and claim discipline
 
-Do not call PACA++ New “complete lifecycle protection” until:
+Do not call PAC++ New “complete lifecycle protection” until:
 - every in-scope lifecycle transition is inventoried and instrumented;
 - memory, communication, planning, delegation and effect bypasses have negative tests;
 - provenance and authority continuity survive restart and cross-agent handoffs;
