@@ -190,24 +190,76 @@ def test_postgres_checkpoint_and_pending_write_paths_are_mediated(tmp_path, monk
 def test_postgres_checkpoint_list_and_async_contracts(tmp_path):
     from langgraph.checkpoint.postgres import PostgresSaver
 
-    root, _repository, memory, source = _environment(tmp_path)
+    root, repository, memory, source = _environment(tmp_path)
     thread_id = "paca-test-" + uuid.uuid4().hex
     timestamp = datetime(2026, 11, 23, tzinfo=timezone.utc)
+    first_id = "f" * 32
+    second_id = "0" * 32
 
     with PostgresSaver.from_conn_string(DSN) as raw:
         saver = _wrap(raw, root, memory, source)
         saver.setup()
         config = {"configurable": {"thread_id": thread_id, "checkpoint_ns": ""}}
-        checkpoint = _checkpoint(str(uuid.uuid4()), "async-contract", timestamp)
-        written = saver.put(
-            config, checkpoint, {"source": "input"}, {"created_at": "1"},
+        first = saver.put(
+            config,
+            _checkpoint(first_id, "first-checkpoint", timestamp, channel_version="1"),
+            {"source": "input", "step": -1},
+            {"created_at": "1"},
         )
-        assert len(list(saver.list(config))) == 1
-        assert saver.get_tuple(written) is not None
-        assert asyncio.run(saver.aget_tuple(written)) is not None
+        second = saver.put(
+            first,
+            _checkpoint(
+                second_id,
+                "second-checkpoint",
+                datetime(2026, 11, 23, 0, 0, 1, tzinfo=timezone.utc),
+                channel_version="2",
+            ),
+            {"source": "loop", "step": 0},
+            {"created_at": "2"},
+        )
+
+        # Checkpoint identifiers are opaque. Listing must use durable insertion
+        # chronology, not lexical sorting of those identifiers.
+        listed = list(saver.list(config))
+        assert [
+            item.config["configurable"]["checkpoint_id"] for item in listed
+        ] == [second_id, first_id]
+        before_second = {
+            "configurable": {
+                "thread_id": thread_id,
+                "checkpoint_ns": "",
+                "checkpoint_id": second_id,
+            }
+        }
+        assert [
+            item.config["configurable"]["checkpoint_id"]
+            for item in saver.list(config, before=before_second)
+        ] == [first_id]
+
+        assert saver.get_tuple(second) is not None
+        assert asyncio.run(saver.aget_tuple(second)) is not None
+        task_id = str(uuid.uuid4())
+        saver.put_writes(
+            second,
+            [("answer", "pending-safe")],
+            task_id,
+            task_path="node:worker-a",
+        )
+        result = saver.get_tuple(second)
+        assert result is not None
+        assert (task_id, "answer", "pending-safe") in result.pending_writes
+
+        from paca.integrations.langgraph_checkpoint import _writes_prefix
+        writes_prefix = _writes_prefix("acme", thread_id, "", second_id)
+        pending_nodes = repository.list_nodes(object_id_prefix=writes_prefix)
+        assert pending_nodes
+        assert not any(repository.is_revoked(node.node_id) for node in pending_nodes)
 
         async def collect_async_list():
             return [item async for item in saver.alist(config)]
 
-        assert len(asyncio.run(collect_async_list())) == 1
+        assert len(asyncio.run(collect_async_list())) == 2
         saver.delete_thread(thread_id)
+        assert all(
+            repository.is_revoked(node.node_id) for node in pending_nodes
+        )
