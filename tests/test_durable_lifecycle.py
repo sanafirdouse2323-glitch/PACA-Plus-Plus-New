@@ -1461,3 +1461,33 @@ def test_raw_value_store_is_a_direct_read_bypass_negative_control(tmp_path, monk
     direct_value, direct_digest = original_get(node.object_id, node.version_id)
     assert direct_value == {"text": "sensitive stored text"}
     assert direct_digest == node.content_digest
+
+def test_langgraph_namespace_listing_enforces_application_memory_policy(tmp_path, monkeypatch):
+    pytest.importorskip("langgraph")
+    from paca.integrations.langgraph import PACAProvenanceLangGraphStore
+
+    env = _environment(tmp_path, authorize=lambda _context, _node: False)
+    source = _ingest(env, {"text": "policy-protected source"})
+    store = PACAProvenanceLangGraphStore(
+        env["memory"],
+        capability_token_provider=lambda: env["root"].token,
+        provenance_provider=lambda _namespace, _key, _value: (source,),
+        purpose="prepare-report",
+    )
+    namespace = ("acme", "restricted")
+    store.put(namespace, "item-1", {"summary": "derived value"})
+
+    reads = []
+    original_get = env["values"].get
+    monkeypatch.setattr(
+        env["values"],
+        "get",
+        lambda *args: (reads.append(args), original_get(*args))[1],
+    )
+
+    # Namespace names are information too. A caller denied by the trusted
+    # application memory policy must not enumerate them, and this metadata-only
+    # operation must not fetch protected value bytes as a shortcut.
+    with pytest.raises(MemoryAccessDenied, match="metadata policy"):
+        store.list_namespaces(prefix=("acme",))
+    assert reads == []
