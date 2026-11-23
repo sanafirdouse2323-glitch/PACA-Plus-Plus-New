@@ -163,6 +163,8 @@ class SQLiteOperationLedger:
                     CREATE TABLE IF NOT EXISTS operations (
                         operation_id INTEGER PRIMARY KEY AUTOINCREMENT,
                         cap_id TEXT NOT NULL,
+                        tenant TEXT NOT NULL,
+                        task_scope TEXT NOT NULL,
                         task_id TEXT NOT NULL,
                         action TEXT NOT NULL,
                         request_digest TEXT NOT NULL,
@@ -181,7 +183,7 @@ class SQLiteOperationLedger:
                         consumed_at REAL
                     );
                     CREATE INDEX IF NOT EXISTS operations_task_created
-                        ON operations(task_id, created_at);
+                        ON operations(task_scope, created_at);
                     """
                 )
                 self._validate_scope_schema(conn)
@@ -202,13 +204,11 @@ class SQLiteOperationLedger:
 
     @staticmethod
     def _validate_scope_schema(conn: sqlite3.Connection) -> None:
-        """Validate or safely initialize tenant-scoped task-state tables.
+        """Validate tenant-scoped quotas and operation-history identity.
 
-        Earlier unversioned databases keyed task counters by task_id alone. There
-        is no trustworthy tenant mapping in those rows. A populated legacy
-        database must therefore fail closed and be migrated offline with an
-        operator-reviewed task-to-tenant mapping; silently copying or resetting
-        counters could weaken quotas or quarantine guarantees.
+        Legacy task counters and operation records lack a trusted tenant mapping.
+        Populated legacy databases fail closed and require an operator-reviewed
+        offline migration. Empty legacy schemas may be recreated automatically.
         """
         conn.execute("BEGIN IMMEDIATE")
         try:
@@ -225,57 +225,96 @@ class SQLiteOperationLedger:
             destination_columns = {
                 row["name"] for row in conn.execute("PRAGMA table_info(destinations)")
             }
+            operation_columns = {
+                row["name"] for row in conn.execute("PRAGMA table_info(operations)")
+            }
+            required_operation_columns = {
+                "tenant", "task_scope", "task_id",
+            }
+            legacy_or_incomplete = (
+                "task_id" in task_columns
+                or "task_scope" not in task_columns
+                or "task_id" in destination_columns
+                or "task_scope" not in destination_columns
+                or not required_operation_columns.issubset(operation_columns)
+            )
 
-            if version_row is None:
-                populated = False
-                for table in (
-                    "capability_state", "task_state", "destinations", "operations", "tokens",
-                ):
-                    if conn.execute(f"SELECT 1 FROM {table} LIMIT 1").fetchone() is not None:
-                        populated = True
-                        break
-                if populated:
-                    raise LedgerError(
-                        "unversioned ledger contains persisted state keyed without tenant scope; "
-                        "a reviewed offline migration with trusted task-to-tenant mappings is required"
-                    )
-
-                # Only empty legacy tables can be recreated automatically. This
-                # avoids silently resetting existing call, strike, fan-out or
-                # single-use-token state when upgrading an older installation.
-                if (
-                    "task_id" in task_columns
-                    or "task_scope" not in task_columns
-                    or "task_id" in destination_columns
-                    or "task_scope" not in destination_columns
-                ):
-                    conn.execute("DROP TABLE IF EXISTS destinations")
-                    conn.execute("DROP TABLE IF EXISTS task_state")
-                    conn.execute(
-                        "CREATE TABLE task_state ("
-                        "task_scope TEXT PRIMARY KEY,"
-                        "strikes INTEGER NOT NULL DEFAULT 0 CHECK (strikes >= 0))"
-                    )
-                    conn.execute(
-                        "CREATE TABLE destinations ("
-                        "task_scope TEXT NOT NULL,"
-                        "destination TEXT NOT NULL,"
-                        "PRIMARY KEY (task_scope, destination))"
-                    )
-                conn.execute(
-                    "INSERT INTO ledger_meta(key,value) VALUES('schema_version','2')"
-                )
-            else:
+            version = 0
+            if version_row is not None:
                 try:
                     version = int(version_row["value"])
                 except (TypeError, ValueError) as exc:
                     raise LedgerError("operation ledger schema version is invalid") from exc
-                if (
-                    version != 2
-                    or "task_scope" not in task_columns
-                    or "task_scope" not in destination_columns
-                ):
-                    raise LedgerError("operation ledger schema is unsupported or inconsistent")
+                if version not in {2, 3}:
+                    raise LedgerError("operation ledger schema version is unsupported")
+
+            if version == 3 and not legacy_or_incomplete:
+                conn.commit()
+                return
+
+            populated = False
+            for table in (
+                "capability_state", "task_state", "destinations", "operations", "tokens",
+            ):
+                if conn.execute(f"SELECT 1 FROM {table} LIMIT 1").fetchone() is not None:
+                    populated = True
+                    break
+            if populated:
+                raise LedgerError(
+                    "legacy or inconsistent operation ledger contains persisted state without "
+                    "complete tenant-scoped task and audit identity; a reviewed offline migration "
+                    "with trusted task-to-tenant mappings is required"
+                )
+
+            # Only empty legacy databases are safe to rebuild automatically.
+            # Tokens reference operations, so drop them before replacing history.
+            conn.execute("DROP TABLE IF EXISTS tokens")
+            conn.execute("DROP TABLE IF EXISTS operations")
+            conn.execute("DROP TABLE IF EXISTS destinations")
+            conn.execute("DROP TABLE IF EXISTS task_state")
+            conn.execute(
+                "CREATE TABLE task_state ("
+                "task_scope TEXT PRIMARY KEY,"
+                "strikes INTEGER NOT NULL DEFAULT 0 CHECK (strikes >= 0))"
+            )
+            conn.execute(
+                "CREATE TABLE destinations ("
+                "task_scope TEXT NOT NULL,"
+                "destination TEXT NOT NULL,"
+                "PRIMARY KEY (task_scope, destination))"
+            )
+            conn.execute(
+                "CREATE TABLE operations ("
+                "operation_id INTEGER PRIMARY KEY AUTOINCREMENT,"
+                "cap_id TEXT NOT NULL,"
+                "tenant TEXT NOT NULL,"
+                "task_scope TEXT NOT NULL,"
+                "task_id TEXT NOT NULL,"
+                "action TEXT NOT NULL,"
+                "request_digest TEXT NOT NULL,"
+                "decision TEXT NOT NULL,"
+                "checks_json TEXT NOT NULL,"
+                "execution_state TEXT NOT NULL,"
+                "created_at REAL NOT NULL)"
+            )
+            conn.execute(
+                "CREATE TABLE tokens ("
+                "token_hash TEXT PRIMARY KEY,"
+                "operation_id INTEGER NOT NULL REFERENCES operations(operation_id),"
+                "request_digest TEXT NOT NULL,"
+                "state TEXT NOT NULL CHECK (state IN ('issued', 'consumed', 'expired')),"
+                "issued_at REAL NOT NULL,"
+                "expires_at REAL NOT NULL,"
+                "consumed_at REAL)"
+            )
+            conn.execute(
+                "CREATE INDEX operations_task_created "
+                "ON operations(task_scope, created_at)"
+            )
+            conn.execute(
+                "INSERT INTO ledger_meta(key,value) VALUES('schema_version','3') "
+                "ON CONFLICT(key) DO UPDATE SET value='3'"
+            )
             conn.commit()
         except Exception:
             conn.rollback()
@@ -382,13 +421,20 @@ class SQLiteOperationLedger:
     ) -> int:
         cursor = conn.execute(
             """INSERT INTO operations
-               (cap_id, task_id, action, request_digest, decision, checks_json,
-                execution_state, created_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+               (cap_id, tenant, task_scope, task_id, action, request_digest,
+                decision, checks_json, execution_state, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
-                capability.cap_id, capability.task_id, action, digest, verdict,
+                capability.cap_id,
+                capability.tenant,
+                task_scope_key(capability.tenant, capability.task_id),
+                capability.task_id,
+                action,
+                digest,
+                verdict,
                 json.dumps(sorted(set(checks)), separators=(",", ":")),
-                execution_state, created_at,
+                execution_state,
+                created_at,
             ),
         )
         return int(cursor.lastrowid)
@@ -544,28 +590,49 @@ class SQLiteOperationLedger:
             raise LedgerError("could not atomically consume authorisation token") from exc
 
     def operations(
-        self, task_id: Optional[str] = None
+        self,
+        task_id: Optional[str] = None,
+        *,
+        tenant: Optional[str] = None,
     ) -> Tuple[Dict[str, object], ...]:
-        """Return diagnostic snapshots; never expose raw authorisation tokens."""
+        """Return diagnostic history, scoped by authenticated tenant when filtered.
+
+        A task identifier is not globally unique. Filtering by task therefore
+        requires both tenant and task ID. Omitting both is reserved for a trusted
+        ledger administrator reading the complete database history.
+        """
+        if task_id is not None:
+            if not isinstance(task_id, str) or not task_id:
+                raise ValueError("task_id must be a non-empty string")
+            if not isinstance(tenant, str) or not tenant:
+                raise ValueError("tenant is required when filtering operation history by task_id")
+        elif tenant is not None and (not isinstance(tenant, str) or not tenant):
+            raise ValueError("tenant must be a non-empty string")
+
         conn = self._connect()
         try:
-            if task_id is None:
+            select = (
+                "SELECT operation_id, cap_id, tenant, task_scope, task_id, action, "
+                "request_digest, decision, checks_json, execution_state, created_at "
+                "FROM operations"
+            )
+            if task_id is not None:
                 rows = conn.execute(
-                    """SELECT operation_id, cap_id, task_id, action, request_digest,
-                              decision, checks_json, execution_state, created_at
-                       FROM operations ORDER BY operation_id"""
+                    select + " WHERE task_scope = ? ORDER BY operation_id",
+                    (task_scope_key(tenant, task_id),),
+                ).fetchall()
+            elif tenant is not None:
+                rows = conn.execute(
+                    select + " WHERE tenant = ? ORDER BY operation_id",
+                    (tenant,),
                 ).fetchall()
             else:
-                rows = conn.execute(
-                    """SELECT operation_id, cap_id, task_id, action, request_digest,
-                              decision, checks_json, execution_state, created_at
-                       FROM operations WHERE task_id = ? ORDER BY operation_id""",
-                    (task_id,),
-                ).fetchall()
+                rows = conn.execute(select + " ORDER BY operation_id").fetchall()
             return tuple(
                 {
                     "operation_id": int(row["operation_id"]),
                     "cap_id": str(row["cap_id"]),
+                    "tenant": str(row["tenant"]),
                     "task_id": str(row["task_id"]),
                     "action": str(row["action"]),
                     "request_digest": str(row["request_digest"]),
@@ -580,6 +647,7 @@ class SQLiteOperationLedger:
             raise LedgerError("could not read operation history") from exc
         finally:
             conn.close()
+
 
 
 __all__ = [
