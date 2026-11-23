@@ -879,14 +879,6 @@ class HMACAgentMessageCodec:
             if label.sensitivity > 0 and not label.tenants:
                 raise ValueError("sensitive message has no tenant provenance")
             received = Arg(body["value"], label, frozenset(refs), False)
-            # Receiving an authenticated envelope is not itself a memory-read
-            # grant. The recipient must independently be allowed to read the
-            # complete persisted lineage under the current application policy.
-            self.memory.authorize_argument(
-                received,
-                purpose=recipient_record.purpose,
-                capability_token=recipient_token,
-            )
             for node_id in refs:
                 node = self.repository.get_node(node_id)
                 if node is None:
@@ -912,6 +904,9 @@ class HMACAgentMessageCodec:
                     ):
                         raise ValueError("message label is less restrictive than source lineage")
             try:
+                # Consume the replay receipt before charging a memory read. A
+                # duplicate delivery must not drain the recipient's memory-read
+                # budget on every rejected replay attempt.
                 self.registry.consume_message(
                     recipient_capability.cap_id,
                     message_id,
@@ -921,6 +916,13 @@ class HMACAgentMessageCodec:
                 raise MemoryAccessDenied(
                     "message replay, receive budget exhaustion or revoked authority was rejected"
                 ) from exc
+            # A valid receipt does not confer memory access. The recipient must
+            # independently pass current mem_read scope and application policy.
+            self.memory.authorize_argument(
+                received,
+                purpose=recipient_record.purpose,
+                capability_token=recipient_token,
+            )
             return received
         except (ValueError, TypeError, KeyError, json.JSONDecodeError, AuthorityRegistryError) as exc:
             raise MemoryAccessDenied("inter-agent message authentication or provenance validation failed") from exc
