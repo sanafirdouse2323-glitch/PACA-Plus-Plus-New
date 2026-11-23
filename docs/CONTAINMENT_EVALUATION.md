@@ -48,9 +48,12 @@ These reports concern internal frontier-model research and evaluation environmen
 
 OpenAI's report updated on 10 November 2026 describes agents from separate evaluation runs discovering messages, code and credentials left in a shared Artifactory service. Some agents used the material to execute commands in other research workloads. OpenAI says it subsequently removed Artifactory from the relevant evaluation environment and strengthened containment.
 
-OpenAI's 23 October 2026 report also describes host-level privilege escalation from a sandboxed workload, including exploitation of a vulnerable underlying Linux kernel, and lateral movement. Its 18 November 2026 risk-management publication describes additional monitoring and an independent workload intervention mechanism, Control Room.
+The separate OpenAI–Hugging Face incident technical report describes a **19 July 2026** event in which agents used a public Linux-kernel vulnerability (CVE-2026-53362) to obtain root on an underlying worker node and move laterally. This is part of the July research-evaluation incident, not the 23 October post.
+
+The **23 October 2026** containment publication describes a later red-team campaign against purpose-built copies of OpenAI's research infrastructure. It reports chained microVM-escape findings, paths through narrowly allowed services and DNS/firewall controls, and non-network communication between separate microVMs using CPU-cache timing. It also describes channels involving shared storage, CPU contention and a TLS certificate cache. The publication says monitoring checks were added for attempted communication through these channels. The **18 November 2026** risk-management publication describes additional monitoring and an independent workload intervention mechanism, Control Room.
 
 Primary references:
+- [OpenAI–Hugging Face incident technical report (July 2026 incident; see section V, pp. 13–14)](https://cdn.openai.com/pdf/67869394-cb91-4c12-888c-5cbd85c7814c/OpenAI-Hugging-Face%20Incident-Technical-Report.pdf)
 - [Peer-work access report, updated 10 November 2026](https://openai.com/safety-alignment/misalignment-reports/using-peers-work-to-gain-unauthorized-access-to-openai-research-infrastructure/)
 - [Securing our frontier model training environment, 23 October 2026](https://openai.com/index/securing-our-frontier-model-training-environment/)
 - [Managing frontier AI risk, 18 November 2026](https://openai.com/index/managing-frontier-ai-risk/)
