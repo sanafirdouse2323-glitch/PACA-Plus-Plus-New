@@ -86,6 +86,23 @@ def _decode_object_id(value: str) -> Tuple[str, Tuple[str, ...], str]:
     return tenant_digest, tuple(parsed[0]), parsed[1]
 
 
+def _tool_call_digest(tool_call: Mapping[str, Any]) -> str:
+    """Fingerprint the exact JSON tool call handed to LangChain's handler."""
+    try:
+        encoded = json.dumps(
+            dict(tool_call),
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=False,
+            allow_nan=False,
+        ).encode("utf-8")
+    except (TypeError, ValueError) as exc:
+        raise MemoryAccessDenied(
+            "LangChain tool arguments must be canonical JSON before mediation"
+        ) from exc
+    return hashlib.sha256(encoded).hexdigest()
+
+
 def _matches_filter(value: Mapping[str, Any], filters: Optional[Mapping[str, Any]]) -> bool:
     if not filters:
         return True
@@ -587,6 +604,7 @@ class PACALangChainToolMiddleware(AgentMiddleware):
             or getattr(tool, "name", None) != tool_call.get("name")
         ):
             raise MemoryAccessDenied("LangChain tool identity is missing or does not match the registered tool")
+        tool_call_digest = _tool_call_digest(tool_call)
         actual_manifest = self._tool_manifest_provider(tool)
         if (
             not isinstance(actual_manifest, Tool)
@@ -598,15 +616,33 @@ class PACALangChainToolMiddleware(AgentMiddleware):
             raise TypeError("request_factory must return a PACA Request")
         if paca_request.tool != actual_manifest:
             raise MemoryAccessDenied("PACA action mapping does not match the registered tool manifest")
+        if _tool_call_digest(getattr(request, "tool_call", {})) != tool_call_digest:
+            raise MemoryAccessDenied("LangChain tool call changed while its PACA request was being constructed")
         token = self._token_provider(request)
         signed = self.runtime.authority.verify(token)
         pin = signed.capability.tool_pins.get(tool_call["name"])
         if pin is None or not hmac.compare_digest(pin, actual_manifest.hash):
             raise MemoryAccessDenied("LangChain tool manifest is not pinned by the authenticated capability")
+
+        def checked_handler(_validated: Any) -> Any:
+            current_call = getattr(request, "tool_call", None)
+            current_tool = getattr(request, "tool", None)
+            if (
+                not isinstance(current_call, Mapping)
+                or _tool_call_digest(current_call) != tool_call_digest
+                or current_tool is None
+                or getattr(current_tool, "name", None) != actual_manifest.name
+            ):
+                raise MemoryAccessDenied("LangChain tool call or identity changed after PACA authorization")
+            current_manifest = self._tool_manifest_provider(current_tool)
+            if current_manifest != actual_manifest:
+                raise MemoryAccessDenied("registered tool manifest changed after PACA authorization")
+            return handler(request)
+
         decision, result = self.runtime.execute_effect(
             token,
             paca_request,
-            lambda _validated: handler(request),
+            checked_handler,
         )
         if decision.verdict != "allow":
             raise MemoryAccessDenied("PACA denied the LangChain tool call")
@@ -623,6 +659,7 @@ class PACALangChainToolMiddleware(AgentMiddleware):
             or getattr(tool, "name", None) != tool_call.get("name")
         ):
             raise MemoryAccessDenied("LangChain tool identity is missing or does not match the registered tool")
+        tool_call_digest = _tool_call_digest(tool_call)
         actual_manifest = self._tool_manifest_provider(tool)
         if (
             not isinstance(actual_manifest, Tool)
@@ -634,15 +671,36 @@ class PACALangChainToolMiddleware(AgentMiddleware):
             raise TypeError("request_factory must return a PACA Request")
         if paca_request.tool != actual_manifest:
             raise MemoryAccessDenied("PACA action mapping does not match the registered tool manifest")
+        if _tool_call_digest(getattr(request, "tool_call", {})) != tool_call_digest:
+            raise MemoryAccessDenied("LangChain tool call changed while its PACA request was being constructed")
         token = self._token_provider(request)
         signed = self.runtime.authority.verify(token)
         pin = signed.capability.tool_pins.get(tool_call["name"])
         if pin is None or not hmac.compare_digest(pin, actual_manifest.hash):
             raise MemoryAccessDenied("LangChain tool manifest is not pinned by the authenticated capability")
+
+        async def checked_handler(_validated: Any) -> Any:
+            current_call = getattr(request, "tool_call", None)
+            current_tool = getattr(request, "tool", None)
+            if (
+                not isinstance(current_call, Mapping)
+                or _tool_call_digest(current_call) != tool_call_digest
+                or current_tool is None
+                or getattr(current_tool, "name", None) != actual_manifest.name
+            ):
+                raise MemoryAccessDenied("LangChain tool call or identity changed after PACA authorization")
+            current_manifest = self._tool_manifest_provider(current_tool)
+            if current_manifest != actual_manifest:
+                raise MemoryAccessDenied("registered tool manifest changed after PACA authorization")
+            result = handler(request)
+            if hasattr(result, "__await__"):
+                return await result
+            return result
+
         decision, result = await self.runtime.aexecute_effect(
             token,
             paca_request,
-            lambda _validated: handler(request),
+            checked_handler,
         )
         if decision.verdict != "allow":
             raise MemoryAccessDenied("PACA denied the LangChain tool call")
