@@ -287,6 +287,22 @@ class SQLiteProvenanceRepository:
             )
         return tuple(nodes.values())
 
+    def node_created_at(self, node_id: str) -> int:
+        """Return the persisted UTC Unix timestamp for a validated lineage node."""
+        if not isinstance(node_id, str) or not node_id:
+            raise ValueError("node_id must be a non-empty string")
+        with closing(self._connect()) as connection:
+            graph = self._load_graph(connection)
+            if graph.get_node(node_id) is None:
+                raise KeyError(node_id)
+            row = connection.execute(
+                "SELECT created_at FROM lineage_nodes WHERE node_id=?",
+                (node_id,),
+            ).fetchone()
+        if row is None:
+            raise LineageIntegrityError("validated node has no durable creation timestamp")
+        return int(row["created_at"])
+
     def ancestors(self, node_id: str) -> Tuple[LineageNode, ...]:
         with closing(self._connect()) as connection:
             graph = self._load_graph(connection)
