@@ -8,6 +8,7 @@ import pytest
 pytest.importorskip("langgraph")
 
 from paca.integrations.langgraph import (
+    NOT_PROVIDED,
     PACAProvenanceLangGraphStore,
     _snapshot_async_inputs,
 )
@@ -50,6 +51,7 @@ def test_async_store_inputs_are_deep_copied_before_thread_handoff(monkeypatch):
         value["nested"][0]["text"] = "mutated by caller"
         assert seen["put"][2] == {"nested": [{"text": "before handoff"}]}
         assert seen["put"][2] is not value
+        assert seen["put"][4] is NOT_PROVIDED
 
         operations = [{"operation": "put", "value": {"body": "original"}}]
         result = await store.abatch(operations)
