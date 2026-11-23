@@ -2162,3 +2162,98 @@ def test_runtime_refuses_monitor_with_effect_token_verification_disabled(tmp_pat
         runtime.execute_effect(
             env["root"].token, request, lambda _snapshot: "must-not-run",
         )
+
+def test_inter_agent_message_send_requires_memory_read_authority(tmp_path):
+    env = _environment(tmp_path)
+    payload = _ingest(env)
+    sender_without_read = env["issuer"].issue(
+        principal="sender-without-read",
+        tenant="acme",
+        task_id="task-1",
+        purpose="prepare-report",
+        grants={"send_agent_message": ("worker-b",)},
+        expires_at=1_900,
+        max_calls=20,
+    )
+
+    with pytest.raises(MemoryAccessDenied, match="scope"):
+        env["messages"].seal(
+            payload,
+            sender="sender-without-read",
+            recipient="worker-b",
+            capability_token=sender_without_read.token,
+        )
+
+
+def test_inter_agent_message_receive_requires_memory_read_authority(tmp_path):
+    env = _environment(tmp_path)
+    payload = _ingest(env)
+    sealed = env["messages"].seal(
+        payload,
+        sender="agent-a",
+        recipient="worker-b",
+        capability_token=env["root"].token,
+    )
+    recipient_without_read = env["issuer"].issue(
+        principal="worker-b",
+        tenant="acme",
+        task_id="task-1",
+        purpose="prepare-report",
+        grants={"receive_agent_message": ("agent-a",)},
+        expires_at=1_900,
+        max_calls=20,
+    )
+
+    with pytest.raises(MemoryAccessDenied, match="scope"):
+        env["messages"].open(
+            sealed,
+            recipient_token=recipient_without_read.token,
+        )
+
+
+def test_inter_agent_message_rechecks_application_policy_on_sender_and_receiver(tmp_path):
+    allowed = [True]
+    env = _environment(tmp_path, authorize=lambda _context, _node: allowed[0])
+    payload = _ingest(env)
+    allowed[0] = False
+
+    with pytest.raises(MemoryAccessDenied, match="metadata policy"):
+        env["messages"].seal(
+            payload,
+            sender="agent-a",
+            recipient="worker-b",
+            capability_token=env["root"].token,
+        )
+
+    # A separate test environment creates an envelope while policy allows it,
+    # then denies the recipient before the receive boundary.
+    receive_allowed = [True]
+    receiver_env = _environment(
+        tmp_path / "receiver",
+        authorize=lambda _context, _node: receive_allowed[0],
+    )
+    receiver_payload = _ingest(receiver_env)
+    sealed = receiver_env["messages"].seal(
+        receiver_payload,
+        sender="agent-a",
+        recipient="worker-b",
+        capability_token=receiver_env["root"].token,
+    )
+    receiver_allowed[0] = False
+    recipient = receiver_env["issuer"].issue(
+        principal="worker-b",
+        tenant="acme",
+        task_id="task-1",
+        purpose="prepare-report",
+        grants={
+            "mem_read": ("mem/*",),
+            "receive_agent_message": ("agent-a",),
+        },
+        expires_at=1_900,
+        max_calls=20,
+    )
+    with pytest.raises(MemoryAccessDenied, match="metadata policy"):
+        receiver_env["messages"].open(
+            sealed,
+            recipient_token=recipient.token,
+        )
