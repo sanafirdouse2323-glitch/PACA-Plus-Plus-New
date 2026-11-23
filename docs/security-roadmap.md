@@ -28,6 +28,12 @@ The open cumulative PR [#13](https://github.com/sanafirdouse2323-glitch/PACA-Plu
 
 These components may support the lifecycle research but are not the central research contribution. Their existence must not be described as enterprise-gateway functionality or complete agent security.
 
+### Sandbox / external-containment evaluation tranche
+
+The branch also adds `tests/test_sandbox_boundary_cases.py` and [the containment evaluation protocol](CONTAINMENT_EVALUATION.md). The tests cover a test-only cross-session artifact handoff that must preserve untrusted provenance and a cross-tenant memory lookup that must be denied before the value is fetched. The existing `SandboxScoped` comparator is deliberately a simplified, hand-authored allow-list model; it is not a test of NVIDIA OpenShell, NVIDIA Sentry or an OpenAI-hosted environment.
+
+No actual vendor sandbox integration, host-kernel escape test, hardware side-channel test, independent watchdog, credential broker or production shared-memory adapter is included in this tranche.
+
 ## Lifecycle coverage gaps
 
 | Lifecycle surface | Current evidence | Work still required |
@@ -39,6 +45,7 @@ These components may support the lifecycle research but are not the central rese
 | Delegation | Capability parent and attenuation checks in selected paths | Formal partial order, authenticated recipient, multi-hop chain, revocation propagation and cross-agent tests |
 | Communication | Agent message is an untrusted simulator source | Authenticated typed envelopes, provenance preservation, sender/recipient/channel checks, boundary-laundering tests |
 | Tool/effect | AgentDojo pre-dispatch adapter for supported read/search calls | Complete action/effect contracts, real executor integration, resource-side checks and bypass tests |
+| Execution containment | Linux `openat2` and DNS/IP-pinning helper tests; a generic toy sandbox comparator | Pinned OpenShell / OpenAI environment integrations, full process/network mediation, redirect revalidation, credential brokering, supervisor-failure and host-escape tests |
 | Revocation / recovery | Expiry, budgets and token use are partially represented | Explicit revocation epochs, descendant invalidation, stale memory handling, quarantine and replayable recovery |
 | Formal assurance | Bounded token/approval/tenant/delegation model on PR #13 | Lifecycle state model, adversarial transitions, crash/concurrency assumptions and implementation refinement |
 | Evaluation | Self-authored simulator and limited AgentDojo integration | Reproduced baselines plus ASB, AgentDyn, MPBench and multi-agent/lifecycle-specific experiments |
@@ -52,7 +59,7 @@ These components may support the lifecycle research but are not the central rese
 5. **Implement authority continuity.** Add dynamic revocation, descendant invalidation, task/purpose binding and revalidation at consequential transitions.
 6. **Integrate actual effect paths.** Use the phase-1 filesystem/network primitives where applicable, but only after mapping and testing each real tool's full effect contract.
 7. **Extend formal verification.** Model memory, provenance, delegation, communication, revocation, stale state and effect commit. Connect each abstract transition to executable tests.
-8. **Evaluate against external baselines.** Reproduce compatible public benchmarks first, then add delayed-activation and lifecycle-composition cases. Keep model calls, raw results and error denominators explicit.
+8. **Evaluate against external baselines.** Reproduce compatible public benchmarks first, then add delayed-activation and lifecycle-composition cases. Evaluate OpenShell and a specifically identified OpenAI-hosted or self-hosted Agents API environment only after real adapters and pinned configurations exist. Keep model calls, raw results and error denominators explicit.
 
 ## Acceptance gates
 
