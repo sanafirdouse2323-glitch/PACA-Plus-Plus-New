@@ -290,7 +290,10 @@ class PACAProvenancePostgresSaver(BaseCheckpointSaver):
             if not isinstance(item, (tuple, list)) or len(item) != 3:
                 raise MemoryIntegrityError("PostgreSQL returned an unsupported pending-write tuple")
             task_id, channel, value = item
-            if not isinstance(task_id, str) or not isinstance(channel, str):
+            if (
+                not isinstance(task_id, str) or not task_id
+                or not isinstance(channel, str) or not channel
+            ):
                 raise MemoryIntegrityError("PostgreSQL returned an invalid pending-write identity")
             output.append((task_id, channel, value))
         return output
@@ -351,10 +354,11 @@ class PACAProvenancePostgresSaver(BaseCheckpointSaver):
         # The PostgreSQL saver exposes pending writes as (task_id, channel, value)
         # tuples without task_path. Sort task IDs, retaining channel order within
         # each task, to produce a stable contract-comparable sequence.
+        ordered = sorted(records.items(), key=lambda item: (item[1][0], item[0]))
         return [
             (task_id, channel, value)
-            for task_id in sorted(records)
-            for channel, value in records[task_id][1]
+            for task_id, (_task_path, writes) in ordered
+            for channel, value in writes
         ]
 
     def _assert_pending_writes_match(
