@@ -197,5 +197,9 @@ def test_postgres_checkpoint_list_and_async_contracts(tmp_path):
         assert len(list(saver.list(config))) == 1
         assert saver.get_tuple(written) is not None
         assert asyncio.run(saver.aget_tuple(written)) is not None
-        assert len([item async for item in saver.alist(config)]) == 1
+
+        async def collect_async_list():
+            return [item async for item in saver.alist(config)]
+
+        assert len(asyncio.run(collect_async_list())) == 1
         saver.delete_thread(thread_id)
