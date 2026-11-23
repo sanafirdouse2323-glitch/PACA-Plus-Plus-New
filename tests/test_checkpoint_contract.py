@@ -143,3 +143,36 @@ def test_provider_config_requires_authenticated_thread_namespace_and_id():
             expected_namespace="worker",
             expected_checkpoint_id="checkpoint-1",
         )
+
+def test_checkpoint_list_rejects_cursor_from_another_thread_or_namespace():
+    from paca.memory import MemoryAccessDenied
+
+    saver = object.__new__(PACAProvenancePostgresSaver)
+    saver._normalized_config = lambda _config, action: (
+        "signed-token", "tenant-a", "thread-a", "worker", "object-id", {},
+    )
+    config = {
+        "configurable": {
+            "thread_id": "thread-a",
+            "checkpoint_ns": "worker",
+        }
+    }
+    cursors = (
+        {
+            "configurable": {
+                "thread_id": "thread-b",
+                "checkpoint_ns": "worker",
+                "checkpoint_id": "same-checkpoint-id",
+            }
+        },
+        {
+            "configurable": {
+                "thread_id": "thread-a",
+                "checkpoint_ns": "other-namespace",
+                "checkpoint_id": "same-checkpoint-id",
+            }
+        },
+    )
+    for cursor in cursors:
+        with pytest.raises(MemoryAccessDenied, match="different thread or namespace|another thread or namespace"):
+            list(saver.list(config, before=cursor))
