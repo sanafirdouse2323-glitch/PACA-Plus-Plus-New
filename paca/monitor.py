@@ -24,7 +24,7 @@ from .obligations import ObligationRunner
 from .parser import parse_policy_set
 from .provenance import Arg, Label
 from .runtime import ACTIONS, Capability, Decision, Request, Violation
-from .ledger import LedgerError, OperationLedger
+from .ledger import OperationLedger
 
 CHECKS = {
     "C1":  ("Scope: action and target inside the task-bound capability", "capability escalation; goal hijack; cross-stage drift"),
