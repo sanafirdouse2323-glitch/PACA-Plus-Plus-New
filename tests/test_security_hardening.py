@@ -136,3 +136,51 @@ def test_approval_requires_explicit_verifier_and_is_bound_to_request():
     request = Request("merge_pr", {"pr": Arg("#1")}, make_cap(), 1)
     request.approval = request.digest
     assert monitor.decide(request).verdict == "allow"
+
+
+def test_sensitive_label_without_tenant_is_marked_unknown_and_denied():
+    monitor = Monitor()
+    body = Arg("confidential report", Label("trusted", sensitivity=2))
+    request = Request(
+        "send_email",
+        {"to": user_arg("bob@corp.example"), "body": body},
+        make_cap(),
+        1,
+    )
+
+    assert body.label.tenant_unknown is True
+    decision = monitor.decide(request)
+    assert decision.verdict == "deny"
+    assert "C6" in decision.checks
+
+
+def test_join_does_not_hide_an_unknown_sensitive_tenant_source():
+    known_tenant = Label("trusted", sensitivity=1, tenant="acme")
+    unknown_tenant = Label("trusted", sensitivity=2)
+    joined = Label.join(known_tenant, unknown_tenant)
+    assert joined.tenants == frozenset({"acme"})
+    assert joined.tenant_unknown is True
+
+    request = Request(
+        "send_email",
+        {"to": user_arg("bob@corp.example"), "body": Arg("combined report", joined)},
+        make_cap(),
+        1,
+    )
+    decision = Monitor().decide(request)
+    assert decision.verdict == "deny"
+    assert "C6" in decision.checks
+
+
+def test_sensitive_read_resource_without_tenant_is_denied():
+    capability = make_cap(grants={"read_file": ("/acme/reports/*",)})
+    request = Request(
+        "read_file",
+        {"path": user_arg("/acme/reports/q3.txt")},
+        capability,
+        1,
+        resource=Label("trusted", sensitivity=2),
+    )
+    decision = Monitor().decide(request)
+    assert decision.verdict == "deny"
+    assert "C6" in decision.checks
