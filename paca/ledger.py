@@ -283,6 +283,11 @@ class SQLiteOperationLedger:
 
     @staticmethod
     def _authority_digest(capability: "Capability") -> str:
+        # The authority-lineage snapshot includes issuer, purpose, policy epoch
+        # and parent-chain digest. Bind the entire immutable record so a reused
+        # capability ID cannot inherit counters under changed authority metadata.
+        capability.validate_authority_lineage()
+        lineage = capability.authority_lineage
         authority: Dict[str, object] = {
             "principal": capability.principal,
             "tenant": capability.tenant,
@@ -297,6 +302,7 @@ class SQLiteOperationLedger:
             "max_fanout": capability.max_fanout,
             "tool_pins": dict(sorted(capability.tool_pins.items())),
             "parent": capability.parent,
+            "authority_lineage": lineage.as_dict() if lineage is not None else None,
         }
         payload = json.dumps(
             authority, sort_keys=True, separators=(",", ":"), ensure_ascii=False
