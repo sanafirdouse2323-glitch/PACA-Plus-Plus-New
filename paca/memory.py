@@ -446,6 +446,30 @@ class TrustedMemoryAdapter:
                 raise MemoryAccessDenied("effect lineage authorization changed before execution")
             self._recheck_read_authority(context, ancestry, authority_ids)
 
+    def revalidate_read_access(
+        self,
+        object_id: str,
+        version_id: str,
+        *,
+        purpose: str,
+        capability_token: str,
+    ) -> LineageNode:
+        """Recheck current read policy and revocation without charging a second read.
+
+        Use after a mediated external/provider operation and before returning its
+        result, so authority or metadata-policy changes during that operation
+        fail closed. The caller must already have completed the corresponding
+        budgeted read or authorization.
+        """
+        context, node, ancestry, authority_ids = self._authorised_node(
+            object_id,
+            version_id,
+            purpose=purpose,
+            capability_token=capability_token,
+        )
+        self._recheck_read_authority(context, ancestry, authority_ids)
+        return node
+
     def authorize_metadata(
         self,
         object_id: str,
