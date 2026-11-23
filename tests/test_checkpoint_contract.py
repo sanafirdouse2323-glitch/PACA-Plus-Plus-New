@@ -134,7 +134,7 @@ def test_provider_tuple_rejects_missing_recorded_parent():
         pending_writes=[],
     )
 
-    with pytest.raises(MemoryIntegrityError, match="omitted the parent checkpoint recorded"):
+    with pytest.raises(MemoryIntegrityError, match="omitted the expected parent checkpoint config"):
         saver._assert_provider_tuple(
             result,
             tenant="tenant-a",
