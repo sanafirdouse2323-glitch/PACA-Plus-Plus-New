@@ -1328,3 +1328,61 @@ def test_async_executor_revocation_during_awaitable_construction_blocks_coroutin
 
     asyncio.run(exercise())
     assert started == []
+
+
+def test_derived_memory_cannot_change_source_purpose(tmp_path):
+    env = _environment(tmp_path)
+    source = _ingest(env, {"text": "source for report"})
+    alternate = env["issuer"].issue(
+        principal="agent-other-purpose",
+        tenant="acme",
+        task_id="task-1",
+        purpose="different-purpose",
+        grants={
+            "mem_read": ("mem/*",),
+            "mem_write": ("mem/*",),
+        },
+        expires_at=1_900,
+        max_calls=10,
+    )
+    with pytest.raises(MemoryAccessDenied, match="source purpose"):
+        env["memory"].write_derived(
+            {"summary": "attempted purpose laundering"},
+            source,
+            object_id="mem/purpose-laundered",
+            version_id="v1",
+            transformation="summarise",
+            purpose="different-purpose",
+            capability_token=alternate.token,
+        )
+    assert env["repo"].get_version("mem/purpose-laundered", "v1") is None
+
+
+def test_raw_value_store_is_a_direct_read_bypass_negative_control(tmp_path, monkeypatch):
+    env = _environment(tmp_path)
+    source = _ingest(env, {"text": "sensitive stored text"})
+    node_id = next(iter(source.lineage_refs))
+    node = env["repo"].get_node(node_id)
+    assert node is not None
+
+    env["repo"].revoke_lineage(node_id, "direct-bypass negative-control test")
+    reads = []
+    original_get = env["values"].get
+    monkeypatch.setattr(
+        env["values"],
+        "get",
+        lambda *args: (reads.append(args), original_get(*args))[1],
+    )
+    with pytest.raises(MemoryAccessDenied):
+        env["memory"].read(
+            node.object_id,
+            node.version_id,
+            purpose="prepare-report",
+            capability_token=env["root"].token,
+        )
+    assert reads == []
+
+    # Intentional negative control: raw backend access is not mediated.
+    direct_value, direct_digest = original_get(node.object_id, node.version_id)
+    assert direct_value == {"text": "sensitive stored text"}
+    assert direct_digest == node.content_digest
