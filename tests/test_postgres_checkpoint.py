@@ -85,7 +85,12 @@ def _wrap(raw, root, memory, source):
     )
 
 
-def _checkpoint(checkpoint_id: str, answer: str, timestamp: datetime):
+def _checkpoint(
+    checkpoint_id: str,
+    answer: str,
+    timestamp: datetime,
+    channel_version: str = "1",
+):
     return {
         "v": 4,
         "id": checkpoint_id,
@@ -94,7 +99,7 @@ def _checkpoint(checkpoint_id: str, answer: str, timestamp: datetime):
             "answer": answer,
             "created_at": timestamp,
         },
-        "channel_versions": {},
+        "channel_versions": {"created_at": channel_version},
         "versions_seen": {},
     }
 
@@ -115,9 +120,9 @@ def test_postgres_checkpoint_and_pending_write_paths_are_mediated(tmp_path, monk
         config = {"configurable": {"thread_id": thread_id, "checkpoint_ns": ""}}
         first_config = saver.put(
             config,
-            _checkpoint(checkpoint_id, "safe-to-resume", timestamp),
+            _checkpoint(checkpoint_id, "safe-to-resume", timestamp, channel_version="1"),
             {"source": "input", "step": -1},
-            {},
+            {"created_at": "1"},
         )
         assert first_config["configurable"]["thread_id"] == thread_id
 
@@ -141,9 +146,10 @@ def test_postgres_checkpoint_and_pending_write_paths_are_mediated(tmp_path, monk
                 second_id,
                 "next-step",
                 datetime(2026, 11, 23, 0, 0, 1, tzinfo=timezone.utc),
+                channel_version="2",
             ),
             {"source": "loop", "step": 0},
-            {},
+            {"created_at": "2"},
         )
         checkpoint_nodes = repository.list_nodes(object_id_prefix="mem/checkpoints/")
         second_node = next(node for node in checkpoint_nodes if node.version_id == second_id)
@@ -193,7 +199,9 @@ def test_postgres_checkpoint_list_and_async_contracts(tmp_path):
         saver.setup()
         config = {"configurable": {"thread_id": thread_id, "checkpoint_ns": ""}}
         checkpoint = _checkpoint(str(uuid.uuid4()), "async-contract", timestamp)
-        written = saver.put(config, checkpoint, {"source": "input"}, {})
+        written = saver.put(
+            config, checkpoint, {"source": "input"}, {"created_at": "1"},
+        )
         assert len(list(saver.list(config))) == 1
         assert saver.get_tuple(written) is not None
         assert asyncio.run(saver.aget_tuple(written)) is not None
