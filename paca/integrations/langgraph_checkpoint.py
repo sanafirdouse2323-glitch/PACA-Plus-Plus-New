@@ -488,15 +488,13 @@ class PACAProvenancePostgresSaver(BaseCheckpointSaver):
         stored = self._decode_payload(expected)
         if not isinstance(stored, Mapping) or "checkpoint" not in stored or "metadata" not in stored:
             raise MemoryIntegrityError("PACA checkpoint evidence has an invalid structure")
-        actual_public = {
-            "checkpoint": result.checkpoint,
-            "metadata": result.metadata,
-        }
-        if self._typed_payload(actual_public) != self._typed_payload({
-            "checkpoint": stored["checkpoint"],
-            "metadata": stored["metadata"],
-        }):
-            raise MemoryIntegrityError("PostgreSQL checkpoint differs from authorized PACA evidence")
+        # Compare decoded structures rather than their serialized byte form.
+        # Checkpoint savers may normalize mapping order or reconstruct blob-backed
+        # channel values while preserving the logical checkpoint content.
+        if result.checkpoint != stored["checkpoint"]:
+            raise MemoryIntegrityError("PostgreSQL checkpoint body differs from authorized PACA evidence")
+        if result.metadata != stored["metadata"]:
+            raise MemoryIntegrityError("PostgreSQL checkpoint metadata differs from authorized PACA evidence")
         self._assert_pending_writes_match(
             token, tenant, thread_id, namespace, node.version_id, result.pending_writes,
         )
