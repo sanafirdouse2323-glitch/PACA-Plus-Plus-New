@@ -227,6 +227,10 @@ class PACAProvenanceLangGraphStore(BaseStore):
         namespace = self._validate_namespace(namespace, key)
         if ttl is not NOT_PROVIDED and ttl is not None:
             raise NotImplementedError("PACA LangGraph store does not implement TTL")
+        if index is not None:
+            raise NotImplementedError(
+                "PACA LangGraph store does not implement vector/index configuration"
+            )
         if not isinstance(value, Mapping) or any(not isinstance(k, str) for k in value):
             raise TypeError("LangGraph memory values must be string-keyed mappings")
         token, _tenant, object_id, _context = self._authorize_object(
