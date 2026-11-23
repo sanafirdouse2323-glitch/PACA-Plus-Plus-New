@@ -38,7 +38,7 @@ except ImportError as exc:  # pragma: no cover - covered by optional-dependency 
 from ..durable import SQLiteProvenanceRepository
 from ..memory import MemoryAccessDenied, TrustedMemoryAdapter
 from ..provenance import Arg
-from ..runtime import Request
+from ..runtime import Request, Tool
 
 
 def _object_id(namespace: Tuple[str, ...], key: str) -> str:
@@ -496,13 +496,21 @@ class PACALangChainToolMiddleware(AgentMiddleware):
         runtime: Any,
         *,
         capability_token_provider: Callable[[Any], str],
+        tool_manifest_provider: Callable[[Any], Tool],
         request_factory: Callable[[Any], Request],
     ) -> None:
         super().__init__()
-        if not callable(capability_token_provider) or not callable(request_factory):
-            raise TypeError("trusted capability and action-mapping callbacks are required")
+        if (
+            not callable(capability_token_provider)
+            or not callable(tool_manifest_provider)
+            or not callable(request_factory)
+        ):
+            raise TypeError(
+                "trusted capability, registered-tool manifest and action-mapping callbacks are required"
+            )
         self.runtime = runtime
         self._token_provider = capability_token_provider
+        self._tool_manifest_provider = tool_manifest_provider
         self._request_factory = request_factory
 
     def wrap_tool_call(self, request: Any, handler: Callable[[Any], Any]) -> Any:
@@ -516,15 +524,21 @@ class PACALangChainToolMiddleware(AgentMiddleware):
             or getattr(tool, "name", None) != tool_call.get("name")
         ):
             raise MemoryAccessDenied("LangChain tool identity is missing or does not match the registered tool")
+        actual_manifest = self._tool_manifest_provider(tool)
+        if (
+            not isinstance(actual_manifest, Tool)
+            or actual_manifest.name != tool_call["name"]
+        ):
+            raise MemoryAccessDenied("registered tool has no trusted PACA manifest or its identity differs")
         paca_request = self._request_factory(request)
         if not isinstance(paca_request, Request):
             raise TypeError("request_factory must return a PACA Request")
-        if paca_request.tool is None or paca_request.tool.name != tool_call["name"]:
-            raise MemoryAccessDenied("PACA action mapping must bind the exact LangChain tool manifest")
+        if paca_request.tool != actual_manifest:
+            raise MemoryAccessDenied("PACA action mapping does not match the registered tool manifest")
         token = self._token_provider(request)
         signed = self.runtime.authority.verify(token)
         pin = signed.capability.tool_pins.get(tool_call["name"])
-        if pin is None or not hmac.compare_digest(pin, paca_request.tool.hash):
+        if pin is None or not hmac.compare_digest(pin, actual_manifest.hash):
             raise MemoryAccessDenied("LangChain tool manifest is not pinned by the authenticated capability")
         decision, result = self.runtime.execute_effect(
             token,
@@ -546,15 +560,21 @@ class PACALangChainToolMiddleware(AgentMiddleware):
             or getattr(tool, "name", None) != tool_call.get("name")
         ):
             raise MemoryAccessDenied("LangChain tool identity is missing or does not match the registered tool")
+        actual_manifest = self._tool_manifest_provider(tool)
+        if (
+            not isinstance(actual_manifest, Tool)
+            or actual_manifest.name != tool_call["name"]
+        ):
+            raise MemoryAccessDenied("registered tool has no trusted PACA manifest or its identity differs")
         paca_request = self._request_factory(request)
         if not isinstance(paca_request, Request):
             raise TypeError("request_factory must return a PACA Request")
-        if paca_request.tool is None or paca_request.tool.name != tool_call["name"]:
-            raise MemoryAccessDenied("PACA action mapping must bind the exact LangChain tool manifest")
+        if paca_request.tool != actual_manifest:
+            raise MemoryAccessDenied("PACA action mapping does not match the registered tool manifest")
         token = self._token_provider(request)
         signed = self.runtime.authority.verify(token)
         pin = signed.capability.tool_pins.get(tool_call["name"])
-        if pin is None or not hmac.compare_digest(pin, paca_request.tool.hash):
+        if pin is None or not hmac.compare_digest(pin, actual_manifest.hash):
             raise MemoryAccessDenied("LangChain tool manifest is not pinned by the authenticated capability")
         decision, result = await self.runtime.aexecute_effect(
             token,

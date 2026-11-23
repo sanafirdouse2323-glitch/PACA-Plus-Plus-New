@@ -795,7 +795,13 @@ class PACAAgentRuntime:
         if hasattr(result, "__await__"):
             # The async executor body does not run until awaited. Revalidate after
             # constructing the awaitable and immediately before entering that body.
-            self.authority.registry.assert_active(issued.cap_id)
+            try:
+                self.authority.registry.assert_active(issued.cap_id)
+            except AuthorityRegistryError:
+                close = getattr(result, "close", None)
+                if callable(close):
+                    close()
+                raise
             result = await result
         return decision, result
 

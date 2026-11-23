@@ -255,6 +255,38 @@ class SQLiteProvenanceRepository:
                 return None
             return _node_from_record(row["record_json"], row["node_id"])
 
+    def latest_node(self, object_id: str) -> Optional[LineageNode]:
+        """Return the latest immutable version of an object, or None when absent."""
+        if not isinstance(object_id, str) or not object_id:
+            raise ValueError("object_id must be a non-empty string")
+        with closing(self._connect()) as connection:
+            graph = self._load_graph(connection)
+            row = connection.execute(
+                "SELECT node_id,record_json FROM lineage_nodes "
+                "WHERE object_id=? ORDER BY seq DESC LIMIT 1",
+                (object_id,),
+            ).fetchone()
+        if row is None:
+            return None
+        node = _node_from_record(row["record_json"], row["node_id"])
+        if graph.get_node(node.node_id) != node:
+            raise LineageIntegrityError("latest object version is inconsistent with the validated graph")
+        return node
+
+    def list_nodes(self, *, object_id_prefix: Optional[str] = None) -> Tuple[LineageNode, ...]:
+        """Return a snapshot of immutable node records after validating the DAG and edges."""
+        with closing(self._connect()) as connection:
+            graph = self._load_graph(connection)
+        nodes = graph.lineage_nodes
+        if object_id_prefix is not None:
+            if not isinstance(object_id_prefix, str):
+                raise TypeError("object_id_prefix must be a string or None")
+            return tuple(
+                node for node in nodes.values()
+                if node.object_id.startswith(object_id_prefix)
+            )
+        return tuple(nodes.values())
+
     def ancestors(self, node_id: str) -> Tuple[LineageNode, ...]:
         with closing(self._connect()) as connection:
             graph = self._load_graph(connection)
