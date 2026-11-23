@@ -97,21 +97,30 @@ def _snapshot_tool_call_request(
         copied_call = copy.deepcopy(dict(tool_call))
         if _tool_call_digest(copied_call) != expected_digest:
             raise MemoryAccessDenied("LangChain tool call changed while being snapshotted")
+        copied_state = copy.deepcopy(getattr(request, "state", None))
         original_tool = getattr(request, "tool", None)
         if original_tool is None:
             raise MemoryAccessDenied("LangChain tool implementation is missing")
         copied_tool = copy.copy(original_tool)
         override = getattr(request, "override", None)
         if callable(override):
-            snapshot = override(tool_call=copied_call, tool=copied_tool)
+            snapshot = override(
+                tool_call=copied_call,
+                tool=copied_tool,
+                state=copied_state,
+            )
         else:
             snapshot = copy.copy(request)
             setattr(snapshot, "tool_call", copied_call)
             setattr(snapshot, "tool", copied_tool)
+            setattr(snapshot, "state", copied_state)
         if (
             _tool_call_digest(getattr(snapshot, "tool_call", {})) != expected_digest
             or getattr(getattr(snapshot, "tool", None), "name", None)
             != getattr(original_tool, "name", None)
+            or not _same_state_snapshot(
+                getattr(snapshot, "state", None), copied_state,
+            )
         ):
             raise MemoryAccessDenied("LangChain request snapshot does not preserve the authorized call")
         return snapshot
@@ -121,6 +130,15 @@ def _snapshot_tool_call_request(
         raise MemoryAccessDenied(
             "LangChain request cannot be safely snapshotted for tool execution"
         ) from exc
+
+
+def _same_state_snapshot(current: Any, expected: Any) -> bool:
+    """Compare framework state conservatively; ambiguous equality fails closed."""
+    try:
+        result = current == expected
+        return result if isinstance(result, bool) else False
+    except Exception:
+        return False
 
 
 def _tool_call_digest(tool_call: Mapping[str, Any]) -> str:
@@ -646,19 +664,41 @@ class PACALangChainToolMiddleware(AgentMiddleware):
         ):
             raise MemoryAccessDenied("LangChain tool identity is missing or does not match the registered tool")
         tool_call_digest = _tool_call_digest(tool_call)
+        original_state = copy.deepcopy(getattr(request, "state", None))
+        factory_request = _snapshot_tool_call_request(
+            request, tool_call, tool_call_digest,
+        )
+        factory_state = copy.deepcopy(getattr(factory_request, "state", None))
         actual_manifest = self._tool_manifest_provider(tool)
         if (
             not isinstance(actual_manifest, Tool)
             or actual_manifest.name != tool_call["name"]
         ):
             raise MemoryAccessDenied("registered tool has no trusted PACA manifest or its identity differs")
-        paca_request = self._request_factory(request)
+        paca_request = self._request_factory(factory_request)
+        if (
+            not _same_state_snapshot(
+                getattr(factory_request, "state", None), factory_state,
+            )
+            or not _same_state_snapshot(
+                getattr(request, "state", None), original_state,
+            )
+        ):
+            raise MemoryAccessDenied("LangChain graph state changed while its PACA request was being constructed")
         if not isinstance(paca_request, Request):
             raise TypeError("request_factory must return a PACA Request")
         if paca_request.tool != actual_manifest:
             raise MemoryAccessDenied("PACA action mapping does not match the registered tool manifest")
-        if _tool_call_digest(getattr(request, "tool_call", {})) != tool_call_digest:
-            raise MemoryAccessDenied("LangChain tool call changed while its PACA request was being constructed")
+        if (
+            _tool_call_digest(getattr(request, "tool_call", {})) != tool_call_digest
+            or _tool_call_digest(getattr(factory_request, "tool_call", {})) != tool_call_digest
+            or not _same_state_snapshot(
+                getattr(request, "state", None), original_state,
+            )
+        ):
+            raise MemoryAccessDenied(
+                "LangChain tool call or graph state changed while its PACA request was being constructed"
+            )
         frozen_request = _snapshot_tool_call_request(
             request, tool_call, tool_call_digest,
         )
@@ -678,6 +718,12 @@ class PACALangChainToolMiddleware(AgentMiddleware):
                 or _tool_call_digest(current_call) != tool_call_digest
                 or current_tool is None
                 or getattr(current_tool, "name", None) != actual_manifest.name
+                or not _same_state_snapshot(
+                    getattr(request, "state", None), original_state,
+                )
+                or not _same_state_snapshot(
+                    getattr(frozen_request, "state", None), original_state,
+                )
             ):
                 raise MemoryAccessDenied("LangChain tool call or identity changed after PACA authorization")
             current_manifest = self._tool_manifest_provider(current_tool)
@@ -710,19 +756,41 @@ class PACALangChainToolMiddleware(AgentMiddleware):
         ):
             raise MemoryAccessDenied("LangChain tool identity is missing or does not match the registered tool")
         tool_call_digest = _tool_call_digest(tool_call)
+        original_state = copy.deepcopy(getattr(request, "state", None))
+        factory_request = _snapshot_tool_call_request(
+            request, tool_call, tool_call_digest,
+        )
+        factory_state = copy.deepcopy(getattr(factory_request, "state", None))
         actual_manifest = self._tool_manifest_provider(tool)
         if (
             not isinstance(actual_manifest, Tool)
             or actual_manifest.name != tool_call["name"]
         ):
             raise MemoryAccessDenied("registered tool has no trusted PACA manifest or its identity differs")
-        paca_request = self._request_factory(request)
+        paca_request = self._request_factory(factory_request)
+        if (
+            not _same_state_snapshot(
+                getattr(factory_request, "state", None), factory_state,
+            )
+            or not _same_state_snapshot(
+                getattr(request, "state", None), original_state,
+            )
+        ):
+            raise MemoryAccessDenied("LangChain graph state changed while its PACA request was being constructed")
         if not isinstance(paca_request, Request):
             raise TypeError("request_factory must return a PACA Request")
         if paca_request.tool != actual_manifest:
             raise MemoryAccessDenied("PACA action mapping does not match the registered tool manifest")
-        if _tool_call_digest(getattr(request, "tool_call", {})) != tool_call_digest:
-            raise MemoryAccessDenied("LangChain tool call changed while its PACA request was being constructed")
+        if (
+            _tool_call_digest(getattr(request, "tool_call", {})) != tool_call_digest
+            or _tool_call_digest(getattr(factory_request, "tool_call", {})) != tool_call_digest
+            or not _same_state_snapshot(
+                getattr(request, "state", None), original_state,
+            )
+        ):
+            raise MemoryAccessDenied(
+                "LangChain tool call or graph state changed while its PACA request was being constructed"
+            )
         frozen_request = _snapshot_tool_call_request(
             request, tool_call, tool_call_digest,
         )
@@ -742,6 +810,12 @@ class PACALangChainToolMiddleware(AgentMiddleware):
                 or _tool_call_digest(current_call) != tool_call_digest
                 or current_tool is None
                 or getattr(current_tool, "name", None) != actual_manifest.name
+                or not _same_state_snapshot(
+                    getattr(request, "state", None), original_state,
+                )
+                or not _same_state_snapshot(
+                    getattr(frozen_request, "state", None), original_state,
+                )
             ):
                 raise MemoryAccessDenied("LangChain tool call or identity changed after PACA authorization")
             current_manifest = self._tool_manifest_provider(current_tool)
