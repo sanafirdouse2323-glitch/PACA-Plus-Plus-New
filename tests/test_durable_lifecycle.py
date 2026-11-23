@@ -2093,7 +2093,7 @@ def test_async_langchain_handler_receives_frozen_tool_request(tmp_path):
             "args": {"path": "/acme/public/report.txt"},
             "id": "async-frozen-request",
         },
-        state={},
+        state={"path": "/acme/public/report.txt"},
         runtime=None,
         tool=SimpleNamespace(name="read_file"),
     )
@@ -2101,10 +2101,10 @@ def test_async_langchain_handler_receives_frozen_tool_request(tmp_path):
         _allowing_runtime(env),
         capability_token_provider=lambda _request: env["root"].token,
         tool_manifest_provider=lambda _tool: _read_file_tool(),
-        request_factory=lambda _request: Request(
+        request_factory=lambda request: Request(
             "read_file",
             {"path": Arg(
-                "/acme/public/report.txt",
+                request.state["path"],
                 Label("trusted", tenant="acme"),
             )},
             capability,
@@ -2118,7 +2118,10 @@ def test_async_langchain_handler_receives_frozen_tool_request(tmp_path):
     async def handler(snapshot):
         handler_started.set()
         await continue_handler.wait()
-        return snapshot.tool_call["args"]["path"]
+        return (
+            snapshot.tool_call["args"]["path"],
+            snapshot.state["path"],
+        )
 
     async def exercise():
         task = asyncio.create_task(
@@ -2128,11 +2131,15 @@ def test_async_langchain_handler_receives_frozen_tool_request(tmp_path):
         # The original request is mutable while the asynchronous handler is
         # suspended. The handler must continue using the copied authorized call.
         tool_request.tool_call["args"]["path"] = "/acme/private/secrets.txt"
+        tool_request.state["path"] = "/acme/private/other-secrets.txt"
         continue_handler.set()
         return await task
 
     result = asyncio.run(exercise())
-    assert result == "/acme/public/report.txt"
+    assert result == (
+        "/acme/public/report.txt",
+        "/acme/public/report.txt",
+    )
 
 def test_runtime_refuses_monitor_with_effect_token_verification_disabled(tmp_path):
     from paca.monitor import Monitor
