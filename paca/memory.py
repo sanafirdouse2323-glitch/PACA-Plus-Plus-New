@@ -545,6 +545,35 @@ class HMACAgentMessageCodec:
         self.repository = repository
         self.clock = clock
 
+    def _assert_payload_matches_lineage(
+        self, value: Any, lineage_refs: Iterable[str],
+    ) -> None:
+        """Require the exact message value to match one immutable lineage node.
+
+        A set of source references alone does not prove that a caller-supplied
+        value was derived from those sources. Requiring one persisted leaf node
+        binds the transmitted bytes to its content digest and parent DAG. Callers
+        must persist transformed values through TrustedMemoryAdapter first.
+        """
+        refs = tuple(lineage_refs)
+        if len(refs) != 1 or not isinstance(refs[0], str) or not refs[0]:
+            raise MemoryAccessDenied(
+                "inter-agent payload must reference one versioned value bound to its exact digest"
+            )
+        node = self.repository.get_node(refs[0])
+        if node is None:
+            raise MemoryAccessDenied("inter-agent payload references missing lineage")
+        try:
+            digest = hashlib.sha256(canonical_value_bytes(value)).hexdigest()
+        except (TypeError, ValueError) as exc:
+            raise MemoryAccessDenied(
+                "inter-agent payload is not canonical JSON bound to its lineage"
+            ) from exc
+        if not hmac.compare_digest(digest, node.content_digest):
+            raise MemoryAccessDenied(
+                "inter-agent payload bytes do not match their immutable lineage digest"
+            )
+
     def seal(
         self,
         payload: Arg,
@@ -555,6 +584,7 @@ class HMACAgentMessageCodec:
     ) -> str:
         if not isinstance(payload, Arg) or not payload.lineage_refs or payload.lineage_incomplete:
             raise MemoryAccessDenied("inter-agent messages require complete explicit provenance")
+        self._assert_payload_matches_lineage(payload.value, payload.lineage_refs)
         signed = self.authority.verify(capability_token)
         authority = signed.capability.authority_lineage
         if authority is None:
@@ -674,8 +704,14 @@ class HMACAgentMessageCodec:
                 raise ValueError("recipient capability does not authorise this sender")
             label_data = body.get("label")
             refs = body.get("lineage_refs")
-            if not isinstance(label_data, dict) or not isinstance(refs, list) or not refs:
+            if (
+                not isinstance(label_data, dict)
+                or not isinstance(refs, list)
+                or not refs
+                or any(not isinstance(ref, str) or not ref for ref in refs)
+            ):
                 raise ValueError("message provenance is missing")
+            self._assert_payload_matches_lineage(body["value"], refs)
             label = Label(
                 integrity=label_data["integrity"],
                 sensitivity=label_data["sensitivity"],
