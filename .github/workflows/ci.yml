@@ -315,4 +315,4 @@ jobs:
           pip install -e ".[dev,langgraph]"
 
       - name: Run durable lifecycle, real LangGraph store, and LangChain middleware tests
-        run: pytest -q tests/test_durable_lifecycle.py
+        run: pytest -q tests/test_durable_lifecycle.py tests/test_langgraph_async_contract.py
