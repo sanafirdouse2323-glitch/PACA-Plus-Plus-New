@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import hashlib
 import hmac
 import json
 import uuid
@@ -41,18 +42,36 @@ from ..provenance import Arg
 from ..runtime import Request, Tool
 
 
-def _object_id(namespace: Tuple[str, ...], key: str) -> str:
+def _tenant_digest(tenant: str) -> str:
+    if not isinstance(tenant, str) or not tenant:
+        raise ValueError("tenant must be a non-empty string")
+    return hashlib.sha256(tenant.encode("utf-8")).hexdigest()
+
+
+def _object_prefix(tenant: str) -> str:
+    return "mem/langgraph/" + _tenant_digest(tenant) + "/"
+
+
+def _object_id(namespace: Tuple[str, ...], key: str, tenant: str) -> str:
     encoded = json.dumps(
         [list(namespace), key], separators=(",", ":"), ensure_ascii=False,
     ).encode("utf-8")
-    return "mem/langgraph/" + base64.urlsafe_b64encode(encoded).rstrip(b"=").decode("ascii")
+    return _object_prefix(tenant) + base64.urlsafe_b64encode(encoded).rstrip(b"=").decode("ascii")
 
 
-def _decode_object_id(value: str) -> Tuple[Tuple[str, ...], str]:
+def _decode_object_id(value: str) -> Tuple[str, Tuple[str, ...], str]:
     prefix = "mem/langgraph/"
     if not value.startswith(prefix):
         raise ValueError("not a PACA LangGraph memory object")
-    token = value[len(prefix):]
+    remainder = value[len(prefix):]
+    tenant_digest, separator, token = remainder.partition("/")
+    if (
+        not separator
+        or len(tenant_digest) != 64
+        or any(character not in "0123456789abcdef" for character in tenant_digest)
+        or not token
+    ):
+        raise ValueError("invalid PACA LangGraph tenant scope")
     decoded = base64.urlsafe_b64decode(token + "=" * (-len(token) % 4))
     parsed = json.loads(decoded)
     if (
@@ -64,7 +83,7 @@ def _decode_object_id(value: str) -> Tuple[Tuple[str, ...], str]:
         or not parsed[1]
     ):
         raise ValueError("invalid PACA LangGraph memory object identity")
-    return tuple(parsed[0]), parsed[1]
+    return tenant_digest, tuple(parsed[0]), parsed[1]
 
 
 def _matches_filter(value: Mapping[str, Any], filters: Optional[Mapping[str, Any]]) -> bool:
@@ -137,6 +156,32 @@ class PACAProvenanceLangGraphStore(BaseStore):
         self._provenance_provider = provenance_provider
         self.purpose = purpose
 
+    def _tenant_for_token(self, token: str) -> str:
+        try:
+            signed = self.memory.authority.verify(token)
+            authority = signed.capability.authority_lineage
+            if authority is None:
+                raise MemoryAccessDenied("LangGraph store capability has no authority lineage")
+            return authority.tenant
+        except MemoryAccessDenied:
+            raise
+        except Exception as exc:
+            raise MemoryAccessDenied("LangGraph store capability authentication failed") from exc
+
+    def _authorize_object(
+        self,
+        namespace: Tuple[str, ...],
+        key: str,
+        action: str,
+    ) -> Tuple[str, str, str, Any]:
+        token = self._token_provider()
+        tenant = self._tenant_for_token(token)
+        object_id = _object_id(namespace, key, tenant)
+        context = self.memory._verified_context(
+            token, action, object_id, self.purpose,
+        )
+        return token, tenant, object_id, context
+
     @staticmethod
     def _validate_namespace(namespace: Tuple[str, ...], key: str) -> Tuple[str, ...]:
         if (
@@ -167,7 +212,9 @@ class PACAProvenanceLangGraphStore(BaseStore):
             raise NotImplementedError("PACA LangGraph store does not implement TTL")
         if not isinstance(value, Mapping) or any(not isinstance(k, str) for k in value):
             raise TypeError("LangGraph memory values must be string-keyed mappings")
-        object_id = _object_id(namespace, key)
+        token, _tenant, object_id, _context = self._authorize_object(
+            namespace, key, "mem_write",
+        )
         dependencies = tuple(self._provenance_provider(namespace, key, value))
         previous = self.repository.latest_node(object_id)
         dependency_refs = set().union(
@@ -194,7 +241,7 @@ class PACAProvenanceLangGraphStore(BaseStore):
             version_id=uuid.uuid4().hex,
             transformation="langgraph_store_put",
             purpose=self.purpose,
-            capability_token=self._token_provider(),
+            capability_token=token,
         )
 
     def batch(self, ops: Iterable[Any]) -> list[Any]:
@@ -276,7 +323,9 @@ class PACAProvenanceLangGraphStore(BaseStore):
         refresh_ttl: Optional[bool] = None,
     ) -> Optional[Item]:
         namespace = self._validate_namespace(namespace, key)
-        object_id = _object_id(namespace, key)
+        token, _tenant, object_id, _context = self._authorize_object(
+            namespace, key, "mem_read",
+        )
         node = self.repository.latest_node(object_id)
         if node is None or self.repository.is_revoked(node.node_id):
             return None
@@ -284,7 +333,7 @@ class PACAProvenanceLangGraphStore(BaseStore):
             object_id,
             node.version_id,
             purpose=self.purpose,
-            capability_token=self._token_provider(),
+            capability_token=token,
         )
         created_at = datetime.fromtimestamp(
             self.repository.node_created_at(node.node_id), tz=timezone.utc,
@@ -299,12 +348,12 @@ class PACAProvenanceLangGraphStore(BaseStore):
 
     def delete(self, namespace: Tuple[str, ...], key: str) -> None:
         namespace = self._validate_namespace(namespace, key)
-        object_id = _object_id(namespace, key)
-        # Logical delete is a security-relevant revocation and requires an explicit
-        # mem_delete grant. The object ID is checked before lineage metadata is read.
-        context = self.memory._verified_context(
-            self._token_provider(), "mem_delete", object_id, self.purpose,
+        # Resolve tenant identity before looking up object metadata. Identical
+        # LangGraph namespace/key pairs in different tenants have distinct IDs.
+        _token, _tenant, object_id, context = self._authorize_object(
+            namespace, key, "mem_delete",
         )
+        # Logical delete is an irreversible lineage revocation, not physical erasure.
         self.memory._consume_budget(context)
         nodes = self.repository.list_nodes(object_id_prefix=object_id)
         matched = [node for node in nodes if node.object_id == object_id]
@@ -339,16 +388,21 @@ class PACAProvenanceLangGraphStore(BaseStore):
         if limit < 0 or offset < 0:
             raise ValueError("limit and offset must be non-negative")
 
+        token = self._token_provider()
+        tenant = self._tenant_for_token(token)
+        tenant_prefix = _object_prefix(tenant)
         latest: Dict[str, Any] = {}
-        for node in self.repository.list_nodes(object_id_prefix="mem/langgraph/"):
+        for node in self.repository.list_nodes(object_id_prefix=tenant_prefix):
             latest[node.object_id] = node
         selected = []
         for object_id, node in latest.items():
             if self.repository.is_revoked(node.node_id):
                 continue
             try:
-                namespace, key = _decode_object_id(object_id)
+                decoded_tenant, namespace, key = _decode_object_id(object_id)
             except ValueError:
+                continue
+            if decoded_tenant != _tenant_digest(tenant):
                 continue
             if namespace[:len(namespace_prefix)] != namespace_prefix:
                 continue
@@ -356,7 +410,7 @@ class PACAProvenanceLangGraphStore(BaseStore):
                 object_id,
                 node.version_id,
                 purpose=self.purpose,
-                capability_token=self._token_provider(),
+                capability_token=token,
             )
             value = dict(arg.value)
             if not _matches_filter(value, filter):
@@ -397,8 +451,11 @@ class PACAProvenanceLangGraphStore(BaseStore):
         ):
             raise ValueError("suffix must be a tuple of non-empty strings")
         namespaces = set()
+        token = self._token_provider()
+        tenant = self._tenant_for_token(token)
+        tenant_prefix = _object_prefix(tenant)
         latest: Dict[str, Any] = {}
-        for node in self.repository.list_nodes(object_id_prefix="mem/langgraph/"):
+        for node in self.repository.list_nodes(object_id_prefix=tenant_prefix):
             latest[node.object_id] = node
         for object_id, node in latest.items():
             if self.repository.is_revoked(node.node_id):
@@ -406,11 +463,13 @@ class PACAProvenanceLangGraphStore(BaseStore):
             # Namespace enumeration leaks metadata, so it is gated by the same
             # read capability and tenant/purpose checks as value retrieval.
             self.memory._verified_context(
-                self._token_provider(), "mem_read", object_id, self.purpose,
+                token, "mem_read", object_id, self.purpose,
             )
             try:
-                namespace, _key = _decode_object_id(object_id)
+                decoded_tenant, namespace, _key = _decode_object_id(object_id)
             except ValueError:
+                continue
+            if decoded_tenant != _tenant_digest(tenant):
                 continue
             if prefix is not None and (
                 len(prefix) > len(namespace)
