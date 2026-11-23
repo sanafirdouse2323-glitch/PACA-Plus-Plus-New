@@ -295,3 +295,24 @@ Until then, describe it as a **research prototype for provenance-aware, capabili
 11. OWASP, [Top 10 for Agentic Applications 2026](https://genai.owasp.org/top-10-for-agentic-applications-2026/).
 
 This is a selected, non-exhaustive reading list, not a systematic literature review. Novelty, completeness and comparative claims require further verification.
+
+
+## 11. Implementation status — durable lifecycle tranche (23 November 2026)
+
+The `security/roadmap-phase-1` branch now contains a reference implementation tranche for the following parts of Phase C:
+
+- **Durable provenance:** `SQLiteProvenanceRepository` persists immutable object/version lineage nodes and parent edges, reconstructs ancestry after restart, rejects conflicting versions and supports recursive information revocation. It is a single-host SQLite implementation.
+- **Memory and derivation:** `SQLiteMemoryValueStore` stores canonical JSON values separately from lineage metadata. `TrustedConnectorAdapter` assigns a fixed source identity and classification. `TrustedMemoryAdapter` gates reads before value fetch, verifies content digests, and records summary/compaction derivation edges. This is a connector interface and reference backend, not a provider-specific connector or automatic hidden-context tracer.
+- **Authenticated authority:** `HMACCapabilityAuthority` issues audience-bound HMAC envelopes after a mandatory principal/tenant identity callback. `SQLiteAuthorityRegistry` persists authority records, a global monotonic policy epoch, revocations and usage counters. Parent revocation invalidates delegated descendants; parent fan-out and call usage are reserved transactionally.
+- **Stored-information revocation:** lineage roots can be revoked; existing descendants become unavailable through ancestry checks. Digest mismatch triggers quarantine of the affected information lineage.
+- **Runtime integration:** a PACA-specific signed inter-agent envelope preserves lineage and checks sender/recipient rights. A LangGraph `BaseStore` adapter mediates long-term memory operations. LangChain sync/async `AgentMiddleware` intercepts tool execution, validates tool identity and manifest pins, and calls the runtime effect gate. These integrations require trusted host callbacks and explicit framework registration.
+
+The focused suite `tests/test_durable_lifecycle.py` includes restart, immutable version, concurrent write, edge-table tampering, digest tampering, lineage and authority revocation, stale epoch, persistent budget, message replay, memory and tool-handler suppression cases. Budgets remain per capability rather than one aggregate task-wide budget across all descendants. The optional `langgraph` extra receives a separate CI job. Test outcomes must be read from the exact head commit and CI run; the presence of tests is not itself evidence that they passed.
+
+**This tranche does not complete the research plan.** It does not provide a production IdP, public-key or KMS-backed issuer, high-availability/distributed policy registry, provider-backed connectors, native LangGraph checkpoint instrumentation, standard MCP/A2A message interoperability, automatic tracing of every source that influenced model output, OS-level containment for arbitrary Python code, resource-side atomic remote effect authorization, or independent penetration testing. It also does not extend the current TLA+ model to establish refinement of these new Python components. Formal modelling and independent adversarial evaluation remain separate gates.
+
+Framework interface references used during implementation:
+- [LangGraph store base API](https://reference.langchain.com/python/langgraph/store/base/BaseStore), including the required sync/async batch operations and store operation types.
+- [LangChain agent middleware](https://docs.langchain.com/oss/python/langchain/agents/middleware), including synchronous and asynchronous tool interception.
+
+The Phase C implementation is deliberately scoped to selected, instrumented lifecycle boundaries. The claim discipline in Section 9 remains in force.
