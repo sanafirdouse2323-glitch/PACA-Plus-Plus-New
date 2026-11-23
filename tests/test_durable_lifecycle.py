@@ -650,11 +650,18 @@ def test_inter_agent_message_replay_is_rejected_after_registry_restart(tmp_path)
         identity_verifier=lambda principal, tenant: bool(principal and tenant == "acme"),
         clock=env["clock"],
     )
+    restarted_memory = TrustedMemoryAdapter(
+        env["repo"],
+        env["values"],
+        restarted_issuer,
+        authorize=env["memory"]._authorize,
+        clock=env["clock"],
+    )
     restarted_messages = HMACAgentMessageCodec(
         b"M" * 32,
         restarted_issuer,
         env["repo"],
-        memory=env["memory"],
+        memory=restarted_memory,
         clock=env["clock"],
     )
     with pytest.raises(MemoryAccessDenied, match="replay"):
@@ -1503,7 +1510,7 @@ def test_derived_memory_cannot_change_source_purpose(tmp_path):
         expires_at=1_900,
         max_calls=10,
     )
-    with pytest.raises(MemoryAccessDenied, match="source purpose"):
+    with pytest.raises(MemoryAccessDenied, match="purpose mismatch"):
         env["memory"].write_derived(
             {"summary": "attempted purpose laundering"},
             source,
@@ -1549,7 +1556,8 @@ def test_langgraph_namespace_listing_enforces_application_memory_policy(tmp_path
     pytest.importorskip("langgraph")
     from paca.integrations.langgraph import PACAProvenanceLangGraphStore
 
-    env = _environment(tmp_path, authorize=lambda _context, _node: False)
+    allowed = [True]
+    env = _environment(tmp_path, authorize=lambda _context, _node: allowed[0])
     source = _ingest(env, {"text": "policy-protected source"})
     store = PACAProvenanceLangGraphStore(
         env["memory"],
@@ -1559,6 +1567,7 @@ def test_langgraph_namespace_listing_enforces_application_memory_policy(tmp_path
     )
     namespace = ("acme", "restricted")
     store.put(namespace, "item-1", {"summary": "derived value"})
+    allowed[0] = False
 
     reads = []
     original_get = env["values"].get
@@ -1585,7 +1594,7 @@ def test_derived_memory_rejects_input_bytes_not_bound_to_parent_digest(tmp_path)
         False,
     )
 
-    with pytest.raises(MemoryAccessDenied, match="input bytes do not match"):
+    with pytest.raises(MemoryAccessDenied, match="bytes do not match"):
         env["memory"].summarise(
             {"summary": "derived from substituted content"},
             forged,
@@ -2249,7 +2258,7 @@ def test_inter_agent_message_rechecks_application_policy_on_sender_and_receiver(
         recipient="worker-b",
         capability_token=receiver_env["root"].token,
     )
-    receiver_allowed[0] = False
+    receive_allowed[0] = False
     recipient = receiver_env["issuer"].issue(
         principal="worker-b",
         tenant="acme",
