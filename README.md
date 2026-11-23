@@ -1,10 +1,10 @@
-# PACA++ New — Provenance-Aware Security Across the LLM-Agent Lifecycle
+# PAC++ New — Provenance-Aware Security Across the LLM-Agent Lifecycle
 
-PACA++ New is a research prototype focused on security within LLM agents: how information provenance and delegated authority propagate through input handling, memory, reasoning, planning, communication, delegation, tool use and consequential effects.
+PAC++ New is a research prototype focused on security within LLM agents: how information provenance and delegated authority propagate through input handling, memory, reasoning, planning, communication, delegation, tool use and consequential effects.
 
 Its current implementation combines a Python reference monitor, provenance labels, task-scoped capabilities, a deterministic simulator and a limited AgentDojo adapter. It does **not** yet mediate every lifecycle transition or provide a production agent runtime.
 
-**Repository separation:** this project is distinct from [PACA++](https://github.com/sanafirdouse2323-glitch/PACA-Plus-Plus), the separate enterprise authorization gateway. PACA++ New does not implement that gateway's FastAPI/OPA/PostgreSQL service or enterprise deployment architecture. The two projects must retain separate scopes, code and evidence.
+**Repository separation:** this project is distinct from the separate [PACA-Plus-Plus enterprise authorization gateway repository](https://github.com/sanafirdouse2323-glitch/PACA-Plus-Plus). PAC++ New does not implement that gateway's FastAPI/OPA/PostgreSQL service or enterprise deployment architecture. The two projects must retain separate scopes, code and evidence.
 
 > Research question: can provenance-aware state management and continuous authorization preserve the relationship between information, authority and effects across an agent's complete lifecycle, including memory reuse and multi-agent handoffs?
 
@@ -246,7 +246,7 @@ These checks are also executed automatically in the GitHub Actions workflow.
 
 ## License
 
-PACA++ New is free to use for academic research, education, and other non-commercial purposes under the [PACA++ Academic and Non-Commercial License](LICENSE). **Commercial use requires prior written permission and a separate agreement that includes an agreed royalty or revenue share.** This is a source-available licence, not an OSI-approved open-source licence.
+PAC++ New is free to use for academic research, education, and other non-commercial purposes under the [PACA++ Academic and Non-Commercial License](LICENSE). **Commercial use requires prior written permission and a separate agreement that includes an agreed royalty or revenue share.** This is a source-available licence, not an OSI-approved open-source licence.
 
 A prior version was published under MIT. This update does not revoke rights already granted to anyone who received an earlier MIT-licensed copy.
 
