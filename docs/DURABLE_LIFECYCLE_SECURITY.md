@@ -90,7 +90,7 @@ This is logical unavailability, not secure physical deletion. It does not erase 
 
 The initial implementation supports structured namespace search and filters. Semantic/vector search, vector index configuration and TTL are explicitly unsupported and fail rather than silently accepting and ignoring those options. Delete is logical lineage revocation, not physical erasure.
 
-LangGraph's long-term `BaseStore` and its graph checkpointer serve different purposes. This integration wraps the long-term store; it does **not** replace or transparently instrument every checkpoint, state snapshot, interrupt/resume payload or external persistence layer. Those require separate adapters and tests.
+LangGraph's long-term `BaseStore` and its graph checkpointer serve different purposes. This integration wraps the long-term store only. The branch also provides a separate optional adapter for the official PostgreSQL checkpointer, documented in `POSTGRES_CHECKPOINT_AND_LIFECYCLE_MODEL.md`; that adapter does **not** instrument every checkpoint implementation, state snapshot, interrupt/resume payload or external persistence layer. Other providers and runtime paths require separate adapters and tests.
 
 ### LangChain tool middleware
 
@@ -137,7 +137,7 @@ The focused lifecycle suite is `tests/test_durable_lifecycle.py`. It covers:
 
 The optional `langgraph` dependency extra is pinned and receives a dedicated CI job. `tests/test_secure_execution_primitives.py` separately exercises Linux `openat2` path constraints, hard-link and FIFO rejection, and pinned DNS/TLS behavior. Core persistence and authority tests remain runnable without the optional framework packages.
 
-These are deterministic reference tests, not an independent penetration test, production security certification or proof that arbitrary Python/framework execution cannot bypass the integration. The current suite does not establish a provider-backed connector, production identity provider, KMS, distributed registry, native LangGraph checkpoint instrumentation, protocol-standard agent-to-agent messaging, or resource-side atomic remote effect validation.
+These are deterministic reference tests, not an independent penetration test, production security certification or proof that arbitrary Python/framework execution cannot bypass the integration. The current suite does not establish provider-backed mailbox/chat connectors, a production identity provider, KMS, distributed registry, checkpoint instrumentation for providers other than the optional PostgreSQL adapter, protocol-standard agent-to-agent messaging, or resource-side atomic remote effect validation.
 
 ## External interface references
 
