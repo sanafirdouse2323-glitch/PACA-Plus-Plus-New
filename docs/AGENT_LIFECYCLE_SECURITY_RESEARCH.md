@@ -173,9 +173,12 @@ At minimum compare:
 - a least-privilege tool gate (including a faithful Progent-style comparator where feasible);
 - CaMeL where its architecture and task compatibility permit;
 - multi-CaMeL or its published protocol for inter-agent provenance scenarios;
+- a generic sandbox-style scoped-permission comparator for a narrowly defined execution-containment baseline;
+- NVIDIA OpenShell as an external runtime-containment baseline, with NVIDIA Sentry evaluated separately only if the required BlueField hardware is available;
+- an explicitly identified OpenAI-hosted Agents API environment or a documented self-hosted environment, not an ambiguous "OpenAI sandbox" label;
 - PACA++ New ablations: provenance only, authority only, lifecycle checks without revocation, and the complete proposed model.
 
-State exactly which baselines are actually implemented. Do not label a simplified local approximation as the original system.
+**Baseline status:** the repository's `SandboxScoped` is a hand-authored toy comparator, not OpenShell, Sentry or an OpenAI environment. PR #13 adds deterministic shared-artifact and cross-tenant protocol fixtures, not vendor integrations. The real external baselines require pinned runtime versions, configurations and executor adapters. See [Sandbox and External-Containment Evaluation Protocol](CONTAINMENT_EVALUATION.md). Do not label a simplified local approximation as the original system.
 
 ### 6.2 Benchmark coverage
 
@@ -192,6 +195,9 @@ Do not assume all benchmark packages or compatible task IDs are installed. Disco
 
 Report at least:
 - unauthorized protected-effect rate and attack success rate;
+- cross-session artifact influence, cross-tenant value-release and provenance-retention rates;
+- credential exposure, unauthorized egress, redirect/DNS-rebinding success and executor-bypass rates;
+- detection and containment latency, including explicit failure of the supervisor or stop mechanism;
 - benign task success and task utility under attack;
 - false blocks and unnecessary approval rate;
 - effective privilege over the full trajectory (granted, available, requested and exercised authority);
