@@ -210,63 +210,76 @@ class SQLiteOperationLedger:
         operator-reviewed task-to-tenant mapping; silently copying or resetting
         counters could weaken quotas or quarantine guarantees.
         """
-        conn.execute(
-            "CREATE TABLE IF NOT EXISTS ledger_meta "
-            "(key TEXT PRIMARY KEY, value TEXT NOT NULL)"
-        )
-        version_row = conn.execute(
-            "SELECT value FROM ledger_meta WHERE key='schema_version'"
-        ).fetchone()
-
-        task_columns = {
-            row["name"] for row in conn.execute("PRAGMA table_info(task_state)")
-        }
-        destination_columns = {
-            row["name"] for row in conn.execute("PRAGMA table_info(destinations)")
-        }
-        if version_row is None:
-            populated = False
-            for table in (
-                "capability_state", "task_state", "destinations", "operations", "tokens",
-            ):
-                if conn.execute(f"SELECT 1 FROM {table} LIMIT 1").fetchone() is not None:
-                    populated = True
-                    break
-            if populated:
-                raise LedgerError(
-                    "unversioned ledger contains persisted state keyed without tenant scope; "
-                    "a reviewed offline migration with trusted task-to-tenant mappings is required"
-                )
-
-            if "task_id" in task_columns:
-                conn.execute("DROP TABLE destinations")
-                conn.execute("DROP TABLE task_state")
-            elif "task_scope" not in task_columns:
-                raise LedgerError("operation ledger task-state schema is missing or unsupported")
-
-            if "task_id" in destination_columns or "task_scope" not in destination_columns:
-                conn.execute(
-                    "CREATE TABLE task_state ("
-                    "task_scope TEXT PRIMARY KEY,"
-                    "strikes INTEGER NOT NULL DEFAULT 0 CHECK (strikes >= 0))"
-                )
-                conn.execute(
-                    "CREATE TABLE destinations ("
-                    "task_scope TEXT NOT NULL,"
-                    "destination TEXT NOT NULL,"
-                    "PRIMARY KEY (task_scope, destination))"
-                )
-            conn.execute(
-                "INSERT INTO ledger_meta(key,value) VALUES('schema_version','2')"
-            )
-            return
-
+        conn.execute("BEGIN IMMEDIATE")
         try:
-            version = int(version_row["value"])
-        except (TypeError, ValueError) as exc:
-            raise LedgerError("operation ledger schema version is invalid") from exc
-        if version != 2 or "task_scope" not in task_columns or "task_scope" not in destination_columns:
-            raise LedgerError("operation ledger schema is unsupported or inconsistent")
+            conn.execute(
+                "CREATE TABLE IF NOT EXISTS ledger_meta "
+                "(key TEXT PRIMARY KEY, value TEXT NOT NULL)"
+            )
+            version_row = conn.execute(
+                "SELECT value FROM ledger_meta WHERE key='schema_version'"
+            ).fetchone()
+            task_columns = {
+                row["name"] for row in conn.execute("PRAGMA table_info(task_state)")
+            }
+            destination_columns = {
+                row["name"] for row in conn.execute("PRAGMA table_info(destinations)")
+            }
+
+            if version_row is None:
+                populated = False
+                for table in (
+                    "capability_state", "task_state", "destinations", "operations", "tokens",
+                ):
+                    if conn.execute(f"SELECT 1 FROM {table} LIMIT 1").fetchone() is not None:
+                        populated = True
+                        break
+                if populated:
+                    raise LedgerError(
+                        "unversioned ledger contains persisted state keyed without tenant scope; "
+                        "a reviewed offline migration with trusted task-to-tenant mappings is required"
+                    )
+
+                # Only empty legacy tables can be recreated automatically. This
+                # avoids silently resetting existing call, strike, fan-out or
+                # single-use-token state when upgrading an older installation.
+                if (
+                    "task_id" in task_columns
+                    or "task_scope" not in task_columns
+                    or "task_id" in destination_columns
+                    or "task_scope" not in destination_columns
+                ):
+                    conn.execute("DROP TABLE IF EXISTS destinations")
+                    conn.execute("DROP TABLE IF EXISTS task_state")
+                    conn.execute(
+                        "CREATE TABLE task_state ("
+                        "task_scope TEXT PRIMARY KEY,"
+                        "strikes INTEGER NOT NULL DEFAULT 0 CHECK (strikes >= 0))"
+                    )
+                    conn.execute(
+                        "CREATE TABLE destinations ("
+                        "task_scope TEXT NOT NULL,"
+                        "destination TEXT NOT NULL,"
+                        "PRIMARY KEY (task_scope, destination))"
+                    )
+                conn.execute(
+                    "INSERT INTO ledger_meta(key,value) VALUES('schema_version','2')"
+                )
+            else:
+                try:
+                    version = int(version_row["value"])
+                except (TypeError, ValueError) as exc:
+                    raise LedgerError("operation ledger schema version is invalid") from exc
+                if (
+                    version != 2
+                    or "task_scope" not in task_columns
+                    or "task_scope" not in destination_columns
+                ):
+                    raise LedgerError("operation ledger schema is unsupported or inconsistent")
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
 
     @staticmethod
     def _authority_digest(capability: "Capability") -> str:
@@ -569,4 +582,5 @@ __all__ = [
     "LedgerState",
     "OperationLedger",
     "SQLiteOperationLedger",
+    "task_scope_key",
 ]
