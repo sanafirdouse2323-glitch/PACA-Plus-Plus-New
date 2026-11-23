@@ -8,7 +8,10 @@ pytest.importorskip("langgraph.checkpoint.postgres")
 
 from langgraph.checkpoint.base import CheckpointTuple
 
-from paca.integrations.langgraph_checkpoint import PACAProvenancePostgresSaver
+from paca.integrations.langgraph_checkpoint import (
+    PACAProvenancePostgresSaver,
+    _provider_thread_id,
+)
 from paca.memory import MemoryIntegrityError
 
 
@@ -37,10 +40,10 @@ def _saver_with_lineage():
     return saver, current, parent
 
 
-def _provider_config(checkpoint_id):
+def _provider_config(checkpoint_id, *, thread_id="paca-thread-hash"):
     return {
         "configurable": {
-            "thread_id": "paca-thread-hash",
+            "thread_id": thread_id,
             "checkpoint_ns": "worker",
             "checkpoint_id": checkpoint_id,
         }
@@ -49,11 +52,12 @@ def _provider_config(checkpoint_id):
 
 def test_provider_tuple_scope_and_parent_are_bound_to_paca_lineage():
     saver, current, _parent = _saver_with_lineage()
+    authenticated_thread = _provider_thread_id("tenant-a", "thread")
     result = CheckpointTuple(
-        config=_provider_config("current-checkpoint"),
+        config=_provider_config("current-checkpoint", thread_id=authenticated_thread),
         checkpoint={},
         metadata={},
-        parent_config=_provider_config("parent-checkpoint"),
+        parent_config=_provider_config("parent-checkpoint", thread_id=authenticated_thread),
         pending_writes=[],
     )
 
@@ -108,7 +112,10 @@ def test_provider_tuple_rejects_wrong_checkpoint_scope_or_parent(config, parent_
 def test_provider_tuple_rejects_missing_recorded_parent():
     saver, current, _parent = _saver_with_lineage()
     result = CheckpointTuple(
-        config=_provider_config("current-checkpoint"),
+        config=_provider_config(
+            "current-checkpoint",
+            thread_id=_provider_thread_id("tenant-a", "thread"),
+        ),
         checkpoint={},
         metadata={},
         parent_config=None,
