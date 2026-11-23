@@ -235,6 +235,11 @@ def test_postgres_checkpoint_list_and_async_contracts(tmp_path):
             for item in raw.list(provider_config)
         ]
         assert wrapped_ids == provider_ids == [first_id, second_id]
+        provider_latest = raw.get_tuple(provider_config)
+        wrapper_latest = saver.get_tuple(config)
+        assert provider_latest is not None and wrapper_latest is not None
+        assert provider_latest.config["configurable"]["checkpoint_id"] == first_id
+        assert wrapper_latest.config["configurable"]["checkpoint_id"] == first_id
         before_first = {
             "configurable": {
                 "thread_id": thread_id,
