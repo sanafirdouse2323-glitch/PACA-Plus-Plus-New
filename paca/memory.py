@@ -369,6 +369,10 @@ class TrustedMemoryAdapter:
         # input bytes are the value recorded by that lineage. Require each input
         # to be one persisted value/version whose immutable digest matches exactly.
         # Unrecorded transformations must first be persisted as their own node.
+        # Also re-authorize every dependency under the current capability and
+        # application policy: an Arg retained from an earlier read is not a lease
+        # to use data after source authority or policy has been revoked.
+        input_accesses = []
         for item in inputs:
             refs = tuple(item.lineage_refs)
             if len(refs) != 1:
@@ -378,6 +382,14 @@ class TrustedMemoryAdapter:
             parent = self.repository.get_node(refs[0])
             if parent is None:
                 raise MemoryAccessDenied("derived input references unknown lineage")
+            context, verified_parent, ancestry, authority_ids = self._authorised_node(
+                parent.object_id,
+                parent.version_id,
+                purpose=purpose,
+                capability_token=capability_token,
+            )
+            if verified_parent.node_id != refs[0]:
+                raise MemoryAccessDenied("derived input lineage identity changed")
             try:
                 input_digest = hashlib.sha256(
                     canonical_value_bytes(item.value)
@@ -386,10 +398,12 @@ class TrustedMemoryAdapter:
                 raise MemoryAccessDenied(
                     "derived input is not canonical JSON bound to its lineage"
                 ) from exc
-            if not hmac.compare_digest(input_digest, parent.content_digest):
+            if not hmac.compare_digest(input_digest, verified_parent.content_digest):
                 raise MemoryAccessDenied(
                     "derived input bytes do not match their immutable lineage digest"
                 )
+            self._consume_budget(context)
+            input_accesses.append((context, ancestry, authority_ids))
         parent_ids = tuple(sorted(set().union(*(item.lineage_refs for item in inputs))))
         for parent_id in parent_ids:
             parent = self.repository.get_node(parent_id)
@@ -430,7 +444,12 @@ class TrustedMemoryAdapter:
             transformation=transformation,
             purpose=purpose,
         )
-        return self._write(node, value, capability_token)
+        written = self._write(node, value, capability_token)
+        # Recheck dependency authority and revocation after persistence. The
+        # derived node remains unreadable if a parent was revoked during the write.
+        for context, ancestry, authority_ids in input_accesses:
+            self._recheck_read_authority(context, ancestry, authority_ids)
+        return written
 
     def summarise(
         self,
