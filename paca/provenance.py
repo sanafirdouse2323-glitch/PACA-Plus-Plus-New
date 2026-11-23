@@ -84,6 +84,8 @@ class Arg:
     # Unknown values are tainted by default; trusted adapters must explicitly label them.
     label: Label = field(default_factory=lambda: Label(integrity="untrusted"))
     lineage_refs: FrozenSet[str] = frozenset()
+    # True when an unrecorded dependency entered a derived value.
+    lineage_incomplete: bool = False
 
     def __post_init__(self) -> None:
         if not isinstance(self.label, Label):
@@ -93,6 +95,8 @@ class Arg:
         refs = frozenset(self.lineage_refs)
         if any(not isinstance(ref, str) or not ref for ref in refs):
             raise ValueError("lineage references must be non-empty strings")
+        if not isinstance(self.lineage_incomplete, bool):
+            raise ValueError("lineage_incomplete must be a boolean")
         object.__setattr__(self, "lineage_refs", refs)
 
 
@@ -106,7 +110,8 @@ def derive(value: Any, *inputs: Arg) -> Arg:
         raise TypeError("derive() accepts only Arg inputs; label every source before deriving")
     joined = Label.join(*(arg.label for arg in inputs))
     refs = frozenset().union(*(arg.lineage_refs for arg in inputs)) if inputs else frozenset()
-    return Arg(value, joined, refs)
+    incomplete = not inputs or any(not arg.lineage_refs or arg.lineage_incomplete for arg in inputs)
+    return Arg(value, joined, refs, incomplete)
 
 
 @dataclass(frozen=True)
@@ -201,6 +206,8 @@ class ProvenanceGraph:
             raise TypeError("node must be a LineageNode")
         if not node.parent_ids and node.transformation != "source":
             raise ValueError("a parentless lineage node must be an explicit source")
+        if not node.parent_ids and node.source not in node.label.origins:
+            raise ValueError("a source node must retain its source identifier in label origins")
         if node.parent_ids and node.transformation == "source":
             raise ValueError("a derived lineage node must name its transformation")
 
@@ -288,9 +295,9 @@ class ProvenanceGraph:
         """Record a transformed object with explicit, existing parent lineage."""
         if not inputs or any(not isinstance(arg, Arg) for arg in inputs):
             raise TypeError("lineage derive requires one or more Arg inputs")
+        if any(not arg.lineage_refs or arg.lineage_incomplete for arg in inputs):
+            raise ValueError("every derived input requires complete explicit source lineage references")
         parent_ids = frozenset().union(*(arg.lineage_refs for arg in inputs))
-        if not parent_ids:
-            raise ValueError("derived values require explicit source lineage references")
         if any(ref not in self._lineage_nodes for ref in parent_ids):
             raise ValueError("derived value references lineage not present in this graph")
         label = Label.join(*(arg.label for arg in inputs))
