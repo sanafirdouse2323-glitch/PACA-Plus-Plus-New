@@ -25,7 +25,7 @@ from .obligations import ObligationRunner
 from .parser import parse_policy_set
 from .provenance import Arg, Label
 from .runtime import ACTIONS, Capability, Decision, Request, Violation
-from .ledger import OperationLedger
+from .ledger import OperationLedger, task_scope_key
 
 CHECKS = {
     "C1":  ("Scope: action and target inside the task-bound capability", "capability escalation; goal hijack; cross-stage drift"),
@@ -280,6 +280,7 @@ class Monitor:
                                "digest": request_digest[:16], "principal": req.cap.principal})
             return decision
         spec, cap, v = ACTIONS[req.action], req.cap, []
+        task_key = task_scope_key(cap.tenant, cap.task_id)
         if self.ledger is not None:
             try:
                 ledger_state = self.ledger.register_capability(cap)
@@ -298,8 +299,8 @@ class Monitor:
                 })
                 return decision
             cap.calls = ledger_state.calls
-            self.strikes[cap.task_id] = ledger_state.strikes
-            self.dests[cap.task_id] = set(ledger_state.destinations)
+            self.strikes[task_key] = ledger_state.strikes
+            self.dests[task_key] = set(ledger_state.destinations)
         # C14 checks required-value presence and the target's basic string shape.
         # A real executor must additionally validate each action's payload schema and semantics.
         missing = []
@@ -318,7 +319,7 @@ class Monitor:
         tval = str(tgt.value) if tgt is not None else ""
         consequential = spec["cls"] != "read"
 
-        if consequential and self.strikes.get(cap.task_id, 0) >= self.quarantine_after:
+        if consequential and self.strikes.get(task_key, 0) >= self.quarantine_after:
             v.append(Violation("C12", "deny", "task quarantined after repeated denied/escalated attempts"))
         pat = match_grant(cap, req.action, tval)
         if req.action not in cap.grants:
@@ -362,7 +363,7 @@ class Monitor:
 
         ctx, is_egress, host = self._context(req, spec, pat)
         if is_egress:
-            seen = self.dests.setdefault(cap.task_id, set())
+            seen = self.dests.setdefault(task_key, set())
             # URL fetch fan-out is counted by destination host, not page path, so
             # reading several pages from one site does not consume recipient slots.
             destination_key = host if req.action == "fetch_url" else tval
@@ -433,12 +434,12 @@ class Monitor:
                         d.token = token
                         cap.calls += 1
                         if destination_key:
-                            self.dests.setdefault(cap.task_id, set()).add(destination_key)
+                            self.dests.setdefault(task_key, set()).add(destination_key)
             else:
                 cap.calls += 1
                 if is_egress:
                     destination_key = host if req.action == "fetch_url" else tval
-                    self.dests.setdefault(cap.task_id, set()).add(destination_key)
+                    self.dests.setdefault(task_key, set()).add(destination_key)
                 nonce = os.urandom(32)
                 token_payload = request_digest.encode("ascii") + b":" + nonce
                 d.token = hmac.new(self.key, token_payload, hashlib.sha256).hexdigest()
@@ -461,7 +462,7 @@ class Monitor:
         elif consequential and verdict == "deny":
             # A pending approval is not a denied attempt. Only a definitive denial
             # contributes to quarantine.
-            self.strikes[cap.task_id] = self.strikes.get(cap.task_id, 0) + 1
+            self.strikes[task_key] = self.strikes.get(task_key, 0) + 1
         self.audit.append({"step": req.step, "task": cap.task_id, "action": req.action, "verdict": verdict,
                            "checks": d.checks, "digest": request_digest[:16], "principal": cap.principal})
         return d
