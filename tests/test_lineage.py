@@ -103,6 +103,7 @@ def test_graph_derive_records_parent_edges_and_never_upgrades_trust():
     assert node.label.integrity == "untrusted"
     assert node.label.sensitivity == 1
     assert graph.get_node(node.parent_ids[0]) is not None
+    assert graph.ancestors(node_id) == (graph.get_node(node.parent_ids[0]), node)
 
     # Explicitly attempting to insert a trusted child of an untrusted source fails.
     parent_id = next(iter(source.lineage_refs))
