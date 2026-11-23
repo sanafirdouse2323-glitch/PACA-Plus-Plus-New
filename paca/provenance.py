@@ -21,6 +21,7 @@ class Label:
     tenant: Optional[str] = None
     origins: FrozenSet[str] = frozenset()
     tenants: FrozenSet[str] = frozenset()
+    tenant_unknown: bool = False
 
     def __post_init__(self) -> None:
         if self.integrity not in {"trusted", "untrusted"}:
@@ -36,6 +37,10 @@ class Label:
             tenant_set.add(self.tenant)
         normalized = frozenset(tenant_set)
         object.__setattr__(self, "tenants", normalized)
+        if not isinstance(self.tenant_unknown, bool):
+            raise ValueError("tenant_unknown must be a boolean")
+        if self.sensitivity > 0 and not normalized:
+            object.__setattr__(self, "tenant_unknown", True)
         object.__setattr__(self, "tenant", next(iter(normalized)) if len(normalized) == 1 else None)
         origins = frozenset(self.origins)
         if any(not isinstance(origin, str) or not origin for origin in origins):
@@ -52,10 +57,13 @@ class Label:
             sensitivity=max(label.sensitivity for label in ls),
             origins=frozenset().union(*(label.origins for label in ls)),
             tenants=frozenset().union(*(label.tenants for label in ls)),
+            tenant_unknown=any(label.tenant_unknown for label in ls),
         )
 
     def short(self) -> str:
         s = ("U" if self.integrity == "untrusted" else "T") + f"/S{self.sensitivity}"
+        if self.tenant_unknown:
+            s += "/unknown-tenant"
         if len(self.tenants) == 1:
             s += "/" + next(iter(self.tenants))
         elif len(self.tenants) > 1:
