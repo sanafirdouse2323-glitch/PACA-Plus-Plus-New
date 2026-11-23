@@ -1,3 +1,5 @@
+import pytest
+
 from paca.monitor import AuditLog, Monitor
 from paca.provenance import Arg, Label, derive
 from paca.runtime import Capability, Request, Tool
