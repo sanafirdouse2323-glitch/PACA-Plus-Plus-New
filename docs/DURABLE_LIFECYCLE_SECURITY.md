@@ -41,6 +41,7 @@ Connector authentication, provider account selection, tenant mapping, source ver
 - A write requires a valid signed `mem_write` capability, matching tenant and purpose, a content digest calculated from the exact value, and an immutable lineage node.
 - A derived write requires complete explicit parent references. It checks that referenced nodes exist and are not revoked, that purpose is preserved, and that the supplied label does not upgrade integrity or reduce sensitivity, source origins, tenant lineage or unknown-tenant state.
 - A read authenticates the capability and checks its object scope before metadata lookup. It reconstructs ancestry, checks each ancestor's tenant, purpose, revocation and bound authority, then applies the configured metadata policy to every ancestor. Only after those checks does it fetch the value bytes, verify the digest and re-check active authority and revocation state before returning an `Arg`.
+- Metadata-only disclosures use the same lineage, tenant, inherited-authority and configured policy checks. In particular, LangGraph `list_namespaces` cannot expose a namespace whose stored object would be denied by the application memory policy. It does not fetch value bytes; it consumes one durable memory-read budget unit for each object whose metadata it discloses.
 - Summarisation and compaction create new immutable derived nodes. They do not erase the source references simply because the new text is shorter or model-generated.
 
 The metadata policy callback is mandatory for a successful read; a missing callback defaults to deny. The callback must use trusted policy state and must not infer authorization from model-written metadata.
@@ -65,6 +66,9 @@ Issuance requires a mandatory `identity_verifier(principal, tenant)` callback. I
 - Parent fan-out and delegation-call counters are updated transactionally with child registration. Per-capability operation counts are consumed transactionally, so verifying the same signed token repeatedly does not reset its own budget.
 - These are per-capability counters, not a single task-wide aggregate quota across the whole delegation tree. A parent can create several independently budgeted children up to its fan-out limit; total descendant operations are not charged back against one shared task counter in this tranche.
 - Missing or inconsistent usage state, an unknown authority, an expired credential, a stale epoch or a revocation causes failure rather than a process-local fallback.
+- The authority loader verifies that each SQL `parent_id` edge matches the parent identifier inside the canonical immutable authority record. The recursive revocation query uses that SQL edge; disagreement therefore fails closed before active-state decisions.
+- The optional `SQLiteOperationLedger` used by the reference monitor separately scopes task-wide strike/quarantine and destination fan-out state by a deterministic SHA-256 key over the authenticated `(tenant, task_id)` pair. Two tenants reusing a task ID do not share these counters. This is not an aggregate budget across delegated descendants.
+- An older populated, unversioned operation-ledger database has no trustworthy task-to-tenant mapping. Startup fails closed and requires an operator-reviewed offline migration; the implementation does not guess ownership or reset existing counters. An empty legacy schema can be reinitialized automatically.
 
 The epoch is global to this reference registry. Fine-grained policy partitions, distributed consistency, quorum writes, high-availability failover, and event delivery to remote policy enforcement points are not implemented.
 
@@ -96,7 +100,7 @@ The middleware does not infer a tool's side effects from its name or description
 
 ### Signed inter-agent envelopes
 
-`HMACAgentMessageCodec` provides a small authenticated message envelope for the reference runtime. It preserves the value, labels and lineage references, binds sender, recipient, task, purpose and authority, checks both sender/receiver grants, validates the full source ancestry, and refuses revoked or incomplete lineage. Each envelope carries a random message identifier; the authority registry records a durable receiver receipt and rejects a second delivery of the same message to the same principal/tenant/task, including after process restart. It is a PACA-specific message format, **not an implementation of MCP, A2A or another standardized agent-communication protocol**.
+`HMACAgentMessageCodec` provides a small authenticated message envelope for the reference runtime. It binds the exact canonical message value to one immutable versioned lineage node by recomputing and checking that node's content digest on both send and receive. The referenced node carries the ancestry for the value; callers must persist transformed values through `TrustedMemoryAdapter.write_derived` before sending them. A bare `derive()` result or a payload that reuses source references for different bytes is rejected. The codec also binds sender, recipient, task, purpose and authority, checks both sender/receiver grants, validates the full source ancestry, and refuses revoked or incomplete lineage. Each envelope carries a random message identifier; the authority registry records a durable receiver receipt and rejects a second delivery of the same message to the same principal/tenant/task, including after process restart. It is a PACA-specific message format, **not an implementation of MCP, A2A or another standardized agent-communication protocol**.
 
 ### Runtime and effect boundary
 
@@ -106,7 +110,7 @@ A remote side effect cannot be made atomic with a local SQLite revocation regist
 
 ## Threat assumptions and deployment cautions
 
-The prototype assumes the issuer identity callback, connector identity/configuration, provenance provider, policy callback, middleware installation, tool manifest mapping, database handles and signing keys are controlled by trusted application code. A Python object boundary is not a sandbox. If model-controlled code can import the raw value store, access the SQLite files, read HMAC keys, execute arbitrary SQL or invoke tools outside the middleware, it can bypass the wrappers. Untrusted code and tools must run in a separately enforced OS/process/container boundary with credentials unavailable to that code.
+The prototype assumes the issuer identity callback, connector identity/configuration, provenance provider, policy callback, middleware installation, tool manifest mapping, database handles and signing keys are controlled by trusted application code. The DNS/IP-pinned TLS helper also rejects caller-supplied SSL contexts that disable certificate-chain or hostname verification; callers must still revalidate every redirect and avoid transports that perform a second hostname resolution. A Python object boundary is not a sandbox. If model-controlled code can import the raw value store, access the SQLite files, read HMAC keys, execute arbitrary SQL or invoke tools outside the middleware, it can bypass the wrappers. Untrusted code and tools must run in a separately enforced OS/process/container boundary with credentials unavailable to that code.
 
 SQLite WAL and transactions provide durable local coordination for cooperating processes on one host. They do not provide multi-host linearizability or distributed revocation delivery. Database files and their containing directories must be protected with host ACLs, encrypted backups and controlled service identities. File mode 0600 is a best-effort POSIX permission setting, not a substitute for deployment controls.
 
@@ -123,9 +127,9 @@ The focused lifecycle suite is `tests/test_durable_lifecycle.py`. It covers:
 - HMAC tampering, audience mismatch, expiry, identity callback rejection and policy-epoch invalidation;
 - delegated-descendant revocation, parent fan-out and call-budget persistence;
 - concurrent operation-budget consumption and resistance to token re-verification resets;
-- sender/recipient authorization and inter-agent message integrity;
+- sender/recipient authorization, payload-to-lineage digest binding on send and receive, and inter-agent replay rejection;
 - synchronous and asynchronous effect revocation races;
-- LangGraph `BaseStore` operations and a compiled `StateGraph` using the PACA store;
+- LangGraph `BaseStore` operations, metadata-only namespace listing under a denying application policy, and a compiled `StateGraph` using the PACA store;
 - LangChain synchronous and asynchronous tool middleware, handler suppression on deny, tool identity mismatch and revocation before the handler.
 
 The optional `langgraph` dependency extra is pinned and receives a dedicated CI job. Core persistence and authority tests remain runnable without the optional framework packages.
