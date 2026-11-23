@@ -2130,3 +2130,22 @@ def test_runtime_refuses_monitor_with_effect_token_verification_disabled(tmp_pat
             ablation_monitor,
             env["messages"],
         )
+
+    # Changing an ablation setting after runtime construction must not disable
+    # the final single-use decision-token check.
+    monitor = Monitor()
+    runtime = PACAAgentRuntime(
+        env["issuer"], env["memory"], monitor, env["messages"],
+    )
+    monitor.disable.add("C13")
+    request = Request(
+        "read_file",
+        {"path": Arg("/acme/public/report.txt", Label("trusted", tenant="acme"))},
+        env["issuer"].verify(env["root"].token).capability,
+        1,
+        tool=_read_file_tool(),
+    )
+    with pytest.raises(MemoryAccessDenied, match="requires C13 effect-token verification"):
+        runtime.execute_effect(
+            env["root"].token, request, lambda _snapshot: "must-not-run",
+        )
