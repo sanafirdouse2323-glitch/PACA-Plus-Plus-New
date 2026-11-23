@@ -128,18 +128,16 @@ def test_cross_session_artifact_reuse_keeps_untrusted_label_and_blocks_effect():
 
 def test_cross_tenant_memory_read_is_denied_before_artifact_value_lookup():
     store = _ArtifactStore()
-    store.put(
-        "shared/acme/quarterly-report",
-        Arg(
-            "restricted quarterly report",
-            Label(
-                "trusted",
-                sensitivity=3,
-                tenant="acme",
-                origins=frozenset({"acme_memory_store"}),
-            ),
+    artifact = Arg(
+        "restricted quarterly report",
+        Label(
+            "trusted",
+            sensitivity=3,
+            tenant="acme",
+            origins=frozenset({"acme_memory_store"}),
         ),
     )
+    store.put("shared/acme/quarterly-report", artifact)
 
     reader_cap = _capability(
         "globex-reader-cap",
@@ -159,7 +157,7 @@ def test_cross_tenant_memory_read_is_denied_before_artifact_value_lookup():
         },
         reader_cap,
         1,
-        resource=store._items[key].label,
+        resource=artifact.label,
     )
 
     monitor = Monitor()
