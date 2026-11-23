@@ -160,6 +160,7 @@ def test_join_does_not_hide_an_unknown_sensitive_tenant_source():
     joined = Label.join(known_tenant, unknown_tenant)
     assert joined.tenants == frozenset({"acme"})
     assert joined.tenant_unknown is True
+    assert joined.tenant is None
 
     request = Request(
         "send_email",
