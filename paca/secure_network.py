@@ -13,7 +13,7 @@ import ipaddress
 import socket
 import ssl
 from dataclasses import dataclass
-from typing import Callable, Iterable, Optional, Tuple, Union
+from typing import Callable, Iterable, Optional, Tuple
 
 
 class UnsafeNetworkDestination(ValueError):
