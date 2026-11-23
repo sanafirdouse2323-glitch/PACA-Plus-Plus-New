@@ -108,7 +108,11 @@ class SecureRoot:
         if flags & os.O_EXCL and not flags & os.O_CREAT:
             raise SecurePathError(errno.EINVAL, "O_EXCL requires O_CREAT")
 
-        effective_flags = flags | os.O_CLOEXEC
+        # O_NONBLOCK prevents an attacker-created FIFO from hanging the
+        # trusted mediator before fstat can reject the non-regular target.
+        # O_NOCTTY avoids acquiring a controlling terminal if the configured
+        # root unexpectedly contains a terminal device.
+        effective_flags = flags | os.O_CLOEXEC | os.O_NONBLOCK | os.O_NOCTTY
         effective_mode = mode if flags & os.O_CREAT else 0
         how = struct.pack(
             "=QQQ",
@@ -135,8 +139,13 @@ class SecureRoot:
 
         fd = int(result)
         try:
-            if not stat.S_ISREG(os.fstat(fd).st_mode):
+            metadata = os.fstat(fd)
+            if not stat.S_ISREG(metadata.st_mode):
                 raise SecurePathError(errno.EINVAL, "target is not a regular file", relative)
+            # Reject multiply-linked files: an in-root hard link can alias an
+            # inode also reachable through a path outside the configured root.
+            if metadata.st_nlink != 1:
+                raise SecurePathError(errno.EPERM, "hard-linked files are not accepted beneath the trusted root", relative)
         except Exception:
             os.close(fd)
             raise
