@@ -63,6 +63,7 @@ def test_provider_tuple_scope_and_parent_are_bound_to_paca_lineage():
         thread_id="thread",
         namespace="worker",
         node=current,
+        expected_parent_id="parent-checkpoint",
     )
 
 
@@ -100,6 +101,7 @@ def test_provider_tuple_rejects_wrong_checkpoint_scope_or_parent(config, parent_
             thread_id="thread",
             namespace="worker",
             node=current,
+            expected_parent_id="parent-checkpoint",
         )
 
 
@@ -113,7 +115,7 @@ def test_provider_tuple_rejects_missing_recorded_parent():
         pending_writes=[],
     )
 
-    with pytest.raises(MemoryIntegrityError, match="omitted the parent checkpoint"):
+    with pytest.raises(MemoryIntegrityError, match="omitted the expected parent checkpoint config"):
         saver._assert_provider_tuple(
             result,
             tenant="tenant-a",
@@ -197,3 +199,23 @@ def test_async_checkpoint_thread_handoff_snapshots_mutable_inputs():
     assert args[1]["channel_values"]["messages"][0]["content"] == "original"
     assert args[2][0][1]["content"] == "before thread handoff"
     assert kwargs["task_id"] == "task-1"
+
+def test_provider_tuple_rejects_parent_when_transition_evidence_has_none():
+    saver, current, _parent = _saver_with_lineage()
+    result = CheckpointTuple(
+        config=_provider_config("current-checkpoint"),
+        checkpoint={},
+        metadata={},
+        parent_config=_provider_config("parent-checkpoint"),
+        pending_writes=[],
+    )
+
+    with pytest.raises(MemoryIntegrityError, match="not recorded by the checkpointer transition"):
+        saver._assert_provider_tuple(
+            result,
+            tenant="tenant-a",
+            thread_id="thread",
+            namespace="worker",
+            node=current,
+            expected_parent_id=None,
+        )
