@@ -90,6 +90,9 @@ def _write_object_id(
     ) + _digest(task_id, task_path)
 
 
+_INFER_PROVIDER_PARENT = object()
+
+
 class PACAProvenancePostgresSaver(BaseCheckpointSaver):
     """PACA-gated wrapper for LangGraph's PostgresSaver.
 
@@ -241,6 +244,7 @@ class PACAProvenancePostgresSaver(BaseCheckpointSaver):
         thread_id: str,
         namespace: str,
         node: Any,
+        expected_parent_id: Any = _INFER_PROVIDER_PARENT,
     ) -> None:
         provider_thread_id = _provider_thread_id(tenant, thread_id)
         self._provider_configurable(
@@ -249,6 +253,38 @@ class PACAProvenancePostgresSaver(BaseCheckpointSaver):
             expected_namespace=namespace,
             expected_checkpoint_id=node.version_id,
         )
+        if expected_parent_id is not _INFER_PROVIDER_PARENT:
+            if expected_parent_id is not None and (
+                not isinstance(expected_parent_id, str) or not expected_parent_id
+            ):
+                raise MemoryIntegrityError("PACA checkpoint evidence contains an invalid parent checkpoint ID")
+            if expected_parent_id is None:
+                if result.parent_config is not None:
+                    raise MemoryIntegrityError(
+                        "PostgreSQL returned a parent checkpoint not recorded by the checkpointer transition"
+                    )
+                return
+            parent_node = self.repository.get_version(node.object_id, expected_parent_id)
+            if parent_node is None or parent_node.node_id not in node.parent_ids:
+                raise MemoryIntegrityError(
+                    "expected parent checkpoint is not a direct immutable PACA lineage dependency"
+                )
+            if result.parent_config is None:
+                raise MemoryIntegrityError("PostgreSQL omitted the expected parent checkpoint config")
+            parent_configurable = self._provider_configurable(
+                result.parent_config,
+                expected_thread_id=provider_thread_id,
+                expected_namespace=namespace,
+            )
+            if parent_configurable.get("checkpoint_id") != expected_parent_id:
+                raise MemoryIntegrityError(
+                    "PostgreSQL parent checkpoint differs from the checkpointer transition evidence"
+                )
+            return
+
+        # Legacy evidence did not preserve the incoming checkpoint_id separately.
+        # For those rows only, infer a provider parent from same-object direct
+        # checkpoint dependencies. New evidence uses the exact parent field above.
         expected_parent_ids = {
             parent.version_id
             for parent_id in node.parent_ids
@@ -258,7 +294,7 @@ class PACAProvenancePostgresSaver(BaseCheckpointSaver):
         if result.parent_config is None:
             if expected_parent_ids:
                 raise MemoryIntegrityError(
-                    "PostgreSQL omitted the parent checkpoint recorded in PACA lineage"
+                    "PostgreSQL omitted the parent checkpoint recorded in legacy PACA lineage"
                 )
             return
         parent_configurable = self._provider_configurable(
@@ -323,6 +359,8 @@ class PACAProvenancePostgresSaver(BaseCheckpointSaver):
         # store. Checkpoint channel values may include MessagePack/JsonPlus objects
         # that are not JSON serialisable on their own.
         evidence = self._typed_payload({
+            "evidence_schema_version": 2,
+            "parent_checkpoint_id": parent_id,
             "checkpoint": dict(checkpoint),
             "metadata": persisted_metadata,
         })
@@ -605,18 +643,30 @@ class PACAProvenancePostgresSaver(BaseCheckpointSaver):
         result = self.__delegate.get_tuple(provider_config)
         if result is None:
             raise MemoryIntegrityError("PACA checkpoint evidence exists but PostgreSQL has no matching row")
+        if not isinstance(expected, Mapping):
+            raise MemoryIntegrityError("PACA checkpoint evidence envelope is invalid")
+        stored = self._decode_payload(expected)
+        if not isinstance(stored, Mapping) or "checkpoint" not in stored or "metadata" not in stored:
+            raise MemoryIntegrityError("PACA checkpoint evidence has an invalid structure")
+        evidence_version = stored.get("evidence_schema_version", 1)
+        if evidence_version == 2:
+            expected_parent_id = stored.get("parent_checkpoint_id")
+            if expected_parent_id is not None and (
+                not isinstance(expected_parent_id, str) or not expected_parent_id
+            ):
+                raise MemoryIntegrityError("PACA checkpoint parent identity is malformed")
+        elif evidence_version == 1:
+            expected_parent_id = _INFER_PROVIDER_PARENT
+        else:
+            raise MemoryIntegrityError("PACA checkpoint evidence version is unsupported")
         self._assert_provider_tuple(
             result,
             tenant=tenant,
             thread_id=thread_id,
             namespace=namespace,
             node=node,
+            expected_parent_id=expected_parent_id,
         )
-        if not isinstance(expected, Mapping):
-            raise MemoryIntegrityError("PACA checkpoint evidence envelope is invalid")
-        stored = self._decode_payload(expected)
-        if not isinstance(stored, Mapping) or "checkpoint" not in stored or "metadata" not in stored:
-            raise MemoryIntegrityError("PACA checkpoint evidence has an invalid structure")
         # Compare decoded structures rather than their serialized byte form.
         # Checkpoint savers may normalize mapping order or reconstruct blob-backed
         # channel values while preserving the logical checkpoint content.
