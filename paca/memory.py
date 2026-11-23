@@ -1063,14 +1063,30 @@ class PACAAgentRuntime:
         authority_record = issued.authority_lineage
         if authority_record is None:
             raise MemoryAccessDenied("effect capability lost its authority lineage")
+        if snapshot.digest != request_digest or decision.digest != request_digest:
+            raise MemoryAccessDenied("effect request changed before executor entry")
+        return decision, snapshot, issued, accesses
+
+    def _revalidate_effect_snapshot(
+        self,
+        capability_token: str,
+        decision: Decision,
+        snapshot: Request,
+        issued: Any,
+        accesses: Tuple[_AuthorizedMemoryReference, ...],
+    ) -> None:
+        """Check active authority, dynamic lineage policy and request immutability."""
+        self.authority.registry.assert_active(issued.cap_id)
+        authority_record = issued.authority_lineage
+        if authority_record is None:
+            raise MemoryAccessDenied("effect capability lost its authority lineage")
         self.memory.revalidate_authorized_references(
             accesses,
             capability_token=capability_token,
             purpose=authority_record.purpose,
         )
-        if snapshot.digest != request_digest or decision.digest != request_digest:
+        if snapshot.digest != decision.digest:
             raise MemoryAccessDenied("effect request changed before executor entry")
-        return decision, snapshot, issued, accesses
 
     async def aexecute_effect(
         self,
@@ -1089,22 +1105,17 @@ class PACAAgentRuntime:
         if snapshot is None:
             return Decision("deny", digest=decision.digest), None
 
+        self._revalidate_effect_snapshot(
+            capability_token, decision, snapshot, issued, accesses,
+        )
         result = executor(snapshot)
         if hasattr(result, "__await__"):
-            # The coroutine body does not run until awaited. Revalidate after
-            # constructing the awaitable and immediately before entering that body.
+            # The coroutine body does not run until awaited. Revalidate again
+            # after constructing the awaitable and immediately before entering it.
             try:
-                self.authority.registry.assert_active(issued.cap_id)
-                authority_record = issued.authority_lineage
-                if authority_record is None:
-                    raise MemoryAccessDenied("effect capability lost its authority lineage")
-                self.memory.revalidate_authorized_references(
-                    accesses,
-                    capability_token=capability_token,
-                    purpose=authority_record.purpose,
+                self._revalidate_effect_snapshot(
+                    capability_token, decision, snapshot, issued, accesses,
                 )
-                if snapshot.digest != decision.digest:
-                    raise MemoryAccessDenied("effect request changed before async execution")
             except Exception:
                 close = getattr(result, "close", None)
                 if callable(close):
@@ -1129,17 +1140,9 @@ class PACAAgentRuntime:
             return decision, None
         if snapshot is None:
             return Decision("deny", digest=decision.digest), None
-        self.authority.registry.assert_active(issued.cap_id)
-        authority_record = issued.authority_lineage
-        if authority_record is None:
-            raise MemoryAccessDenied("effect capability lost its authority lineage")
-        self.memory.revalidate_authorized_references(
-            accesses,
-            capability_token=capability_token,
-            purpose=authority_record.purpose,
+        self._revalidate_effect_snapshot(
+            capability_token, decision, snapshot, issued, accesses,
         )
-        if snapshot.digest != decision.digest:
-            raise MemoryAccessDenied("effect request changed before executor entry")
         return decision, executor(snapshot)
 
 
