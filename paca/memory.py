@@ -1058,6 +1058,10 @@ class PACAAgentRuntime:
         request: Request,
     ) -> Tuple[Optional[Decision], Optional[Request], Optional[Any], Tuple[_AuthorizedMemoryReference, ...]]:
         """Run policy and consume a single-use decision for a frozen request snapshot."""
+        if "C13" in getattr(self.monitor, "disable", ()):
+            raise MemoryAccessDenied(
+                "PACAAgentRuntime requires C13 effect-token verification"
+            )
         issued, snapshot, request_digest, accesses = self._prepare_effect(
             capability_token, request,
         )
