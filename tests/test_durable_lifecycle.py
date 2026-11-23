@@ -2313,3 +2313,46 @@ def test_langchain_middleware_rejects_graph_state_mutation_during_request_factor
         )
     assert tool_request.state["path"] == "/acme/public/report.txt"
     assert handled == []
+
+def test_langgraph_batch_namespace_filters_run_before_metadata_authorization(tmp_path):
+    pytest.importorskip("langgraph")
+    from langgraph.store.base import ListNamespacesOp, MatchCondition
+    from paca.integrations.langgraph import (
+        PACAProvenanceLangGraphStore,
+        _decode_object_id,
+    )
+
+    def authorize(_context, node):
+        if node.object_id.startswith("mem/langgraph/"):
+            _tenant_digest, namespace, _key = _decode_object_id(node.object_id)
+            return namespace[:2] == ("acme", "allowed")
+        # Connector source reads remain allowed; only selected stored namespaces
+        # are restricted by this test's application policy.
+        return True
+
+    env = _environment(tmp_path, authorize=authorize)
+    source = _ingest(env, {"text": "source for namespace filtering"})
+    store = PACAProvenanceLangGraphStore(
+        env["memory"],
+        capability_token_provider=lambda: env["root"].token,
+        provenance_provider=lambda _namespace, _key, _value: (source,),
+        purpose="prepare-report",
+    )
+    allowed = ("acme", "allowed", "reports")
+    restricted = ("acme", "restricted", "secrets")
+    store.put(allowed, "visible", {"kind": "report"})
+    store.put(restricted, "hidden", {"kind": "secret"})
+
+    filtered = store.batch([
+        ListNamespacesOp(
+            match_conditions=(
+                MatchCondition(match_type="prefix", path=("acme", "allowed")),
+            ),
+        ),
+    ])
+    assert filtered == [[allowed]]
+
+    # Without a filter the same caller is not authorized to enumerate the
+    # restricted namespace, so the full listing must fail closed.
+    with pytest.raises(MemoryAccessDenied, match="metadata policy"):
+        store.batch([ListNamespacesOp()])
