@@ -70,12 +70,13 @@ class Capability:
     def validate_authority_lineage(self) -> None:
         if self.authority_lineage is not None:
             self.authority_lineage.validate_capability(
+                capability_id=self.cap_id,
                 principal=self.principal,
                 tenant=self.tenant,
                 task_id=self.task_id,
                 grants=self.grants,
                 expires=self.expires,
-                has_parent=self.parent is not None,
+                parent_id=self.parent,
             )
 
 
