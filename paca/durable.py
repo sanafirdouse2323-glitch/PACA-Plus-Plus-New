@@ -166,11 +166,19 @@ class SQLiteProvenanceRepository:
     def _load_graph(connection: sqlite3.Connection) -> ProvenanceGraph:
         graph = ProvenanceGraph()
         rows = connection.execute(
-            "SELECT node_id, record_json FROM lineage_nodes ORDER BY seq"
+            "SELECT node_id,object_id,version_id,record_json "
+            "FROM lineage_nodes ORDER BY seq"
         ).fetchall()
         expected_edges = set()
         for row in rows:
             node = _node_from_record(row["record_json"], row["node_id"])
+            if (
+                node.object_id != row["object_id"]
+                or node.version_id != row["version_id"]
+            ):
+                raise LineageIntegrityError(
+                    "indexed object/version columns disagree with immutable lineage record"
+                )
             try:
                 graph.add_lineage_node(node)
             except (TypeError, ValueError) as exc:
@@ -238,22 +246,40 @@ class SQLiteProvenanceRepository:
     def get_node(self, node_id: str) -> Optional[LineageNode]:
         with closing(self._connect()) as connection:
             row = connection.execute(
-                "SELECT node_id,record_json FROM lineage_nodes WHERE node_id=?",
+                "SELECT node_id,object_id,version_id,record_json "
+                "FROM lineage_nodes WHERE node_id=?",
                 (node_id,),
             ).fetchone()
             if row is None:
                 return None
-            return _node_from_record(row["record_json"], row["node_id"])
+            node = _node_from_record(row["record_json"], row["node_id"])
+            if (
+                node.object_id != row["object_id"]
+                or node.version_id != row["version_id"]
+            ):
+                raise LineageIntegrityError(
+                    "indexed object/version columns disagree with immutable lineage record"
+                )
+            return node
 
     def get_version(self, object_id: str, version_id: str) -> Optional[LineageNode]:
         with closing(self._connect()) as connection:
             row = connection.execute(
-                "SELECT node_id,record_json FROM lineage_nodes WHERE object_id=? AND version_id=?",
+                "SELECT node_id,object_id,version_id,record_json "
+                "FROM lineage_nodes WHERE object_id=? AND version_id=?",
                 (object_id, version_id),
             ).fetchone()
             if row is None:
                 return None
-            return _node_from_record(row["record_json"], row["node_id"])
+            node = _node_from_record(row["record_json"], row["node_id"])
+            if (
+                node.object_id != row["object_id"]
+                or node.version_id != row["version_id"]
+            ):
+                raise LineageIntegrityError(
+                    "indexed object/version columns disagree with immutable lineage record"
+                )
+            return node
 
     def latest_node(self, object_id: str) -> Optional[LineageNode]:
         """Return the latest immutable version of an object, or None when absent."""
@@ -262,14 +288,18 @@ class SQLiteProvenanceRepository:
         with closing(self._connect()) as connection:
             graph = self._load_graph(connection)
             row = connection.execute(
-                "SELECT node_id,record_json FROM lineage_nodes "
+                "SELECT node_id,object_id,version_id,record_json FROM lineage_nodes "
                 "WHERE object_id=? ORDER BY seq DESC LIMIT 1",
                 (object_id,),
             ).fetchone()
         if row is None:
             return None
         node = _node_from_record(row["record_json"], row["node_id"])
-        if graph.get_node(node.node_id) != node:
+        if (
+            node.object_id != row["object_id"]
+            or node.version_id != row["version_id"]
+            or graph.get_node(node.node_id) != node
+        ):
             raise LineageIntegrityError("latest object version is inconsistent with the validated graph")
         return node
 
