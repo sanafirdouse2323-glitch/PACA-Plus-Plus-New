@@ -633,6 +633,8 @@ def test_inter_agent_message_replay_is_rejected_after_registry_restart(tmp_path)
     )
     first = env["messages"].open(sealed, recipient_token=recipient.token)
     assert first.value == payload.value
+    recipient_authority_id = recipient.capability.authority_lineage.authority_id
+    calls_after_first_delivery = env["registry"].usage(recipient_authority_id)[0]
 
     # A new registry/codec process must still reject the same delivery.
     restarted_registry = SQLiteAuthorityRegistry(
@@ -657,6 +659,7 @@ def test_inter_agent_message_replay_is_rejected_after_registry_restart(tmp_path)
     )
     with pytest.raises(MemoryAccessDenied, match="replay"):
         restarted_messages.open(sealed, recipient_token=recipient.token)
+    assert restarted_registry.usage(recipient_authority_id)[0] == calls_after_first_delivery
 
 
 def test_sender_cannot_send_to_an_unapproved_agent(tmp_path):
