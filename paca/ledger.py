@@ -115,55 +115,72 @@ class SQLiteOperationLedger:
             conn.close()
 
     def _initialise(self) -> None:
-        conn = self._connect()
-        try:
-            conn.execute("PRAGMA journal_mode = WAL")
-            conn.execute("PRAGMA synchronous = FULL")
-            conn.executescript(
-                """
-                CREATE TABLE IF NOT EXISTS capability_state (
-                    cap_id TEXT PRIMARY KEY,
-                    task_id TEXT NOT NULL,
-                    authority_digest TEXT NOT NULL,
-                    calls INTEGER NOT NULL DEFAULT 0 CHECK (calls >= 0)
-                );
-                CREATE TABLE IF NOT EXISTS task_state (
-                    task_id TEXT PRIMARY KEY,
-                    strikes INTEGER NOT NULL DEFAULT 0 CHECK (strikes >= 0)
-                );
-                CREATE TABLE IF NOT EXISTS destinations (
-                    task_id TEXT NOT NULL,
-                    destination TEXT NOT NULL,
-                    PRIMARY KEY (task_id, destination)
-                );
-                CREATE TABLE IF NOT EXISTS operations (
-                    operation_id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    cap_id TEXT NOT NULL,
-                    task_id TEXT NOT NULL,
-                    action TEXT NOT NULL,
-                    request_digest TEXT NOT NULL,
-                    decision TEXT NOT NULL,
-                    checks_json TEXT NOT NULL,
-                    execution_state TEXT NOT NULL,
-                    created_at REAL NOT NULL
-                );
-                CREATE TABLE IF NOT EXISTS tokens (
-                    token_hash TEXT PRIMARY KEY,
-                    operation_id INTEGER NOT NULL REFERENCES operations(operation_id),
-                    request_digest TEXT NOT NULL,
-                    state TEXT NOT NULL CHECK (state IN ('issued', 'consumed', 'expired')),
-                    issued_at REAL NOT NULL,
-                    expires_at REAL NOT NULL,
-                    consumed_at REAL
-                );
-                CREATE INDEX IF NOT EXISTS operations_task_created
-                    ON operations(task_id, created_at);
-                """
-            )
-        except sqlite3.Error as exc:
-            raise LedgerError("could not initialise persistent operation ledger") from exc
-        finally:
-            conn.close()
+        # Multiple workers may start simultaneously against a newly-created file.
+        # journal_mode changes require a schema-level lock, and SQLite may report
+        # SQLITE_BUSY immediately for that PRAGMA despite busy_timeout. Retry the
+        # complete idempotent initialization for a bounded period.
+        deadline = time.monotonic() + self.timeout_seconds
+        delay = 0.02
+        while True:
+            conn = self._connect()
+            try:
+                conn.execute("PRAGMA journal_mode = WAL")
+                conn.execute("PRAGMA synchronous = FULL")
+                conn.executescript(
+                    """
+                    CREATE TABLE IF NOT EXISTS capability_state (
+                        cap_id TEXT PRIMARY KEY,
+                        task_id TEXT NOT NULL,
+                        authority_digest TEXT NOT NULL,
+                        calls INTEGER NOT NULL DEFAULT 0 CHECK (calls >= 0)
+                    );
+                    CREATE TABLE IF NOT EXISTS task_state (
+                        task_id TEXT PRIMARY KEY,
+                        strikes INTEGER NOT NULL DEFAULT 0 CHECK (strikes >= 0)
+                    );
+                    CREATE TABLE IF NOT EXISTS destinations (
+                        task_id TEXT NOT NULL,
+                        destination TEXT NOT NULL,
+                        PRIMARY KEY (task_id, destination)
+                    );
+                    CREATE TABLE IF NOT EXISTS operations (
+                        operation_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        cap_id TEXT NOT NULL,
+                        task_id TEXT NOT NULL,
+                        action TEXT NOT NULL,
+                        request_digest TEXT NOT NULL,
+                        decision TEXT NOT NULL,
+                        checks_json TEXT NOT NULL,
+                        execution_state TEXT NOT NULL,
+                        created_at REAL NOT NULL
+                    );
+                    CREATE TABLE IF NOT EXISTS tokens (
+                        token_hash TEXT PRIMARY KEY,
+                        operation_id INTEGER NOT NULL REFERENCES operations(operation_id),
+                        request_digest TEXT NOT NULL,
+                        state TEXT NOT NULL CHECK (state IN ('issued', 'consumed', 'expired')),
+                        issued_at REAL NOT NULL,
+                        expires_at REAL NOT NULL,
+                        consumed_at REAL
+                    );
+                    CREATE INDEX IF NOT EXISTS operations_task_created
+                        ON operations(task_id, created_at);
+                    """
+                )
+                return
+            except sqlite3.OperationalError as exc:
+                if "locked" not in str(exc).lower() or time.monotonic() >= deadline:
+                    raise LedgerError(
+                        "could not initialise persistent operation ledger"
+                    ) from exc
+                time.sleep(delay)
+                delay = min(delay * 2, 0.25)
+            except sqlite3.Error as exc:
+                raise LedgerError(
+                    "could not initialise persistent operation ledger"
+                ) from exc
+            finally:
+                conn.close()
 
     @staticmethod
     def _authority_digest(capability: "Capability") -> str:
