@@ -132,6 +132,7 @@ def test_provider_tuple_rejects_missing_recorded_parent():
             thread_id="thread",
             namespace="worker",
             node=current,
+            expected_parent_id="parent-checkpoint",
         )
 
 
