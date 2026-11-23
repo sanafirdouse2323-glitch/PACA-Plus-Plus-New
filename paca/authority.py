@@ -237,7 +237,7 @@ class AuthorityLineageGraph:
 
     def ancestors(self, authority_id: str) -> Tuple[AuthorityLineage, ...]:
         """Return the root-to-record chain, including the requested record."""
-        current = self._nodes.get(authority_id)
+        current: Optional[AuthorityLineage] = self._nodes.get(authority_id)
         if current is None:
             raise KeyError(authority_id)
         chain: List[AuthorityLineage] = []
