@@ -72,6 +72,15 @@ def test_global_derive_preserves_all_lineage_references_and_conservative_labels(
     assert combined.label.integrity == "untrusted"
     assert combined.label.sensitivity == 2
     assert combined.lineage_refs == first.lineage_refs | second.lineage_refs
+    assert combined.lineage_incomplete is False
+
+    partially_tracked = derive(
+        "summary with an untracked dependency",
+        first,
+        Arg("opaque framework context", Label("trusted", tenant="acme")),
+    )
+    assert partially_tracked.lineage_incomplete is True
+    assert partially_tracked.lineage_refs == first.lineage_refs
 
 
 def test_graph_derive_records_parent_edges_and_never_upgrades_trust():
@@ -115,7 +124,7 @@ def test_graph_derive_records_parent_edges_and_never_upgrades_trust():
 def test_derived_lineage_requires_known_parents_and_cannot_drop_tenant_or_origin():
     graph = ProvenanceGraph()
     source = _source(graph)
-    with pytest.raises(ValueError, match="source lineage references"):
+    with pytest.raises(ValueError, match="complete explicit source lineage"):
         graph.derive(
             "orphaned summary",
             Arg("untracked", Label("trusted", tenant="acme")),
