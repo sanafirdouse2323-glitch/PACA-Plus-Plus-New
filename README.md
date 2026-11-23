@@ -1,12 +1,12 @@
-# PACA++ - Provenance-Anchored Continuous Authorization for LLM agents
+# PACA++ New — Provenance-Aware Security Across the LLM-Agent Lifecycle
 
-A small, dependency-free reference monitor that evaluates selected simulated stage-boundary
-operations (memory read/write, delegation, tool invocation and egress) to decide whether an *effect* is authorised,
-using **provenance labels** instead of trusting anything the model says.
+PACA++ New is a research prototype focused on security within LLM agents: how information provenance and delegated authority propagate through input handling, memory, reasoning, planning, communication, delegation, tool use and consequential effects.
 
-> The path that matters is *untrusted content -> model interpretation -> access to data, tools or an
-> external recipient*. PACA++ does not try to stop the model reading malicious text; it stops that
-> chain from ending in an unauthorised effect.
+Its current implementation combines a Python reference monitor, provenance labels, task-scoped capabilities, a deterministic simulator and a limited AgentDojo adapter. It does **not** yet mediate every lifecycle transition or provide a production agent runtime.
+
+**Repository separation:** this project is distinct from [PACA++](https://github.com/sanafirdouse2323-glitch/PACA-Plus-Plus), the separate enterprise authorization gateway. PACA++ New does not implement that gateway's FastAPI/OPA/PostgreSQL service or enterprise deployment architecture. The two projects must retain separate scopes, code and evidence.
+
+> Research question: can provenance-aware state management and continuous authorization preserve the relationship between information, authority and effects across an agent's complete lifecycle, including memory reuse and multi-agent handoffs?
 
 ```bash
 pip install -e .[dev]
@@ -131,7 +131,7 @@ monitor = Monitor(ledger=ledger)
 
 The default monitor does not accept approvals unless the integrator supplies an `approval_verifier` that validates a signed approval from a separately authenticated approval service. The verifier interface exists, but this repository does not yet implement that production approval service. Manifest pinning checks the declared tool manifest; it does not attest the implementation actually loaded by a runtime. The benchmark injects a test-only verifier and simulates the human decision; its digest check is not an authentication mechanism and must not be reused in production.
 
-The bounded protocol model and reproducible TLC runner are in `models/PACAAuth.tla`, `models/PACAAuth.cfg` and `scripts/run_tlc.sh`. The model does not prove that the Python implementation refines it. See [docs/security-roadmap.md](docs/security-roadmap.md) for the six workstreams, implementation status and acceptance gates.
+The bounded protocol model and reproducible TLC runner are in `models/PACAAuth.tla`, `models/PACAAuth.cfg` and `scripts/run_tlc.sh`. The model does not prove that the Python implementation refines it. See [docs/AGENT_LIFECYCLE_SECURITY_RESEARCH.md](docs/AGENT_LIFECYCLE_SECURITY_RESEARCH.md) for the research model, literature positioning, threat model and evaluation programme; see [docs/security-roadmap.md](docs/security-roadmap.md) for implementation status and acceptance gates.
 
 **Provenance scope:** joined labels preserve all contributing tenant identifiers and retain an
 unknown-tenant marker when any sensitive source lacks tenant metadata; the monitor denies such
@@ -238,7 +238,7 @@ These checks are also executed automatically in the GitHub Actions workflow.
 
 ## License
 
-PACA++ is free to use for academic research, education, and other non-commercial purposes under the [PACA++ Academic and Non-Commercial License](LICENSE). **Commercial use requires prior written permission and a separate agreement that includes an agreed royalty or revenue share.** This is a source-available licence, not an OSI-approved open-source licence.
+PACA++ New is free to use for academic research, education, and other non-commercial purposes under the [PACA++ Academic and Non-Commercial License](LICENSE). **Commercial use requires prior written permission and a separate agreement that includes an agreed royalty or revenue share.** This is a source-available licence, not an OSI-approved open-source licence.
 
 A prior version was published under MIT. This update does not revoke rights already granted to anyone who received an earlier MIT-licensed copy.
 
