@@ -11,6 +11,7 @@ import errno
 import os
 import stat
 import struct
+import threading
 from typing import Union
 
 
@@ -75,6 +76,7 @@ class SecureRoot:
         self._syscall_number = syscall_number
         self._libc = ctypes.CDLL(None, use_errno=True)
         self._libc.syscall.restype = ctypes.c_long
+        self._lock = threading.RLock()
         root_flags = os.O_PATH | os.O_DIRECTORY | os.O_CLOEXEC | os.O_NOFOLLOW
         try:
             self._root_fd = os.open(os.fspath(root), root_flags)
@@ -130,6 +132,17 @@ class SecureRoot:
         flags: int = os.O_RDONLY,
         mode: int = 0o600,
     ) -> int:
+        # Keep root_fd alive through every openat2 call. Closing concurrently
+        # must not allow descriptor-number reuse to redirect a later syscall.
+        with self._lock:
+            return self._open_fd_locked(relative_path, flags, mode)
+
+    def _open_fd_locked(
+        self,
+        relative_path: Union[str, os.PathLike[str]],
+        flags: int,
+        mode: int,
+    ) -> int:
         """Open a regular file beneath the root and return its owned file descriptor.
 
         Existing paths are first opened with O_PATH so their type is checked
@@ -150,6 +163,11 @@ class SecureRoot:
             raise SecurePathError(errno.EINVAL, "unsupported open flags")
         if isinstance(mode, bool) or not isinstance(mode, int) or not 0 <= mode <= 0o777:
             raise SecurePathError(errno.EINVAL, "file mode must be between 000 and 777")
+        access_mode = flags & os.O_ACCMODE
+        if access_mode not in {os.O_RDONLY, os.O_WRONLY, os.O_RDWR}:
+            raise SecurePathError(errno.EINVAL, "open flags contain conflicting access modes")
+        if flags & (os.O_TRUNC | os.O_APPEND) and access_mode == os.O_RDONLY:
+            raise SecurePathError(errno.EINVAL, "O_TRUNC and O_APPEND require a writable descriptor")
         if flags & os.O_EXCL and not flags & os.O_CREAT:
             raise SecurePathError(errno.EINVAL, "O_EXCL requires O_CREAT")
         if flags & os.O_CREAT and not flags & os.O_EXCL:
@@ -157,6 +175,8 @@ class SecureRoot:
                 errno.EINVAL,
                 "new files must be created with O_CREAT | O_EXCL",
             )
+        if flags & os.O_CREAT and access_mode == os.O_RDONLY:
+            raise SecurePathError(errno.EINVAL, "new files must be opened for writing")
 
         # Keep potentially blocking or device-triggering opens away from
         # attacker-controlled special files. O_NONBLOCK and O_NOCTTY remain
@@ -204,14 +224,16 @@ class SecureRoot:
             os.close(path_fd)
 
     def close(self) -> None:
-        if not self._closed:
-            os.close(self._root_fd)
-            self._closed = True
+        with self._lock:
+            if not self._closed:
+                os.close(self._root_fd)
+                self._closed = True
 
     def __enter__(self) -> "SecureRoot":
-        if self._closed:
-            raise SecurePathError(errno.EBADF, "SecureRoot is closed")
-        return self
+        with self._lock:
+            if self._closed:
+                raise SecurePathError(errno.EBADF, "SecureRoot is closed")
+            return self
 
     def __exit__(self, exc_type, exc_value, traceback) -> None:
         self.close()
