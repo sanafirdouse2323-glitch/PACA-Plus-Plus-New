@@ -22,7 +22,8 @@ Open `docs/index.html` for the checked-in historical interactive report (also de
 | Mechanism | Where | Risk classes exercised in the simulator |
 |---|---|---|
 | Task-bound, target-bound, expiring **capabilities** (default deny) | `runtime.py`, `monitor.py` C1/C2 | stale authority, goal hijack, cross-stage drift, cost DoS |
-| **Provenance labels** that only get worse when data is combined (integrity, sensitivity, tenant, origins); unlabelled `Arg` values default to untrusted | `provenance.py` | provenance laundering, fragmentation, memory poisoning |
+| **Provenance labels and optional typed lineage** (object/version IDs, content digests, parent transformations, source metadata); unlabelled `Arg` values default to untrusted | `provenance.py` | provenance laundering, fragmentation, memory poisoning |
+| **Separate authority lineage** with immutable grant scope, purpose, parent, expiry and policy epoch; bound into request digests | `authority.py`, `runtime.py` | delegation drift, stale grant metadata and effect-token substitution |
 | Policy rules in the PACA DSL over those labels (packaged default: `paca/policies/agent_policy.paca`; identical example copy: `examples/agent_policy.paca`) | `engine.py`, `monitor.py` | indirect injection, exfiltration, confused deputy, SSRF, config tampering |
 | **Manifest pinning** (hash+version of each tool authorised for the task) | C3 | MCP poisoning/rug-pull, tool-selection hijack, supply chain |
 | **Delegation attenuation**, fan-out limit, quarantine after definitive denials | C8/C11/C12 | multi-agent escalation, worms, repeated denied actions |
@@ -94,8 +95,10 @@ req = Request("send_email", {"to": user_recipient, "body": derive("summary", doc
 d = m.decide(req)                               # allow | needs_approval | deny (+ reasons, token)
 assert m.verify(req, d)                         # executor must verify before acting
 ```
-Integration contract: **labels are assigned by your connectors/memory store, never by the model.**
-If an agent framework lets the model attach its own labels, the guarantees do not hold.
+Integration contract: **labels, content digests and lineage references are assigned by trusted connectors/memory adapters, never by the model.**
+If an agent framework lets the model attach or rewrite those values, the guarantees do not hold.
+
+The typed information and authority graphs currently run in memory as reference structures. They do not yet provide durable lineage storage, authenticated capability issuance, active revocation or automatic provenance instrumentation of hidden LLM context. See [the lifecycle research programme](docs/AGENT_LIFECYCLE_SECURITY_RESEARCH.md) and [the implementation roadmap](docs/security-roadmap.md) for precise boundaries.
 
 **Execution and approval boundaries:** this repository contains an in-process reference monitor
 and a deterministic simulator. An optional AgentDojo ToolsExecutor adapter inserts
