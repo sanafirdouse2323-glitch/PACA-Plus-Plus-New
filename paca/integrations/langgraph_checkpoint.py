@@ -253,7 +253,10 @@ class PACAProvenancePostgresSaver(BaseCheckpointSaver):
         if self.repository.is_revoked(node.node_id):
             raise MemoryAccessDenied("pending writes refer to a revoked checkpoint")
         try:
-            for ancestor in self.repository.ancestors(node.node_id):
+            ancestry = self.repository.ancestors(node.node_id)
+            if self.repository.revoked_nodes(item.node_id for item in ancestry):
+                raise MemoryAccessDenied("checkpoint ancestry is revoked")
+            for ancestor in ancestry:
                 if ancestor.purpose is not None and ancestor.purpose != self.purpose:
                     raise MemoryAccessDenied("checkpoint ancestry has a different purpose")
                 for authority_id in self.repository.authority_ids_for_node(ancestor.node_id):
@@ -374,13 +377,16 @@ class PACAProvenancePostgresSaver(BaseCheckpointSaver):
         checkpoint_node = self._checkpoint_for_write(token, object_id, checkpoint_id)
         if not isinstance(task_id, str) or not task_id or not isinstance(task_path, str):
             raise MemoryAccessDenied("pending-write task identity is invalid")
-        clean_writes = tuple((str(channel), value) for channel, value in writes)
-        if not clean_writes or any(not channel for channel, _ in clean_writes):
+        clean_writes = tuple((channel, value) for channel, value in writes)
+        if not clean_writes or any(
+            not isinstance(channel, str) or not channel for channel, _ in clean_writes
+        ):
             raise MemoryAccessDenied("pending-write batch must contain valid channels")
         write_object = _write_object_id(
             tenant, thread_id, namespace, checkpoint_id, task_id, task_path,
         )
-        current = self.__delegate.get_tuple(provider_config)
+        # Read through the full PACA boundary before using provider state.
+        current = self.get_tuple(config)
         if current is None:
             raise MemoryAccessDenied("provider checkpoint is absent while writing pending state")
 
@@ -393,9 +399,6 @@ class PACAProvenancePostgresSaver(BaseCheckpointSaver):
             expected_record = self._pending_write_payload(task_id, task_path, clean_writes)
             if self._typed_payload(existing_record) != self._typed_payload(expected_record):
                 raise MemoryAccessDenied("pending-write task identity is immutable within a checkpoint")
-            self._assert_pending_writes_match(
-                token, tenant, thread_id, namespace, checkpoint_id, current.pending_writes,
-            )
             actual_for_task = [
                 item for item in self._pending_write_args(current.pending_writes)
                 if item[0] == task_id
@@ -499,6 +502,8 @@ class PACAProvenancePostgresSaver(BaseCheckpointSaver):
         nodes.sort(key=lambda item: item.version_id, reverse=True)
         if before_id:
             nodes = [item for item in nodes if item.version_id < before_id]
+        if limit is not None and limit <= 0:
+            return
         emitted = 0
         for node in nodes:
             result = self.get_tuple({
