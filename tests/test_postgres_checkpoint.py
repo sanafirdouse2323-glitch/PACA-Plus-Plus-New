@@ -189,6 +189,7 @@ def test_postgres_checkpoint_and_pending_write_paths_are_mediated(tmp_path, monk
 
 def test_postgres_checkpoint_list_and_async_contracts(tmp_path):
     from langgraph.checkpoint.postgres import PostgresSaver
+    from paca.integrations.langgraph_checkpoint import _provider_thread_id
 
     root, repository, memory, source = _environment(tmp_path)
     thread_id = "paca-test-" + uuid.uuid4().hex
@@ -218,23 +219,45 @@ def test_postgres_checkpoint_list_and_async_contracts(tmp_path):
             {"created_at": "2"},
         )
 
-        # Checkpoint identifiers are opaque. Listing must use durable insertion
-        # chronology, not lexical sorting of those identifiers.
-        listed = list(saver.list(config))
-        assert [
-            item.config["configurable"]["checkpoint_id"] for item in listed
-        ] == [second_id, first_id]
-        before_second = {
+        # Match the official PostgresSaver contract: checkpoint_id DESC,
+        # with a strict checkpoint_id < before cursor. These synthetic IDs
+        # deliberately do not follow the insertion order.
+        provider_thread = _provider_thread_id("acme", thread_id)
+        provider_config = {
+            "configurable": {"thread_id": provider_thread, "checkpoint_ns": ""},
+        }
+        wrapped_ids = [
+            item.config["configurable"]["checkpoint_id"]
+            for item in saver.list(config)
+        ]
+        provider_ids = [
+            item.config["configurable"]["checkpoint_id"]
+            for item in raw.list(provider_config)
+        ]
+        assert wrapped_ids == provider_ids == [first_id, second_id]
+        before_first = {
             "configurable": {
                 "thread_id": thread_id,
                 "checkpoint_ns": "",
-                "checkpoint_id": second_id,
+                "checkpoint_id": first_id,
             }
         }
-        assert [
+        provider_before_first = {
+            "configurable": {
+                "thread_id": provider_thread,
+                "checkpoint_ns": "",
+                "checkpoint_id": first_id,
+            }
+        }
+        wrapped_before = [
             item.config["configurable"]["checkpoint_id"]
-            for item in saver.list(config, before=before_second)
-        ] == [first_id]
+            for item in saver.list(config, before=before_first)
+        ]
+        provider_before = [
+            item.config["configurable"]["checkpoint_id"]
+            for item in raw.list(provider_config, before=provider_before_first)
+        ]
+        assert wrapped_before == provider_before == [second_id]
 
         assert saver.get_tuple(second) is not None
         assert asyncio.run(saver.aget_tuple(second)) is not None
