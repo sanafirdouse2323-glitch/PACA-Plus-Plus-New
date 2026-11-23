@@ -201,3 +201,49 @@ def test_secure_root_rejects_fifo_without_blocking(tmp_path):
     with _open_root(root) as secure:
         with pytest.raises(SecurePathError, match="regular file"):
             secure.open_fd("blocked-pipe", os.O_RDONLY)
+
+def test_secure_root_rejects_ambiguous_create_and_access_flags(tmp_path):
+    root = tmp_path / "workspace"
+    root.mkdir()
+    with _open_root(root) as secure:
+        with pytest.raises(SecurePathError, match="O_CREAT \\| O_EXCL"):
+            secure.open_fd(
+                "non-exclusive.txt",
+                os.O_WRONLY | os.O_CREAT,
+            )
+        with pytest.raises(SecurePathError, match="conflicting access modes"):
+            secure.open_fd(
+                "conflicting.txt",
+                os.O_WRONLY | os.O_RDWR,
+            )
+        with pytest.raises(SecurePathError, match="require a writable"):
+            secure.open_fd(
+                "read-only-truncate.txt",
+                os.O_RDONLY | os.O_TRUNC,
+            )
+
+
+@pytest.mark.parametrize(
+    "host",
+    [
+        ".",
+        "foo..example",
+        "-leading.example",
+        "trailing-.example",
+        "under_score.example",
+        "2130706433",
+        "127.1",
+        "localhost",
+        "metadata.google.internal",
+        "service.local",
+    ],
+)
+def test_network_host_normalization_rejects_ambiguous_or_reserved_names(host):
+    with pytest.raises(UnsafeNetworkDestination):
+        secure_network._normalise_host(host)
+
+
+def test_network_host_normalization_canonicalizes_idna_and_fqdn():
+    assert secure_network._normalise_host("Example.COM.") == "example.com"
+    assert secure_network._normalise_host("bücher.example") == "xn--bcher-kva.example"
+    assert secure_network._normalise_host("2606:4700:4700::1111") == "2606:4700:4700::1111"
