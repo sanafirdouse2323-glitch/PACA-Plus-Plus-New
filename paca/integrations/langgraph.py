@@ -460,15 +460,6 @@ class PACAProvenanceLangGraphStore(BaseStore):
         for object_id, node in latest.items():
             if self.repository.is_revoked(node.node_id):
                 continue
-            # Namespace enumeration discloses object metadata. Apply the
-            # same ancestry, tenant, inherited-authority and application policy
-            # checks as value retrieval, without fetching the protected value.
-            self.memory.authorize_metadata(
-                object_id,
-                node.version_id,
-                purpose=self.purpose,
-                capability_token=token,
-            )
             try:
                 decoded_tenant, namespace, _key = _decode_object_id(object_id)
             except ValueError:
@@ -489,6 +480,15 @@ class PACAProvenanceLangGraphStore(BaseStore):
                 continue
             if max_depth is not None:
                 namespace = namespace[:max_depth]
+            # Namespace enumeration discloses object metadata. Apply the
+            # same ancestry, tenant, inherited-authority and application policy
+            # checks as value retrieval, without fetching the protected value.
+            self.memory.authorize_metadata(
+                object_id,
+                node.version_id,
+                purpose=self.purpose,
+                capability_token=token,
+            )
             namespaces.add(namespace)
         return sorted(namespaces)[offset:offset + limit]
 
