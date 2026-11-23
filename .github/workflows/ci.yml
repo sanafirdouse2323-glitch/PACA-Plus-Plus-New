@@ -69,7 +69,7 @@ jobs:
           python -m venv /tmp/paca-wheel-env
           /tmp/paca-wheel-env/bin/pip install dist/*.whl "fastapi>=0.110.0" "uvicorn[standard]>=0.30.0"
           cd /tmp
-          /tmp/paca-wheel-env/bin/python -c "from paca.monitor import Monitor; m = Monitor(); assert m.rules.policies; from paca_executor import app; assert app.title == 'PAC++ New Reference Decision API'"
+          /tmp/paca-wheel-env/bin/python -c "from paca.monitor import Monitor; m = Monitor(); assert m.rules.policies; from paca_executor import app; assert app.title == 'PACA++ Reference Decision API'"
 
 
   agentdojo-integration:
@@ -309,7 +309,7 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Install PAC++ New New with pinned LangGraph and LangChain integration
+      - name: Install PAC++ New with pinned LangGraph and LangChain integration
         run: |
           python -m pip install --upgrade pip
           pip install -e ".[dev,langgraph]"
