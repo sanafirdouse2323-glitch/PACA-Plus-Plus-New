@@ -133,7 +133,7 @@ jobs:
           assert any(item.lower().startswith("uvicorn[standard]") and "extra" in item for item in requirements)
           assert version("paca-plus-plus") == expected
           assert paca.__version__ == expected
-          assert app.title == "PAC++ New Reference Decision API"
+          assert app.title == "PACA++ Reference Decision API"
           print(f"Wheel installation and import smoke test passed for {expected}.")
           PY
           )
@@ -158,7 +158,7 @@ jobs:
           assert any(item.lower().startswith("uvicorn[standard]") and "extra" in item for item in requirements)
           assert version("paca-plus-plus") == expected
           assert paca.__version__ == expected
-          assert app.title == "PAC++ New Reference Decision API"
+          assert app.title == "PACA++ Reference Decision API"
           print(f"Source distribution installation and import smoke test passed for {expected}.")
           PY
           )
