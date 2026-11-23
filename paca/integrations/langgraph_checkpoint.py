@@ -551,12 +551,12 @@ class PACAProvenancePostgresSaver(BaseCheckpointSaver):
             )
             self.__delegate.put_writes(provider_config, clean_writes, task_id, task_path)
 
-        persisted = self.__delegate.get_tuple(provider_config)
+        # Re-enter the full mediated read path after the provider mutation:
+        # this validates the returned tuple identity/body/pending writes and
+        # rechecks current authority, lineage and application policy.
+        persisted = self.get_tuple(config)
         if persisted is None:
             raise MemoryIntegrityError("provider checkpoint disappeared after pending-write persistence")
-        self._assert_pending_writes_match(
-            token, tenant, thread_id, namespace, checkpoint_id, persisted.pending_writes,
-        )
 
     def get_tuple(self, config: Mapping[str, Any]) -> Optional[CheckpointTuple]:
         token, tenant, thread_id, namespace, object_id, provider_config = self._normalized_config(
