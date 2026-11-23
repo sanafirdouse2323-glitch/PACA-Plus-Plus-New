@@ -138,9 +138,10 @@ class LineageNode:
             not isinstance(self.purpose, str) or not self.purpose
         ):
             raise ValueError("purpose must be a non-empty string or None")
-        parents = tuple(sorted(set(self.parent_ids)))
-        if any(not isinstance(parent, str) or not parent for parent in parents):
+        raw_parents = tuple(self.parent_ids)
+        if any(not isinstance(parent, str) or not parent for parent in raw_parents):
             raise ValueError("parent identifiers must be non-empty strings")
+        parents = tuple(sorted(set(raw_parents)))
         object.__setattr__(self, "parent_ids", parents)
 
     def as_dict(self) -> Dict[str, object]:
@@ -253,6 +254,8 @@ class ProvenanceGraph:
         """Record a trusted-adapter source version and return a lineage-bound Arg."""
         if not isinstance(label, Label):
             raise TypeError("source label must be assigned by a trusted adapter")
+        if not isinstance(source, str) or not source:
+            raise ValueError("source must be a non-empty trusted source identifier")
         source_label = replace(label, origins=label.origins | frozenset({source}))
         node = LineageNode(
             object_id=object_id,
