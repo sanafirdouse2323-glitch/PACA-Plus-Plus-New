@@ -19,6 +19,7 @@ from typing import Any, Callable, Dict, Iterable, List, Optional
 from urllib.parse import urlparse
 from importlib import resources
 
+from .authority import grant_pattern_is_subset as _grant_is_subset
 from .engine import PolicyEngine
 from .obligations import ObligationRunner
 from .parser import parse_policy_set
@@ -129,21 +130,6 @@ def is_allowed_network_host(host: str, allowed_domains: Iterable[str]) -> bool:
     domains = {(domain or "").strip().lower().rstrip(".") for domain in allowed_domains}
     return any(domain and (normalized == domain or normalized.endswith("." + domain))
                for domain in domains)
-
-
-def _grant_is_subset(child: str, parent: str) -> bool:
-    """Conservative glob-subset check; reject uncertain pattern-to-pattern relations."""
-    if not isinstance(child, str) or not isinstance(parent, str):
-        return False
-    if ".." in child.split("/") or ".." in parent.split("/"):
-        return False
-    if child == parent:
-        return True
-    if is_exact(child):
-        return fnmatch.fnmatchcase(child, parent)
-    if parent.endswith("*") and parent.count("*") == 1 and "?" not in parent and "[" not in parent:
-        return child.startswith(parent[:-1])
-    return False
 
 
 def is_exact(pattern: str) -> bool:
