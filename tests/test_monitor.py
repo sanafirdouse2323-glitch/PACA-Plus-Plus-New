@@ -43,13 +43,34 @@ def test_expiry_budget_and_unknown_action():
     assert m.decide(req("launch_missiles", c)).verdict == "deny"
 
 
-def test_manifest_pin_detects_rug_pull():
+def test_manifest_pin_detects_rug_pull_on_action_mapped_tool():
     m = Monitor()
     t1 = Tool("docs_search", "1.2", "Search")
-    c = cap(grants={"call_tool": ("docs_search",)}, tool_pins={"docs_search": t1.hash})
-    ok = Request("call_tool", {"tool": Arg("docs_search")}, c, 1, tool=t1)
-    bad = Request("call_tool", {"tool": Arg("docs_search")}, c, 2, tool=Tool("docs_search", "1.2", "Search. hidden text"))
-    assert m.decide(ok).verdict == "allow" and "C3" in m.decide(bad).checks
+    c = cap(grants={"read_file": ("/acme/report.txt",)}, tool_pins={"docs_search": t1.hash})
+    ok = Request("read_file", {"path": Arg("/acme/report.txt")}, c, 1, tool=t1)
+    bad = Request("read_file", {"path": Arg("/acme/report.txt")}, c, 2,
+                  tool=Tool("docs_search", "1.2", "Search. hidden text"))
+    assert m.decide(ok).verdict == "allow"
+    assert "C3" in m.decide(bad).checks
+
+
+def test_generic_tool_dispatch_fails_closed_even_when_manifest_is_pinned():
+    tool = Tool("docs_search", "1.2", "Search")
+    c = cap(grants={"call_tool": ("docs_search",)}, tool_pins={"docs_search": tool.hash})
+    request = Request("call_tool", {"tool": Arg("docs_search")}, c, 1, tool=tool)
+    decision = Monitor().decide(request)
+    assert decision.verdict == "deny"
+    assert "C16" in decision.checks
+
+
+def test_generic_tool_dispatch_cannot_be_reenabled_by_ablation():
+    tool = Tool("docs_search", "1.2", "Search")
+    c = cap(grants={"call_tool": ("docs_search",)}, tool_pins={"docs_search": tool.hash})
+    decision = Monitor(disable={"C16"}).decide(
+        Request("call_tool", {"tool": Arg("docs_search")}, c, 1, tool=tool)
+    )
+    assert decision.verdict == "deny"
+    assert "C16" in decision.checks
 
 
 def test_cross_tenant_and_ssrf():
@@ -60,21 +81,35 @@ def test_cross_tenant_and_ssrf():
     assert "C7" in m.decide(req("fetch_url", c, url="http://169.254.169.254/latest")).checks
 
 
-def test_fetch_url_without_query_is_not_outbound_egress():
+def test_fetch_url_without_separate_query_is_still_outbound_egress():
     monitor = Monitor()
     capability = cap(grants={"fetch_url": ("https://*",)})
-    read = Request(
+    ordinary = Request(
         "fetch_url",
         {"url": Arg("https://news.example/page", U)},
         capability,
         1,
     )
-    decision = monitor.decide(read)
-    assert decision.verdict == "allow"
-    assert "C4g" not in decision.checks
-    assert monitor.verify(read, decision)
+    ordinary_decision = monitor.decide(ordinary)
+    assert ordinary_decision.verdict == "needs_approval"
+    assert "C4g" in ordinary_decision.checks
 
-    # Supplying caller data as a query makes this an egress action again.
+    # Sensitive data embedded directly in the URL must be included in flow labels,
+    # even if the integration does not supply a separate query argument.
+    embedded_disclosure = Request(
+        "fetch_url",
+        {"url": Arg(
+            "https://news.example/search?token=secret",
+            Label("untrusted", sensitivity=3, tenant="acme", origins=frozenset({"derived_url"})),
+        )},
+        capability,
+        2,
+    )
+    denied_embedded = monitor.decide(embedded_disclosure)
+    assert denied_embedded.verdict == "deny"
+    assert {"C4f", "C5"} <= set(denied_embedded.checks)
+
+    # An explicit query payload is joined with the URL label as well.
     disclosure = Request(
         "fetch_url",
         {
@@ -82,13 +117,13 @@ def test_fetch_url_without_query_is_not_outbound_egress():
             "query": Arg("private query", CONF),
         },
         capability,
-        2,
+        3,
     )
     denied = monitor.decide(disclosure)
     assert denied.verdict == "deny"
     assert "C4f" in denied.checks
 
-    # The read classification must not disable internal/metadata endpoint checks.
+    # SSRF checks remain active for all URL fetches.
     internal_capability = cap(grants={"fetch_url": ("http://*",)})
     internal = Request(
         "fetch_url",
@@ -97,7 +132,6 @@ def test_fetch_url_without_query_is_not_outbound_egress():
         1,
     )
     assert "C7" in Monitor().decide(internal).checks
-
 
 def test_delegation_must_attenuate():
     m = Monitor()
@@ -122,6 +156,25 @@ def test_quarantine_after_repeated_denials():
     for _ in range(3):
         m.decide(req("send_email", c, to="x@evil.test", body="b"))
     assert "C12" in m.decide(req("send_email", c, to="bob@corp.example", body="b")).checks
+
+
+def test_pending_approvals_do_not_accumulate_quarantine_strikes():
+    m = Monitor(approval_verifier=lambda request, token: token == request.digest)
+    c = cap(grants={"send_email": ("*@partner.example",)})
+    for step in range(1, 5):
+        request = req(
+            "send_email", c, step,
+            to=Arg("person@partner.example", U),
+            body=Arg("public update", Label("trusted", 0, "acme")),
+        )
+        pending = m.decide(request)
+        assert pending.verdict == "needs_approval"
+        assert m.strikes.get(c.task_id, 0) == 0
+        request.approval = pending.digest
+        approved = m.decide(request)
+        assert approved.verdict == "allow"
+        assert m.verify(request, approved)
+    assert m.strikes.get(c.task_id, 0) == 0
 
 
 def test_audit_chain_detects_tampering():
