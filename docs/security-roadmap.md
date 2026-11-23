@@ -102,3 +102,20 @@ A lifecycle surface is not complete because a helper or unit test exists. It is 
 ## Current maturity statement
 
 PACA++ New remains a **research prototype for provenance-aware, capability-based authorization across selected LLM-agent lifecycle boundaries**. It is not a complete lifecycle security product, production agent runtime, enterprise gateway or independently validated security guarantee.
+
+
+## Lifecycle tranche: PostgreSQL checkpoint mediation and bounded formal model
+
+PACA++ New now includes an optional adapter around LangGraph's PostgreSQL checkpointer. Checkpoint state and pending task writes receive separate immutable provenance/evidence records. The adapter authenticates and checks the PACA evidence path before returning provider state, compares provider data to the evidence, and tenant-scopes provider thread IDs. The integration requires the application to supply trusted, complete provenance callbacks for checkpoint and pending-write inputs.
+
+The PostgreSQL service is the actual checkpoint provider. The PACA authority registry, lineage graph, and value evidence remain the existing local SQLite stores. They do not share one transaction or distributed consensus protocol. Provider credentials and raw saver objects must remain in a trusted service boundary; callers with direct database access can bypass a Python wrapper. The current implementation wraps the synchronous PostgreSQL saver; async calls are run through worker threads rather than a native async pool. Provider PendingWrite tuples omit task_path, so the adapter rejects ambiguous reuse of a task ID across multiple paths for one checkpoint.
+
+A new bounded TLA+ lifecycle model covers memory, checkpoint and pending-write lineage; authority delegation and attenuation; tenant, purpose and task continuity; lineage and authority revocation; expiry and policy epochs; a shared task-wide operation budget; and an abstract remote effect whose authorization is checked at the commit transition. This is an abstract finite-state model, not a refinement proof of the Python code, PostgreSQL behavior, host isolation, distributed consistency or remote resource enforcement.
+
+A purpose-continuity defect in derived-memory validation was fixed: every input parent is now checked for purpose compatibility before a derived value is written. Regression tests exercise the denial path and document the raw value-store bypass as a deliberate negative control.
+
+See:
+- POSTGRES_CHECKPOINT_AND_LIFECYCLE_MODEL.md
+- DIRECT_BYPASS_EVALUATION.md
+
+Remaining gates: provider-backed production connectors (mail/chat/vector sources), separate issuer/verifier keys and protected key management, a distributed authority/evidence registry with aggregate quota semantics, a native async provider adapter, process/container isolation tests with attacker-controlled code, and destination-side authorization at remote commit.
