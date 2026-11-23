@@ -10,6 +10,7 @@ hostname verification.
 from __future__ import annotations
 
 import ipaddress
+import math
 import socket
 import ssl
 from dataclasses import dataclass
@@ -106,6 +107,13 @@ def connect_pinned(
     fresh connection. Re-run this function for each HTTP redirect target.
     """
     normalized = _normalise_host(host)
+    if timeout is not None and (
+        isinstance(timeout, bool)
+        or not isinstance(timeout, (int, float))
+        or not math.isfinite(timeout)
+        or timeout < 0
+    ):
+        raise UnsafeNetworkDestination("connection timeout must be a finite non-negative number or None")
     endpoints = resolve_public_endpoints(normalized, port, resolver=resolver)
     last_error: Optional[OSError] = None
     for endpoint in endpoints:
@@ -133,7 +141,16 @@ def connect_tls_pinned(
 ) -> ssl.SSLSocket:
     """Create TLS over an IP-pinned socket while verifying the original hostname."""
     normalized = _normalise_host(host)
-    tls_context = context or ssl.create_default_context()
+    tls_context = context if context is not None else ssl.create_default_context()
+    if not isinstance(tls_context, ssl.SSLContext):
+        raise TypeError("context must be an ssl.SSLContext")
+    if (
+        tls_context.check_hostname is not True
+        or tls_context.verify_mode != ssl.CERT_REQUIRED
+    ):
+        raise UnsafeNetworkDestination(
+            "TLS context must require certificate-chain and hostname verification"
+        )
     connection = connect_pinned(
         normalized, port, timeout=timeout, resolver=resolver
     )
