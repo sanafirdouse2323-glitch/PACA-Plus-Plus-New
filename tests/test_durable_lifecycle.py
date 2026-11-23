@@ -71,7 +71,7 @@ def _environment(tmp_path, *, authorize=lambda _context, _node: True):
         repo, values, issuer, authorize=authorize, clock=clock,
     )
     messages = HMACAgentMessageCodec(
-        b"M" * 32, issuer, repo, clock=clock,
+        b"M" * 32, issuer, repo, memory=memory, clock=clock,
     )
     root = issuer.issue(
         principal="agent-a",
@@ -531,7 +531,10 @@ def test_inter_agent_envelope_authenticates_both_sides_and_preserves_lineage(tmp
         tenant="acme",
         task_id="task-1",
         purpose="prepare-report",
-        grants={"receive_agent_message": ("agent-a",)},
+        grants={
+            "mem_read": ("mem/*",),
+            "receive_agent_message": ("agent-a",),
+        },
         expires_at=1_900,
     )
     sealed = env["messages"].seal(
@@ -595,7 +598,10 @@ def test_inter_agent_envelope_authenticates_both_sides_and_preserves_lineage(tmp
         tenant="acme",
         task_id="task-1",
         purpose="prepare-report",
-        grants={"receive_agent_message": ("agent-a",)},
+        grants={
+            "mem_read": ("mem/*",),
+            "receive_agent_message": ("agent-a",),
+        },
         expires_at=1_900,
     )
     with pytest.raises(MemoryAccessDenied):
@@ -613,7 +619,10 @@ def test_inter_agent_message_replay_is_rejected_after_registry_restart(tmp_path)
         tenant="acme",
         task_id="task-1",
         purpose="prepare-report",
-        grants={"receive_agent_message": ("agent-a",)},
+        grants={
+            "mem_read": ("mem/*",),
+            "receive_agent_message": ("agent-a",),
+        },
         expires_at=1_900,
     )
     sealed = env["messages"].seal(
@@ -643,6 +652,7 @@ def test_inter_agent_message_replay_is_rejected_after_registry_restart(tmp_path)
         b"M" * 32,
         restarted_issuer,
         env["repo"],
+        memory=env["memory"],
         clock=env["clock"],
     )
     with pytest.raises(MemoryAccessDenied, match="replay"):
@@ -770,7 +780,10 @@ def test_message_open_rejects_revoked_source_authority(tmp_path):
         tenant="acme",
         task_id="task-1",
         purpose="prepare-report",
-        grants={"receive_agent_message": ("agent-a",)},
+        grants={
+            "mem_read": ("mem/*",),
+            "receive_agent_message": ("agent-a",),
+        },
         expires_at=1_900,
     )
     sealed = env["messages"].seal(
