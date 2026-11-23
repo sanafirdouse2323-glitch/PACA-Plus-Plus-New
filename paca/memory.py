@@ -365,6 +365,31 @@ class TrustedMemoryAdapter:
             raise TypeError("derived memory requires one or more Arg inputs")
         if any(not item.lineage_refs or item.lineage_incomplete for item in inputs):
             raise MemoryAccessDenied("cannot persist a derived memory with incomplete lineage")
+        # A reference set and conservative label do not prove that the supplied
+        # input bytes are the value recorded by that lineage. Require each input
+        # to be one persisted value/version whose immutable digest matches exactly.
+        # Unrecorded transformations must first be persisted as their own node.
+        for item in inputs:
+            refs = tuple(item.lineage_refs)
+            if len(refs) != 1:
+                raise MemoryAccessDenied(
+                    "derived input must reference one versioned value bound to its exact digest"
+                )
+            parent = self.repository.get_node(refs[0])
+            if parent is None:
+                raise MemoryAccessDenied("derived input references unknown lineage")
+            try:
+                input_digest = hashlib.sha256(
+                    canonical_value_bytes(item.value)
+                ).hexdigest()
+            except TypeError as exc:
+                raise MemoryAccessDenied(
+                    "derived input is not canonical JSON bound to its lineage"
+                ) from exc
+            if not hmac.compare_digest(input_digest, parent.content_digest):
+                raise MemoryAccessDenied(
+                    "derived input bytes do not match their immutable lineage digest"
+                )
         parent_ids = tuple(sorted(set().union(*(item.lineage_refs for item in inputs))))
         for parent_id in parent_ids:
             parent = self.repository.get_node(parent_id)
