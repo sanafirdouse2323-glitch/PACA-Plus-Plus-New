@@ -107,6 +107,15 @@ This hypothesis must be tested. It is not an established result.
 
 Do not conflate the two. Data being trusted does not grant authority; having authority does not make data trusted.
 
+**Phase-B reference semantics now implemented on the research branch:**
+
+- `paca.provenance.LineageNode` represents one immutable object/version record. It carries a trusted-adapter source identifier and source class, SHA-256 content digest, conservative `Label`, parent node IDs, transformation name and optional purpose. `ProvenanceGraph` records nodes in memory, requires parents to exist before children, rejects object/version reuse with different metadata, and rejects transformations that upgrade integrity or erase sensitivity, origins, tenant lineage or unknown-tenant state.
+- `Arg.lineage_refs` carries optional references to those nodes. The global `derive()` helper preserves the union of input references; `ProvenanceGraph.derive()` records an explicit transformation node. Values without lineage references remain supported for backward compatibility and are not silently claimed to have complete provenance.
+- `paca.authority.AuthorityLineage` is a separate immutable capability-grant snapshot. `AuthorityLineageGraph` requires parent-first insertion and checks tenant/task continuity, exact purpose continuity, non-decreasing policy epoch, non-extending expiry and conservative grant-scope attenuation.
+- `Capability` validates that its principal, tenant, task, grant scope, expiry and parent-presence agree with its attached authority record. `Request.digest` now binds argument lineage references, resource lineage references and the complete authority record as well as the existing argument labels and capability fields.
+
+**Deliberate limits:** both graphs are currently in-memory reference structures. The trusted adapter must calculate and supply content digests and assign labels/lineage references. There is no authenticated or signed authority issuer, durable graph store, active-policy-epoch registry, revocation propagation, automatic LLM-context instrumentation or production memory connector in this tranche. A digest binds the supplied metadata; it does not prove that the metadata was truthful.
+
 ### 4.2 Lifecycle state and transition checks
 
 Represent the runtime as a sequence of typed events:
