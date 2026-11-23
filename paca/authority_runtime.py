@@ -201,14 +201,20 @@ class SQLiteAuthorityRegistry:
     def _load_graph(connection: sqlite3.Connection) -> AuthorityLineageGraph:
         graph = AuthorityLineageGraph()
         rows = connection.execute(
-            "SELECT authority_id,record_json FROM authority_records ORDER BY seq"
+            "SELECT authority_id,parent_id,record_json FROM authority_records ORDER BY seq"
         ).fetchall()
         for row in rows:
             try:
                 data = json.loads(row["record_json"])
                 record = _record_from_dict(data)
-                if record.authority_id != row["authority_id"] or _canonical(record.as_dict()).decode() != row["record_json"]:
-                    raise AuthorityRegistryError("authority record failed canonical identity verification")
+                if (
+                    record.authority_id != row["authority_id"]
+                    or record.parent_id != row["parent_id"]
+                    or _canonical(record.as_dict()).decode() != row["record_json"]
+                ):
+                    raise AuthorityRegistryError(
+                        "authority record or parent edge failed canonical identity verification"
+                    )
                 graph.add(record)
             except (TypeError, ValueError, json.JSONDecodeError) as exc:
                 if isinstance(exc, AuthorityRegistryError):
