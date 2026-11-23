@@ -2117,3 +2117,16 @@ def test_async_langchain_handler_receives_frozen_tool_request(tmp_path):
 
     result = asyncio.run(exercise())
     assert result == "/acme/public/report.txt"
+
+def test_runtime_refuses_monitor_with_effect_token_verification_disabled(tmp_path):
+    from paca.monitor import Monitor
+
+    env = _environment(tmp_path)
+    ablation_monitor = Monitor(disable=("C13",))
+    with pytest.raises(ValueError, match="requires C13 effect-token verification"):
+        PACAAgentRuntime(
+            env["issuer"],
+            env["memory"],
+            ablation_monitor,
+            env["messages"],
+        )
