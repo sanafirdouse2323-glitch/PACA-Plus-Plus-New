@@ -25,7 +25,8 @@ Open `docs/index.html` for the checked-in historical interactive report (also de
 | **Provenance labels** that only get worse when data is combined (integrity, sensitivity, tenant, origins); unlabelled `Arg` values default to untrusted | `provenance.py` | provenance laundering, fragmentation, memory poisoning |
 | Policy rules in the PACA DSL over those labels (packaged default: `paca/policies/agent_policy.paca`; identical example copy: `examples/agent_policy.paca`) | `engine.py`, `monitor.py` | indirect injection, exfiltration, confused deputy, SSRF, config tampering |
 | **Manifest pinning** (hash+version of each tool authorised for the task) | C3 | MCP poisoning/rug-pull, tool-selection hijack, supply chain |
-| **Delegation attenuation**, fan-out limit, quarantine after repeated denials | C8/C11/C12 | multi-agent escalation, worms, approval fatigue |
+| **Delegation attenuation**, fan-out limit, quarantine after definitive denials | C8/C11/C12 | multi-agent escalation, worms, repeated denied actions |
+| **Fail-closed generic tool dispatch**: opaque `call_tool` requests are rejected until mapped to a specific effect action | C16 | unclassified tool arguments and hidden effects |
 | **Effect tokens**: HMAC over the exact action+args, verified by the executor; approvals bound to the same digest | C13 | planner/critic swap, TOCTOU, replayed approvals |
 | Hash-chained **audit log** | `monitor.AuditLog` | forensics / tamper evidence |
 
@@ -102,15 +103,19 @@ do not yet have dedicated PACA++ action mappings. It is not a generic agent adap
 does not provide an independent production executor. The scenario harness supplies read
 content to `Session.ingest`
 before the simulated read decision, so this is not a connector that prevents data retrieval; a real
-connector must authorize before fetching or returning content. In this request model, `fetch_url`
-treats its declared `query` field as outbound data; implicit HTTP headers, cookies, credentials,
-and other transport-layer state are not modeled. A real connector must include any such data in
-the authorization-bound request representation. The simulator's memory-read path
+connector must authorize before fetching or returning content. The monitor classifies every fetch_url
+request as egress and includes the URL argument label in the flow-sensitivity calculation, including
+when no separate query field is provided. Implicit HTTP headers, cookies, credentials, redirect
+chains, and other transport-layer state are not modeled; a real connector must include the complete
+outbound request and revalidate the destination at connection time. Generic call_tool requests are
+rejected with C16 because the monitor cannot infer the effect class of opaque tool arguments; an
+integrator must map each operation to a specific PACA action and bind every effect-relevant field.
+The simulator's memory-read path
 authorizes using a separately stored label before looking up the stored value, but it is still an
 in-memory test harness, not an integrated memory-store adapter. Inbound communication through
 `Session.receive` and agent planning are not independently mediated by a real runtime in this prototype.
 
-The monitor's C14 check verifies that required arguments are present and that the target is a non-empty string. It does not validate every action-specific payload type or semantic constraint; a real executor must enforce those schemas before acting. Filesystem grant matching performs lexical path validation only; a real executor must also prevent
+The monitor's C14 check verifies that required arguments are present and that the target is a non-empty string. C16 is a non-ablatable structural denial for generic call_tool dispatch until the integration maps the tool operation to a specific PACA action. The monitor does not validate every action-specific payload type or semantic constraint; a real executor must enforce those schemas before acting. Pending needs_approval decisions do not increment the repeated-denial quarantine counter; only definitive denials do. Filesystem grant matching performs lexical path validation only; a real executor must also prevent
 symlink escapes and TOCTOU races. Network integrations must resolve and re-check destinations and
 redirects at connection time to reduce DNS-rebinding and redirect-based SSRF. A deployment must route
 every consequential effect through an executor that verifies and consumes the monitor's single-use
@@ -119,8 +124,10 @@ token. The default monitor does not accept approvals unless the integrator suppl
 service. The benchmark injects a test-only verifier and simulates the human decision; its digest
 check is not an authentication mechanism and must not be reused in production.
 
-**Provenance scope:** joined labels preserve all contributing tenant identifiers. The label
-mechanism still depends on trusted adapters assigning correct labels and on integrations preserving
+**Provenance scope:** joined labels preserve all contributing tenant identifiers and retain an
+unknown-tenant marker when any sensitive source lacks tenant metadata; the monitor denies such
+flows under C6 rather than treating missing ownership as a clean tenant match. The label mechanism
+still depends on trusted adapters assigning correct labels and on integrations preserving
 them across every transformation; it does not establish the truth of a source or protect against
 a compromised adapter. The audit chain detects record alteration within the retained chain, but
 is not an external, append-only log service.
