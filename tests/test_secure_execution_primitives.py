@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import errno
 import os
+import ssl
 import socket
 import sys
 
@@ -149,3 +150,33 @@ def test_connect_pinned_uses_the_validated_numeric_address_without_second_dns(mo
     assert isinstance(result, FakeSocket)
     assert calls == [("example.com", 443)]
     assert connected == [("93.184.216.34", 443)]
+
+def test_tls_pinned_rejects_context_without_chain_and_hostname_verification(monkeypatch):
+    context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+    context.check_hostname = False
+    context.verify_mode = ssl.CERT_NONE
+    connections = []
+    monkeypatch.setattr(
+        secure_network,
+        "connect_pinned",
+        lambda *args, **kwargs: connections.append((args, kwargs)),
+    )
+
+    with pytest.raises(UnsafeNetworkDestination, match="certificate-chain and hostname"):
+        secure_network.connect_tls_pinned(
+            "example.com",
+            context=context,
+            resolver=_resolver_for("93.184.216.34"),
+        )
+    assert connections == []
+
+
+@pytest.mark.parametrize("timeout", [-1, float("nan"), float("inf"), True])
+def test_connect_pinned_rejects_invalid_timeout(timeout):
+    with pytest.raises(UnsafeNetworkDestination, match="timeout"):
+        connect_pinned(
+            "example.com",
+            443,
+            timeout=timeout,
+            resolver=_resolver_for("93.184.216.34"),
+        )
