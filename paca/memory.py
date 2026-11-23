@@ -1212,6 +1212,29 @@ class PACAAgentRuntime:
                     close()
                 raise
             result = await result
+
+        # Do not return nested deferred or lazy values to a caller that could
+        # execute them after PACA's authorization boundary has ended.
+        if inspect.isawaitable(result):
+            cancel = getattr(result, "cancel", None)
+            if callable(cancel):
+                cancel()
+            close = getattr(result, "close", None)
+            if callable(close):
+                close()
+            raise MemoryAccessDenied(
+                "async executor returned a nested deferred result outside PACA authorization"
+            )
+        if inspect.isgenerator(result):
+            result.close()
+            raise MemoryAccessDenied(
+                "async executor returned a lazy generator outside PACA authorization"
+            )
+        if inspect.isasyncgen(result):
+            await result.aclose()
+            raise MemoryAccessDenied(
+                "async executor returned a lazy async generator outside PACA authorization"
+            )
         return decision, result
 
     def execute_effect(
@@ -1247,6 +1270,15 @@ class PACAAgentRuntime:
             raise MemoryAccessDenied(
                 "synchronous effect executor must not return an awaitable; "
                 "use the async runtime with an unstarted native coroutine"
+            )
+        if inspect.isgenerator(result):
+            result.close()
+            raise MemoryAccessDenied(
+                "synchronous effect executor must not return a lazy generator"
+            )
+        if inspect.isasyncgen(result):
+            raise MemoryAccessDenied(
+                "synchronous effect executor must not return a lazy async generator"
             )
         return decision, result
 
