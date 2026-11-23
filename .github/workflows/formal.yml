@@ -1,4 +1,4 @@
-name: PACA++ Formal Model
+name: PAC++ New Formal Model
 
 on:
   pull_request:
