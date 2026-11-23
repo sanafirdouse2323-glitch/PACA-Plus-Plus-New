@@ -2063,3 +2063,57 @@ def test_memory_read_rechecks_application_policy_after_value_fetch(tmp_path, mon
             capability_token=env["root"].token,
         )
     assert fetched == [("mem/source-1", "v1")]
+
+def test_async_langchain_handler_receives_frozen_tool_request(tmp_path):
+    pytest.importorskip("langgraph")
+    pytest.importorskip("langchain")
+    from paca.integrations.langgraph import PACALangChainToolMiddleware
+
+    env = _environment(tmp_path)
+    capability = env["issuer"].verify(env["root"].token).capability
+    tool_request = SimpleNamespace(
+        tool_call={
+            "name": "read_file",
+            "args": {"path": "/acme/public/report.txt"},
+            "id": "async-frozen-request",
+        },
+        state={},
+        runtime=None,
+        tool=SimpleNamespace(name="read_file"),
+    )
+    middleware = PACALangChainToolMiddleware(
+        _allowing_runtime(env),
+        capability_token_provider=lambda _request: env["root"].token,
+        tool_manifest_provider=lambda _tool: _read_file_tool(),
+        request_factory=lambda _request: Request(
+            "read_file",
+            {"path": Arg(
+                "/acme/public/report.txt",
+                Label("trusted", tenant="acme"),
+            )},
+            capability,
+            1,
+            tool=_read_file_tool(),
+        ),
+    )
+    handler_started = asyncio.Event()
+    continue_handler = asyncio.Event()
+
+    async def handler(snapshot):
+        handler_started.set()
+        await continue_handler.wait()
+        return snapshot.tool_call["args"]["path"]
+
+    async def exercise():
+        task = asyncio.create_task(
+            middleware.awrap_tool_call(tool_request, handler),
+        )
+        await handler_started.wait()
+        # The original request is mutable while the asynchronous handler is
+        # suspended. The handler must continue using the copied authorized call.
+        tool_request.tool_call["args"]["path"] = "/acme/private/secrets.txt"
+        continue_handler.set()
+        return await task
+
+    result = asyncio.run(exercise())
+    assert result == "/acme/public/report.txt"
