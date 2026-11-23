@@ -170,18 +170,22 @@ def _authority(
     purpose: str = "prepare-report",
     policy_epoch: int = 4,
     expires: int = 100,
+    parent_digest: str | None = None,
+    tenant: str = "acme",
+    task_id: str = "task-report",
 ) -> AuthorityLineage:
     return AuthorityLineage.create(
         authority_id=authority_id,
         issuer="trusted-policy-service",
         principal=principal,
-        tenant="acme",
-        task_id="task-report",
+        tenant=tenant,
+        task_id=task_id,
         purpose=purpose,
         policy_epoch=policy_epoch,
         expires=expires,
         grants=grants,
         parent_id=parent_id,
+        parent_digest=parent_digest,
     )
 
 
@@ -195,6 +199,7 @@ def test_authority_graph_records_delegation_and_enforces_attenuation():
         "authority-child",
         grants={"read_file": ("/acme/docs/reports/*",)},
         parent_id=parent.authority_id,
+        parent_digest=graph.digest(parent.authority_id),
         principal="worker-agent",
         policy_epoch=5,
         expires=80,
@@ -210,6 +215,7 @@ def test_authority_graph_records_delegation_and_enforces_attenuation():
         "authority-broad",
         grants={"read_file": ("/acme/*",)},
         parent_id=parent.authority_id,
+        parent_digest=graph.digest(parent.authority_id),
     )
     with pytest.raises(ValueError, match="exceeds"):
         graph.add(broad_child)
@@ -230,6 +236,7 @@ def test_authority_graph_rejects_invalid_parent_relationships(overrides, message
     child_values = {
         "grants": {"read_file": ("/acme/docs/reports/*",)},
         "parent_id": "root",
+        "parent_digest": graph.digest("root"),
         "principal": "worker-agent",
     }
     child_values.update(overrides)
@@ -244,6 +251,7 @@ def test_authority_child_requires_parent_to_be_recorded_first():
         "child",
         grants={"read_file": ("/acme/docs/reports/*",)},
         parent_id="missing-parent",
+        parent_digest="a" * 64,
         principal="worker-agent",
     )
     with pytest.raises(ValueError, match="recorded before"):
@@ -325,3 +333,34 @@ def test_capability_drift_from_immutable_authority_record_invalidates_digest():
 
     with pytest.raises(ValueError, match="do not match"):
         _ = request.digest
+
+
+def test_authority_graph_rejects_cross_tenant_or_task_delegation():
+    graph = AuthorityLineageGraph()
+    parent = _authority("root", grants={"read_file": ("/acme/docs/*",)})
+    graph.add(parent)
+    child = _authority(
+        "child-cross-tenant",
+        grants={"read_file": ("/acme/docs/reports/*",)},
+        parent_id="root",
+        parent_digest=graph.digest("root"),
+        principal="worker-agent",
+        tenant="globex",
+    )
+    with pytest.raises(ValueError, match="tenant or task"):
+        graph.add(child)
+
+
+def test_authority_child_must_bind_the_exact_parent_chain_digest():
+    graph = AuthorityLineageGraph()
+    parent = _authority("root", grants={"read_file": ("/acme/docs/*",)})
+    graph.add(parent)
+    child = _authority(
+        "child-wrong-parent-digest",
+        grants={"read_file": ("/acme/docs/reports/*",)},
+        parent_id="root",
+        parent_digest="f" * 64,
+        principal="worker-agent",
+    )
+    with pytest.raises(ValueError, match="exact parent chain"):
+        graph.add(child)
