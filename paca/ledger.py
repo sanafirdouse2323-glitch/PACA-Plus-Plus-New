@@ -36,6 +36,23 @@ class LedgerState:
     destinations: FrozenSet[str]
 
 
+def task_scope_key(tenant: str, task_id: str) -> str:
+    """Return a stable opaque identity for one tenant's task namespace.
+
+    Task identifiers are application supplied and are not globally unique. All
+    task-wide counters must therefore be keyed by both authenticated tenant and
+    task ID, not by the task ID alone.
+    """
+    if not isinstance(tenant, str) or not tenant:
+        raise ValueError("tenant must be a non-empty string")
+    if not isinstance(task_id, str) or not task_id:
+        raise ValueError("task_id must be a non-empty string")
+    encoded = json.dumps(
+        [tenant, task_id], separators=(",", ":"), ensure_ascii=False,
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
 class OperationLedger(Protocol):
     """Storage contract consumed by the reference Monitor."""
 
@@ -135,13 +152,13 @@ class SQLiteOperationLedger:
                         calls INTEGER NOT NULL DEFAULT 0 CHECK (calls >= 0)
                     );
                     CREATE TABLE IF NOT EXISTS task_state (
-                        task_id TEXT PRIMARY KEY,
+                        task_scope TEXT PRIMARY KEY,
                         strikes INTEGER NOT NULL DEFAULT 0 CHECK (strikes >= 0)
                     );
                     CREATE TABLE IF NOT EXISTS destinations (
-                        task_id TEXT NOT NULL,
+                        task_scope TEXT NOT NULL,
                         destination TEXT NOT NULL,
-                        PRIMARY KEY (task_id, destination)
+                        PRIMARY KEY (task_scope, destination)
                     );
                     CREATE TABLE IF NOT EXISTS operations (
                         operation_id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -167,6 +184,7 @@ class SQLiteOperationLedger:
                         ON operations(task_id, created_at);
                     """
                 )
+                self._validate_scope_schema(conn)
                 return
             except sqlite3.OperationalError as exc:
                 if "locked" not in str(exc).lower() or time.monotonic() >= deadline:
@@ -181,6 +199,74 @@ class SQLiteOperationLedger:
                 ) from exc
             finally:
                 conn.close()
+
+    @staticmethod
+    def _validate_scope_schema(conn: sqlite3.Connection) -> None:
+        """Validate or safely initialize tenant-scoped task-state tables.
+
+        Earlier unversioned databases keyed task counters by task_id alone. There
+        is no trustworthy tenant mapping in those rows. A populated legacy
+        database must therefore fail closed and be migrated offline with an
+        operator-reviewed task-to-tenant mapping; silently copying or resetting
+        counters could weaken quotas or quarantine guarantees.
+        """
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS ledger_meta "
+            "(key TEXT PRIMARY KEY, value TEXT NOT NULL)"
+        )
+        version_row = conn.execute(
+            "SELECT value FROM ledger_meta WHERE key='schema_version'"
+        ).fetchone()
+
+        task_columns = {
+            row["name"] for row in conn.execute("PRAGMA table_info(task_state)")
+        }
+        destination_columns = {
+            row["name"] for row in conn.execute("PRAGMA table_info(destinations)")
+        }
+        if version_row is None:
+            populated = False
+            for table in (
+                "capability_state", "task_state", "destinations", "operations", "tokens",
+            ):
+                if conn.execute(f"SELECT 1 FROM {table} LIMIT 1").fetchone() is not None:
+                    populated = True
+                    break
+            if populated:
+                raise LedgerError(
+                    "unversioned ledger contains persisted state keyed without tenant scope; "
+                    "a reviewed offline migration with trusted task-to-tenant mappings is required"
+                )
+
+            if "task_id" in task_columns:
+                conn.execute("DROP TABLE destinations")
+                conn.execute("DROP TABLE task_state")
+            elif "task_scope" not in task_columns:
+                raise LedgerError("operation ledger task-state schema is missing or unsupported")
+
+            if "task_id" in destination_columns or "task_scope" not in destination_columns:
+                conn.execute(
+                    "CREATE TABLE task_state ("
+                    "task_scope TEXT PRIMARY KEY,"
+                    "strikes INTEGER NOT NULL DEFAULT 0 CHECK (strikes >= 0))"
+                )
+                conn.execute(
+                    "CREATE TABLE destinations ("
+                    "task_scope TEXT NOT NULL,"
+                    "destination TEXT NOT NULL,"
+                    "PRIMARY KEY (task_scope, destination))"
+                )
+            conn.execute(
+                "INSERT INTO ledger_meta(key,value) VALUES('schema_version','2')"
+            )
+            return
+
+        try:
+            version = int(version_row["value"])
+        except (TypeError, ValueError) as exc:
+            raise LedgerError("operation ledger schema version is invalid") from exc
+        if version != 2 or "task_scope" not in task_columns or "task_scope" not in destination_columns:
+            raise LedgerError("operation ledger schema is unsupported or inconsistent")
 
     @staticmethod
     def _authority_digest(capability: "Capability") -> str:
@@ -222,10 +308,11 @@ class SQLiteOperationLedger:
             raise CapabilityConflict(
                 "capability identifier is already bound to different authority"
             )
+        scope = task_scope_key(capability.tenant, capability.task_id)
         conn.execute(
-            "INSERT INTO task_state(task_id, strikes) VALUES (?, 0) "
-            "ON CONFLICT(task_id) DO NOTHING",
-            (capability.task_id,),
+            "INSERT INTO task_state(task_scope, strikes) VALUES (?, 0) "
+            "ON CONFLICT(task_scope) DO NOTHING",
+            (scope,),
         )
 
     @staticmethod
@@ -236,13 +323,14 @@ class SQLiteOperationLedger:
             "SELECT calls FROM capability_state WHERE cap_id = ?",
             (capability.cap_id,),
         ).fetchone()
+        scope = task_scope_key(capability.tenant, capability.task_id)
         task_row = conn.execute(
-            "SELECT strikes FROM task_state WHERE task_id = ?",
-            (capability.task_id,),
+            "SELECT strikes FROM task_state WHERE task_scope = ?",
+            (scope,),
         ).fetchone()
         dest_rows = conn.execute(
-            "SELECT destination FROM destinations WHERE task_id = ?",
-            (capability.task_id,),
+            "SELECT destination FROM destinations WHERE task_scope = ?",
+            (scope,),
         ).fetchall()
         if cap_row is None or task_row is None:
             raise LedgerError("capability state disappeared during transaction")
@@ -292,8 +380,8 @@ class SQLiteOperationLedger:
     ) -> None:
         if consequential:
             conn.execute(
-                "UPDATE task_state SET strikes = strikes + 1 WHERE task_id = ?",
-                (capability.task_id,),
+                "UPDATE task_state SET strikes = strikes + 1 WHERE task_scope = ?",
+                (task_scope_key(capability.tenant, capability.task_id),),
             )
 
     def issue_authorization(
@@ -349,9 +437,9 @@ class SQLiteOperationLedger:
                 )
                 if destination:
                     conn.execute(
-                        "INSERT INTO destinations(task_id, destination) VALUES (?, ?) "
-                        "ON CONFLICT(task_id, destination) DO NOTHING",
-                        (capability.task_id, destination),
+                        "INSERT INTO destinations(task_scope, destination) VALUES (?, ?) "
+                        "ON CONFLICT(task_scope, destination) DO NOTHING",
+                        (task_scope_key(capability.tenant, capability.task_id), destination),
                     )
                 conn.execute(
                     """INSERT INTO tokens
