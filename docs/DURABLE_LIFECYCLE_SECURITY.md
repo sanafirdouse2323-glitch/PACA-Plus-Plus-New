@@ -1,6 +1,6 @@
 # Durable provenance, authenticated authority and mediated agent memory
 
-**Scope:** PACA++ New only. This document describes the agent-lifecycle security research prototype. It does not add enterprise gateway functions to the separate PACA++ repository.
+**Scope:** PAC++ New only. This document describes the agent-lifecycle security research prototype. It does not add enterprise gateway functions to the separate `PACA-Plus-Plus` enterprise gateway repository.
 
 ## Status and design boundary
 
@@ -150,4 +150,4 @@ These are deterministic reference tests, not an independent penetration test, pr
 
 ---
 
-**Maturity statement:** PACA++ New remains a research prototype. This milestone implements durable local lineage, an authenticated reference capability issuer and registry, mediated reference memory, a custom signed message codec, and two framework adapters. It does not establish complete or production-grade security for an arbitrary LLM-agent lifecycle.
+**Maturity statement:** PAC++ New remains a research prototype. This milestone implements durable local lineage, an authenticated reference capability issuer and registry, mediated reference memory, a custom signed message codec, and two framework adapters. It does not establish complete or production-grade security for an arbitrary LLM-agent lifecycle.
