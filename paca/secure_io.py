@@ -101,7 +101,7 @@ class SecureRoot:
             os.O_RDONLY | os.O_WRONLY | os.O_RDWR | os.O_CREAT | os.O_EXCL
             | os.O_TRUNC | os.O_APPEND | os.O_CLOEXEC
         )
-        if isinstance(flags, bool) or flags & ~allowed:
+        if isinstance(flags, bool) or not isinstance(flags, int) or flags & ~allowed:
             raise SecurePathError(errno.EINVAL, "unsupported open flags")
         if isinstance(mode, bool) or not isinstance(mode, int) or not 0 <= mode <= 0o777:
             raise SecurePathError(errno.EINVAL, "file mode must be between 000 and 777")
