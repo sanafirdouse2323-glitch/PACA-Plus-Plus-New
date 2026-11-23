@@ -10,6 +10,7 @@ from __future__ import annotations
 import copy
 import hashlib
 import hmac
+import inspect
 import json
 import os
 import sqlite3
@@ -1182,9 +1183,25 @@ class PACAAgentRuntime:
             capability_token, decision, snapshot, issued, accesses,
         )
         result = executor(snapshot)
-        if hasattr(result, "__await__"):
+        if inspect.isawaitable(result):
+            # Only a newly-created native coroutine has a guaranteed lazy body.
+            # An asyncio.Task/Future or arbitrary Awaitable may already be running
+            # before this runtime can revalidate its authority and source policy.
+            if (
+                not inspect.iscoroutine(result)
+                or inspect.getcoroutinestate(result) != inspect.CORO_CREATED
+            ):
+                cancel = getattr(result, "cancel", None)
+                if callable(cancel):
+                    cancel()
+                close = getattr(result, "close", None)
+                if callable(close):
+                    close()
+                raise MemoryAccessDenied(
+                    "async executor must return an unstarted native coroutine, not a Task/Future or started awaitable"
+                )
             # The coroutine body does not run until awaited. Revalidate again
-            # after constructing the awaitable and immediately before entering it.
+            # after constructing it and immediately before entering that body.
             try:
                 self._revalidate_effect_snapshot(
                     capability_token, decision, snapshot, issued, accesses,
