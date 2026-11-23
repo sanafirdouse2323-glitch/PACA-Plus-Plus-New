@@ -58,7 +58,7 @@ def test_ledger_persists_budget_and_consumed_token_across_monitor_restart(tmp_pa
     assert exhausted.verdict == "deny"
     assert "C2" in exhausted.checks
 
-    operations = second_ledger.operations("persistent-task")
+    operations = second_ledger.operations("persistent-task", tenant="tenant-a")
     assert [item["execution_state"] for item in operations] == [
         "consumed",
         "not_executed",
@@ -135,7 +135,7 @@ def test_pending_approval_is_durable_but_does_not_add_a_quarantine_strike(tmp_pa
     assert decision.verdict == "needs_approval"
     state = ledger.register_capability(capability)
     assert state.strikes == 0
-    entries = ledger.operations("persistent-task")
+    entries = ledger.operations("persistent-task", tenant="tenant-a")
     assert entries[-1]["decision"] == "needs_approval"
     assert entries[-1]["execution_state"] == "not_executed"
 
@@ -155,7 +155,7 @@ def test_ledger_token_expiry_is_enforced(tmp_path):
 
     now[0] = 106.0
     assert not ledger.consume_token(decision.token, request.digest)
-    assert ledger.operations("persistent-task")[-1]["execution_state"] == "expired"
+    assert ledger.operations("persistent-task", tenant="tenant-a")[-1]["execution_state"] == "expired"
 
 def test_persistent_task_state_is_scoped_by_tenant_when_task_ids_collide(tmp_path):
     ledger = SQLiteOperationLedger(tmp_path / "tenant-scoped.sqlite3")
@@ -334,7 +334,7 @@ def test_empty_unscoped_ledger_schema_is_reinitialized_with_tenant_scope(tmp_pat
         ).fetchone()
     assert "task_scope" in task_columns and "task_id" not in task_columns
     assert "task_scope" in destination_columns and "task_id" not in destination_columns
-    assert version == ("2",)
+    assert version == ("3",)
     assert ledger.register_capability(make_capability()).strikes == 0
 
 def test_capability_id_cannot_be_reused_with_changed_authority_lineage(tmp_path):
@@ -353,3 +353,62 @@ def test_capability_id_cannot_be_reused_with_changed_authority_lineage(tmp_path)
     changed = replace(original, authority_lineage=changed_record)
     with pytest.raises(CapabilityConflict):
         ledger.register_capability(changed)
+
+def test_operation_history_is_scoped_by_tenant_and_task(tmp_path):
+    ledger = SQLiteOperationLedger(tmp_path / "history-scope.sqlite3")
+    tenant_a = make_capability(
+        cap_id="history-a",
+        tenant="tenant-a",
+        task_id="same-task",
+    )
+    tenant_b = make_capability(
+        cap_id="history-b",
+        tenant="tenant-b",
+        task_id="same-task",
+    )
+    ledger.record_decision(
+        tenant_a, "read_file", "digest-a", "deny", ("C1",), True,
+    )
+    ledger.record_decision(
+        tenant_b, "read_file", "digest-b", "deny", ("C1",), True,
+    )
+
+    with pytest.raises(ValueError, match="tenant is required"):
+        ledger.operations("same-task")
+
+    rows_a = ledger.operations("same-task", tenant="tenant-a")
+    rows_b = ledger.operations("same-task", tenant="tenant-b")
+    assert len(rows_a) == len(rows_b) == 1
+    assert rows_a[0]["tenant"] == "tenant-a"
+    assert rows_a[0]["request_digest"] == "digest-a"
+    assert rows_b[0]["tenant"] == "tenant-b"
+    assert rows_b[0]["request_digest"] == "digest-b"
+    assert ledger.operations(tenant="tenant-a") == rows_a
+    # The unfiltered API is an explicit trusted-administrator view.
+    assert len(ledger.operations()) == 2
+
+
+def test_populated_legacy_operation_history_fails_closed_without_tenant_mapping(tmp_path):
+    database = tmp_path / "legacy-history.sqlite3"
+    with sqlite3.connect(database) as connection:
+        connection.execute(
+            "CREATE TABLE operations ("
+            "operation_id INTEGER PRIMARY KEY AUTOINCREMENT,"
+            "cap_id TEXT NOT NULL, task_id TEXT NOT NULL, action TEXT NOT NULL,"
+            "request_digest TEXT NOT NULL, decision TEXT NOT NULL,"
+            "checks_json TEXT NOT NULL, execution_state TEXT NOT NULL, created_at REAL NOT NULL)"
+        )
+        connection.execute(
+            "INSERT INTO operations(cap_id,task_id,action,request_digest,decision,"
+            "checks_json,execution_state,created_at) "
+            "VALUES('legacy-cap','same-task','read_file','old-digest','deny','[]','not_executed',1.0)"
+        )
+
+    with pytest.raises(LedgerError, match="reviewed offline migration"):
+        SQLiteOperationLedger(database)
+
+    with sqlite3.connect(database) as connection:
+        row = connection.execute(
+            "SELECT cap_id, task_id, request_digest FROM operations"
+        ).fetchone()
+    assert row == ("legacy-cap", "same-task", "old-digest")
