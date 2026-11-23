@@ -34,15 +34,26 @@ The branch also adds `tests/test_sandbox_boundary_cases.py` and [the containment
 
 No actual vendor sandbox integration, host-kernel escape test, hardware side-channel test, independent watchdog, credential broker or production shared-memory adapter is included in this tranche.
 
+### Phase-B typed lineage semantics on the research branch
+
+The branch now includes separate, typed in-memory information and authority histories:
+
+- `LineageNode` and `ProvenanceGraph` record object/version identity, content digest, source, source class, labels, parents, transformations and optional purpose. Parent-first insertion and monotonic label checks reject unknown parents, conflicting object/version records, trust upgrades and loss of inherited provenance metadata.
+- `Arg.lineage_refs` carries optional node references through the existing `derive()` helper. The explicit graph transformation method creates a new versioned node.
+- `AuthorityLineage` and `AuthorityLineageGraph` record immutable issuer/principal/tenant/task/purpose/scope/expiry/policy-epoch/parent metadata. Parent-first insertion checks purpose and tenant/task continuity, non-decreasing policy epoch, expiry attenuation and conservative target-grant subset relations.
+- `Request.digest` binds information and resource lineage references plus the authority record. The mutable capability is checked against its immutable authority snapshot before a digest is produced.
+
+**Important limits:** the graphs are in-memory and not persistent; legacy `Arg` values may have no lineage references; the model does not authenticate the issuer, sign capabilities, maintain an active policy epoch, revoke descendants, instrument hidden model context or integrate with a real memory backend. Content digests and labels must come from trusted adapters. This tranche specifies and tests semantics; it does not claim end-to-end lineage enforcement.
+
 ## Lifecycle coverage gaps
 
 | Lifecycle surface | Current evidence | Work still required |
 |---|---|---|
 | Input / observation | Simulated receive/ingest; AgentDojo tool outputs | Trusted source identity, typed input channels, complete connector coverage |
-| Provenance / derivation | Explicit integrity, sensitivity, tenant and origin labels; explicit joins | Stable lineage graph, transformations, unknown dependencies, provenance across framework state and compaction |
+| Provenance / derivation | Typed in-memory object/version DAG, parent edges, content digests, conservative label propagation and lineage-bound request digests | Trusted connector integration, automatic transformation hooks, durable serialization, context/compaction coverage and real memory-store lineage |
 | Memory | Simulated guarded read/write; memory labels | Real memory-store adapter, all write channels, retrieval lineage, versioning, quarantine, revocation and delayed-trigger tests |
 | Planning / decision | Action requests are checked by monitor | Instrumented plan/decision transitions; plans treated as proposals; revalidation when state changes |
-| Delegation | Capability parent and attenuation checks in selected paths | Formal partial order, authenticated recipient, multi-hop chain, revocation propagation and cross-agent tests |
+| Delegation | Capability parent/attenuation checks plus typed authority DAG and immutable scope/epoch snapshot | Authenticated issuer/recipient, signed grant chain, precise policy-epoch semantics, active revocation, multi-hop runtime propagation and cross-agent tests |
 | Communication | Agent message is an untrusted simulator source | Authenticated typed envelopes, provenance preservation, sender/recipient/channel checks, boundary-laundering tests |
 | Tool/effect | AgentDojo pre-dispatch adapter for supported read/search calls | Complete action/effect contracts, real executor integration, resource-side checks and bypass tests |
 | Execution containment | Linux `openat2` and DNS/IP-pinning helper tests; a generic toy sandbox comparator | Pinned OpenShell / OpenAI environment integrations, full process/network mediation, redirect revalidation, credential brokering, supervisor-failure and host-escape tests |
