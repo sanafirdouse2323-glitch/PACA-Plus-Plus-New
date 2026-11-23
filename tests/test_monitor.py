@@ -183,3 +183,25 @@ def test_audit_chain_detects_tampering():
     assert m.audit.verify()
     m.audit.entries[0]["verdict"] = "deny"
     assert not m.audit.verify()
+
+@pytest.mark.parametrize(
+    ("tenant", "task_id"),
+    [
+        (None, "task-1"),
+        ("acme", None),
+        ("acme", 42),
+    ],
+)
+def test_monitor_fails_closed_and_audits_invalid_tenant_or_task_identity(tenant, task_id):
+    capability = cap()
+    capability.tenant = tenant
+    capability.task_id = task_id
+    monitor = Monitor()
+
+    decision = monitor.decide(req("read_file", capability, path="/acme/report.txt"))
+
+    assert decision.verdict == "deny"
+    assert "C13" in decision.checks
+    assert monitor.audit.verify()
+    assert monitor.audit.entries[-1]["verdict"] == "deny"
+    assert "invalid tenant/task identity" in monitor.audit.entries[-1]["reason"]
