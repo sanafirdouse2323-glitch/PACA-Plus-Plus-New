@@ -2040,3 +2040,26 @@ def test_runtime_async_rechecks_source_revocation_after_awaitable_creation(tmp_p
 
     asyncio.run(exercise())
     assert started == []
+
+def test_memory_read_rechecks_application_policy_after_value_fetch(tmp_path, monkeypatch):
+    allowed = [True]
+    env = _environment(tmp_path, authorize=lambda _context, _node: allowed[0])
+    _ingest(env, {"text": "policy changes during the read"})
+    original_get = env["values"].get
+    fetched = []
+
+    def change_policy_during_fetch(*args):
+        result = original_get(*args)
+        fetched.append(args)
+        allowed[0] = False
+        return result
+
+    monkeypatch.setattr(env["values"], "get", change_policy_during_fetch)
+    with pytest.raises(MemoryAccessDenied, match="policy changed during retrieval"):
+        env["memory"].read(
+            "mem/source-1",
+            "v1",
+            purpose="prepare-report",
+            capability_token=env["root"].token,
+        )
+    assert fetched == [("mem/source-1", "v1")]
