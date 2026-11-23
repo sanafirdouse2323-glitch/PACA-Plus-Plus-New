@@ -4,9 +4,11 @@ import os
 import sqlite3
 import stat
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import replace
 
 import pytest
 
+from paca.authority import AuthorityLineage
 from paca.ledger import CapabilityConflict, LedgerError, SQLiteOperationLedger
 from paca.monitor import Monitor
 from paca.provenance import Arg, Label
@@ -338,17 +340,28 @@ def test_empty_unscoped_ledger_schema_is_reinitialized_with_tenant_scope(tmp_pat
     assert ledger.register_capability(make_capability()).strikes == 0
 
 def test_capability_id_cannot_be_reused_with_changed_authority_lineage(tmp_path):
-    env = _environment(tmp_path)
     ledger = SQLiteOperationLedger(tmp_path / "lineage-binding.sqlite3")
-    original = env["issuer"].verify(env["root"].token).capability
+    capability = make_capability(cap_id="lineage-bound-capability", max_calls=10)
+    lineage = AuthorityLineage.create(
+        authority_id=capability.cap_id,
+        issuer="test-issuer",
+        principal=capability.principal,
+        tenant=capability.tenant,
+        task_id=capability.task_id,
+        purpose="prepare-report",
+        policy_epoch=0,
+        expires=capability.expires,
+        grants=capability.grants,
+    )
+    original = replace(capability, authority_lineage=lineage)
     ledger.register_capability(original)
 
     # Purpose and policy epoch live in the immutable authority record rather than
     # the mutable Capability fields. The ledger fingerprint must still bind them.
     changed_record = replace(
-        original.authority_lineage,
+        lineage,
         purpose="different-purpose",
-        policy_epoch=original.authority_lineage.policy_epoch + 1,
+        policy_epoch=lineage.policy_epoch + 1,
     )
     changed = replace(original, authority_lineage=changed_record)
     with pytest.raises(CapabilityConflict):
