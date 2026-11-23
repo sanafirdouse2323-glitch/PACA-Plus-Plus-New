@@ -1595,3 +1595,47 @@ def test_derived_memory_rejects_input_bytes_not_bound_to_parent_digest(tmp_path)
     )
     assert second.value == {"summary": "legitimate second summary"}
     assert len(second.lineage_refs) == 1
+
+def test_derived_memory_rechecks_revoked_parent_authority(tmp_path):
+    env = _environment(tmp_path)
+    source = _ingest(env, {"text": "data captured under original authority"})
+    independent_writer = env["issuer"].issue(
+        principal="independent-writer",
+        tenant="acme",
+        task_id="task-1",
+        purpose="prepare-report",
+        grants={"mem_read": ("mem/*",), "mem_write": ("mem/*",)},
+        expires_at=1_900,
+        max_calls=20,
+    )
+
+    env["registry"].revoke(
+        env["root"].capability.cap_id,
+        "original source authority revoked before derivation",
+    )
+    with pytest.raises(MemoryAccessDenied, match="authority"):
+        env["memory"].summarise(
+            {"summary": "must not be derived after source authority revocation"},
+            source,
+            object_id="mem/revoked-source-derived",
+            version_id="v1",
+            purpose="prepare-report",
+            capability_token=independent_writer.token,
+        )
+    assert env["repo"].get_version("mem/revoked-source-derived", "v1") is None
+    assert env["values"].get("mem/revoked-source-derived", "v1") is None
+
+
+def test_derived_memory_cannot_bypass_application_metadata_policy(tmp_path):
+    env = _environment(tmp_path, authorize=lambda _context, _node: False)
+    source = _ingest(env, {"text": "policy-restricted source"})
+    with pytest.raises(MemoryAccessDenied, match="metadata policy"):
+        env["memory"].summarise(
+            {"summary": "must not bypass source read policy"},
+            source,
+            object_id="mem/policy-denied-derived",
+            version_id="v1",
+            purpose="prepare-report",
+            capability_token=env["root"].token,
+        )
+    assert env["repo"].get_version("mem/policy-denied-derived", "v1") is None
