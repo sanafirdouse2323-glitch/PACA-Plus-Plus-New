@@ -8,6 +8,7 @@ server database such as PostgreSQL.
 from __future__ import annotations
 
 import hashlib
+import hmac
 import json
 import os
 import secrets
@@ -630,21 +631,29 @@ class SQLiteOperationLedger:
                 ).fetchall()
             else:
                 rows = conn.execute(select + " ORDER BY operation_id").fetchall()
-            return tuple(
-                {
+            result = []
+            for row in rows:
+                tenant_value = str(row["tenant"])
+                task_value = str(row["task_id"])
+                stored_scope = str(row["task_scope"])
+                expected_scope = task_scope_key(tenant_value, task_value)
+                if not hmac.compare_digest(stored_scope, expected_scope):
+                    raise LedgerError(
+                        "operation history tenant/task scope failed integrity verification"
+                    )
+                result.append({
                     "operation_id": int(row["operation_id"]),
                     "cap_id": str(row["cap_id"]),
-                    "tenant": str(row["tenant"]),
-                    "task_id": str(row["task_id"]),
+                    "tenant": tenant_value,
+                    "task_id": task_value,
                     "action": str(row["action"]),
                     "request_digest": str(row["request_digest"]),
                     "decision": str(row["decision"]),
                     "checks": tuple(json.loads(row["checks_json"])),
                     "execution_state": str(row["execution_state"]),
                     "created_at": float(row["created_at"]),
-                }
-                for row in rows
-            )
+                })
+            return tuple(result)
         except sqlite3.Error as exc:
             raise LedgerError("could not read operation history") from exc
         finally:
