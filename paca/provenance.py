@@ -41,7 +41,7 @@ class Label:
             raise ValueError("tenant_unknown must be a boolean")
         if self.sensitivity > 0 and not normalized:
             object.__setattr__(self, "tenant_unknown", True)
-        object.__setattr__(self, "tenant", next(iter(normalized)) if len(normalized) == 1 else None)
+        object.__setattr__(self, "tenant", next(iter(normalized)) if len(normalized) == 1 and not self.tenant_unknown else None)
         origins = frozenset(self.origins)
         if any(not isinstance(origin, str) or not origin for origin in origins):
             raise ValueError("provenance origins must be non-empty strings")
