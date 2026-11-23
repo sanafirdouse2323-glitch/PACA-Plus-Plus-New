@@ -48,6 +48,7 @@ CHECKS = {
     "C13": ("Effect token binds executed effect to the authorised one", "planner/critic manipulation; TOCTOU argument swap"),
     "C14": ("Required arguments are present; the target is a non-empty string", "missing required fields or invalid target shape"),
     "C15": ("Human gate on irreversible release actions", "prompt-to-commit manipulation"),
+    "C16": ("Generic tool call lacks an action-specific effect contract", "unmapped tool effects and opaque tool arguments"),
 }
 
 DEFAULT_CLEARANCE = {"corp.example": 3, "partner.example": 1, "storage.cloud.example": 0,
@@ -238,8 +239,12 @@ class Monitor:
                 continue          # the exact, human-granted literal is the authority, not the argument's provenance
             untrusted_control = True
         pay = [args[n] for n in spec.get("payload", []) if n in args]
+        # A URL is itself outbound data: its path and query may carry model-derived
+        # or sensitive values even when no separate payload argument is supplied.
+        if req.action in ("fetch_url", "http_post") and tgt is not None:
+            pay.append(tgt)
         pl = Label.join(*(a.label for a in pay)) if pay else Label()
-        is_egress = spec["cls"] == "egress" and (req.action != "fetch_url" or bool(pay))
+        is_egress = spec["cls"] == "egress"
         host = host_of(tgt.value) if tgt is not None else ""
         trusted_dest = tgt is not None and tgt.label.integrity == "trusted"
         clr = self._clearance(host, trusted_dest) if is_egress else 99
@@ -247,16 +252,13 @@ class Monitor:
         raw_value = tgt.value if tgt is not None else ""
         value = (canonical_path_target(raw_value) or "") if req.action in PATH_ACTIONS else str(raw_value)
         scope = "core" if (req.action == "mem_write" and value.startswith("core/")) else ""
-        contributing_tenants = set(pl.tenants)
+        contributing_labels = [pl]
         if req.resource is not None:
-            contributing_tenants.update(req.resource.tenants)
-        cross = any(tenant != cap.tenant for tenant in contributing_tenants)
-        # In this simulator's request model, fetch_url is a read unless it carries
-        # the modeled query payload. A real connector must also represent implicit
-        # headers, credentials, cookies, and other outbound data in its request.
+            contributing_labels.append(req.resource)
+        contributing_tenants = set().union(*(label.tenants for label in contributing_labels))
+        unknown_tenant = any(label.tenant_unknown for label in contributing_labels)
+        cross = unknown_tenant or any(tenant != cap.tenant for tenant in contributing_tenants)
         action_class = spec["cls"]
-        if req.action == "fetch_url" and not is_egress:
-            action_class = "read"
 
         return {
             "action": {"name": req.action, "cls": action_class},
@@ -316,6 +318,15 @@ class Monitor:
             v.append(Violation("C2", "deny", f"capability expired at step {cap.expires} (now {req.step})"))
         elif cap.calls >= cap.max_calls:
             v.append(Violation("C2", "deny", f"call budget {cap.max_calls} exhausted"))
+        if req.action == "call_tool":
+            if req.tool is None:
+                v.append(Violation("C3", "deny", "generic tool dispatch requires a pinned Tool manifest"))
+            elif tgt is None or req.tool.name != tval:
+                v.append(Violation("C3", "deny", "tool manifest name does not match the authorised tool target"))
+            # A generic invocation cannot infer whether opaque tool arguments perform
+            # reads, writes, disclosure, delegation or irreversible effects. Integrators
+            # must map the operation to a specific PACA action before it can execute.
+            v.append(Violation("C16", "deny", "generic tool dispatch is disabled; use an action-specific effect mapping"))
         if req.tool is not None:
             pinned = cap.tool_pins.get(req.tool.name)
             if pinned is None:
@@ -341,7 +352,10 @@ class Monitor:
         ctx, is_egress, host = self._context(req, spec, pat)
         if is_egress:
             seen = self.dests.setdefault(cap.task_id, set())
-            if tval not in seen and len(seen) >= cap.max_fanout:
+            # URL fetch fan-out is counted by destination host, not page path, so
+            # reading several pages from one site does not consume recipient slots.
+            destination_key = host if req.action == "fetch_url" else tval
+            if destination_key not in seen and len(seen) >= cap.max_fanout:
                 v.append(Violation("C8", "deny", f"fan-out limit {cap.max_fanout} reached"))
         res = self.engine.evaluate_set(self.rules, ctx, action=req.action)
         obl = sorted({o for n, os_ in res.obligation_map.items() for o in os_})
@@ -353,7 +367,7 @@ class Monitor:
                 v.append(Violation(name, "escalate", note or "human approval required"))
 
         # Action-contract validation is a structural invariant, not an ablatable policy check.
-        v = [x for x in v if x.check not in self.disable or x.check == "C14"]
+        v = [x for x in v if x.check not in self.disable or x.check in {"C14", "C16"}]
         if any(x.severity == "deny" for x in v):
             verdict = "deny"
         elif any(x.severity == "escalate" for x in v):
@@ -377,12 +391,16 @@ class Monitor:
         if verdict == "allow":
             cap.calls += 1
             if is_egress:
-                self.dests.setdefault(cap.task_id, set()).add(tval)
+                destination_key = host if req.action == "fetch_url" else tval
+                self.dests.setdefault(cap.task_id, set()).add(destination_key)
             nonce = os.urandom(32)
             token_payload = request_digest.encode("ascii") + b":" + nonce
             d.token = hmac.new(self.key, token_payload, hashlib.sha256).hexdigest()
             self._issued_tokens[d.token] = request_digest
-        elif consequential:
+        elif consequential and verdict == "deny":
+            # A pending approval is not a denied attempt. Only a definitive denial
+            # contributes to quarantine; approval services separately record
+            # rejected or expired approval requests when they can distinguish them.
             self.strikes[cap.task_id] = self.strikes.get(cap.task_id, 0) + 1
         self.audit.append({"step": req.step, "task": cap.task_id, "action": req.action, "verdict": verdict,
                            "checks": d.checks, "digest": request_digest[:16], "principal": cap.principal})
