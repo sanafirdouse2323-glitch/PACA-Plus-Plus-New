@@ -173,9 +173,19 @@ class PACAProvenancePostgresSaver(BaseCheckpointSaver):
         except Exception as exc:
             raise MemoryIntegrityError("checkpoint evidence payload is malformed") from exc
 
-    @staticmethod
-    def _node_arg(node: Any) -> Arg:
-        return Arg({}, node.label, frozenset({node.node_id}), False)
+    def _node_arg(self, node: Any, capability_token: str) -> Arg:
+        """Return the actual stored checkpoint evidence, not a placeholder value.
+
+        Lineage references alone do not bind a supplied Arg's bytes. Parent
+        checkpoint dependencies must therefore be obtained through the active
+        PACA memory-read path so their value digest and source policy are checked.
+        """
+        return self.memory.read(
+            node.object_id,
+            node.version_id,
+            purpose=self.purpose,
+            capability_token=capability_token,
+        )
 
     def _checkpoint_node(self, object_id: str, checkpoint_id: Optional[str]) -> Any:
         if checkpoint_id:
@@ -217,7 +227,7 @@ class PACAProvenancePostgresSaver(BaseCheckpointSaver):
             parent = self.repository.get_version(object_id, parent_id)
             if parent is None:
                 raise MemoryAccessDenied("parent checkpoint is missing from PACA provenance")
-            dependencies += (self._node_arg(parent),)
+            dependencies += (self._node_arg(parent, token),)
         if not dependencies or any(
             not isinstance(item, Arg) or not item.lineage_refs or item.lineage_incomplete
             for item in dependencies
@@ -434,7 +444,7 @@ class PACAProvenancePostgresSaver(BaseCheckpointSaver):
         else:
             if any(item[0] == task_id for item in self._pending_write_args(current.pending_writes)):
                 raise MemoryIntegrityError("provider contains pending writes with no PACA evidence")
-            dependencies = (self._node_arg(checkpoint_node),) + tuple(
+            dependencies = (self._node_arg(checkpoint_node, token),) + tuple(
                 self._writes_provenance_provider(config, clean_writes, task_id, task_path)
             )
             if any(
