@@ -204,6 +204,7 @@ def test_authority_graph_records_delegation_and_enforces_attenuation():
         "authority-root",
         grants={"read_file": ("/acme/docs/*",), "send_email": ("bob@corp.example",)},
     )
+    graph.add(parent)
     child = _authority(
         "authority-child",
         grants={"read_file": ("/acme/docs/reports/*",)},
@@ -214,7 +215,6 @@ def test_authority_graph_records_delegation_and_enforces_attenuation():
         expires=80,
     )
 
-    graph.add(parent)
     graph.add(child)
     assert graph.get(child.authority_id) == child
     assert graph.ancestors(child.authority_id) == (parent, child)
