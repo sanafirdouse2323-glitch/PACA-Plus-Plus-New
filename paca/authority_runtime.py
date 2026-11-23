@@ -337,18 +337,11 @@ class SQLiteAuthorityRegistry:
                 raise
 
     def get_authority(self, authority_id: str) -> Optional[AuthorityLineage]:
+        # Return only records from a fully reconstructed graph whose canonical
+        # parent edges agree with the SQL columns used by revocation queries.
         with closing(self._connect()) as connection:
-            row = connection.execute(
-                "SELECT authority_id,record_json FROM authority_records WHERE authority_id=?",
-                (authority_id,),
-            ).fetchone()
-        if row is None:
-            return None
-        data = json.loads(row["record_json"])
-        record = _record_from_dict(data)
-        if record.authority_id != row["authority_id"] or _canonical(record.as_dict()).decode() != row["record_json"]:
-            raise AuthorityRegistryError("authority record failed canonical verification")
-        return record
+            graph = self._load_graph(connection)
+        return graph.get(authority_id)
 
     def chain_digest(self, authority_id: str) -> str:
         with closing(self._connect()) as connection:
@@ -482,6 +475,9 @@ class SQLiteAuthorityRegistry:
         return int(row["calls_used"]), int(row["fanout_used"])
     def is_active(self, authority_id: str) -> bool:
         with closing(self._connect()) as connection:
+            graph = self._load_graph(connection)
+            if graph.get(authority_id) is None:
+                return False
             return self._is_active(connection, authority_id)
 
     def assert_active(self, authority_id: str) -> AuthorityLineage:
