@@ -1233,7 +1233,22 @@ class PACAAgentRuntime:
         self._revalidate_effect_snapshot(
             capability_token, decision, snapshot, issued, accesses,
         )
-        return decision, executor(snapshot)
+        result = executor(snapshot)
+        if inspect.isawaitable(result):
+            # The synchronous entry point cannot perform the post-construction
+            # async authority check. Reject and cancel anything awaitable rather
+            # than returning a Task/Future that may already be executing.
+            cancel = getattr(result, "cancel", None)
+            if callable(cancel):
+                cancel()
+            close = getattr(result, "close", None)
+            if callable(close):
+                close()
+            raise MemoryAccessDenied(
+                "synchronous effect executor must not return an awaitable; "
+                "use the async runtime with an unstarted native coroutine"
+            )
+        return decision, result
 
 
 __all__ = [
