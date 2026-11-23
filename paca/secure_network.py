@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import ipaddress
 import math
+import re
 import socket
 import ssl
 from dataclasses import dataclass
@@ -39,9 +40,36 @@ def _normalise_host(host: str) -> str:
     if any(char in host for char in "/\\?#@\x00") or "%" in host:
         raise UnsafeNetworkDestination("destination must be a hostname or IP address, not a URL")
     try:
-        return host.encode("idna").decode("ascii").lower().rstrip(".")
+        normalized = host.encode("idna").decode("ascii").lower().rstrip(".")
     except UnicodeError as exc:
         raise UnsafeNetworkDestination("destination hostname is not valid IDNA") from exc
+    if not normalized or len(normalized) > 253:
+        raise UnsafeNetworkDestination("destination hostname is empty or too long")
+    try:
+        ipaddress.ip_address(normalized)
+        return normalized
+    except ValueError:
+        pass
+    # Reject non-standard numeric IPv4 forms (for example integer or
+    # shortened dotted forms) instead of letting libc reinterpret them.
+    if re.fullmatch(r"[0-9.]+", normalized):
+        raise UnsafeNetworkDestination("destination IP address is not in canonical form")
+    labels = normalized.split(".")
+    if any(
+        not label
+        or len(label) > 63
+        or re.fullmatch(r"[a-z0-9](?:[a-z0-9-]*[a-z0-9])?", label) is None
+        for label in labels
+    ):
+        raise UnsafeNetworkDestination("destination hostname contains an invalid DNS label")
+    if (
+        normalized == "localhost"
+        or normalized.endswith((".localhost", ".local", ".internal"))
+        or normalized == "metadata"
+        or normalized.startswith("metadata.")
+    ):
+        raise UnsafeNetworkDestination("destination hostname is reserved for local or internal use")
+    return normalized
 
 
 def resolve_public_endpoints(
