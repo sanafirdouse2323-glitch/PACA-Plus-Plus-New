@@ -43,6 +43,19 @@ from ..provenance import Arg
 from ..runtime import Request, Tool
 
 
+def _snapshot_async_inputs(
+    *args: Any, **kwargs: Any,
+) -> Tuple[Tuple[Any, ...], Dict[str, Any]]:
+    """Detach LangGraph async-call inputs before handing blocking work to a thread."""
+    try:
+        snapshot_args, snapshot_kwargs = copy.deepcopy((args, kwargs))
+    except Exception as exc:
+        raise MemoryAccessDenied(
+            "asynchronous LangGraph store inputs cannot be safely snapshotted"
+        ) from exc
+    return snapshot_args, snapshot_kwargs
+
+
 def _tenant_digest(tenant: str) -> str:
     if not isinstance(tenant, str) or not tenant:
         raise ValueError("tenant must be a non-empty string")
@@ -370,8 +383,9 @@ class PACAProvenanceLangGraphStore(BaseStore):
         return results
 
     async def abatch(self, ops: Iterable[Any]) -> list[Any]:
-        """Async batch contract; preserve order while isolating blocking SQLite I/O."""
-        return await asyncio.to_thread(self.batch, tuple(ops))
+        """Async batch contract; snapshot operations before worker-thread handoff."""
+        snapshot_args, snapshot_kwargs = _snapshot_async_inputs(tuple(ops))
+        return await asyncio.to_thread(self.batch, *snapshot_args, **snapshot_kwargs)
 
     def get(
         self,
@@ -591,7 +605,10 @@ class PACAProvenanceLangGraphStore(BaseStore):
         *,
         ttl: Any = NOT_PROVIDED,
     ) -> None:
-        await asyncio.to_thread(self.put, namespace, key, value, index, ttl=ttl)
+        snapshot_args, snapshot_kwargs = _snapshot_async_inputs(
+            namespace, key, value, index, ttl=ttl,
+        )
+        await asyncio.to_thread(self.put, *snapshot_args, **snapshot_kwargs)
 
     async def aget(
         self,
@@ -600,10 +617,14 @@ class PACAProvenanceLangGraphStore(BaseStore):
         *,
         refresh_ttl: Optional[bool] = None,
     ) -> Optional[Item]:
-        return await asyncio.to_thread(self.get, namespace, key, refresh_ttl=refresh_ttl)
+        snapshot_args, snapshot_kwargs = _snapshot_async_inputs(
+            namespace, key, refresh_ttl=refresh_ttl,
+        )
+        return await asyncio.to_thread(self.get, *snapshot_args, **snapshot_kwargs)
 
     async def adelete(self, namespace: Tuple[str, ...], key: str) -> None:
-        await asyncio.to_thread(self.delete, namespace, key)
+        snapshot_args, snapshot_kwargs = _snapshot_async_inputs(namespace, key)
+        await asyncio.to_thread(self.delete, *snapshot_args, **snapshot_kwargs)
 
     async def asearch(
         self,
@@ -615,9 +636,16 @@ class PACAProvenanceLangGraphStore(BaseStore):
         offset: int = 0,
         refresh_ttl: Optional[bool] = None,
     ) -> list[SearchItem]:
+        snapshot_args, snapshot_kwargs = _snapshot_async_inputs(
+            namespace_prefix,
+            query=query,
+            filter=filter,
+            limit=limit,
+            offset=offset,
+            refresh_ttl=refresh_ttl,
+        )
         return await asyncio.to_thread(
-            self.search, namespace_prefix, query=query, filter=filter,
-            limit=limit, offset=offset, refresh_ttl=refresh_ttl,
+            self.search, *snapshot_args, **snapshot_kwargs,
         )
 
     async def alist_namespaces(
@@ -629,9 +657,15 @@ class PACAProvenanceLangGraphStore(BaseStore):
         limit: int = 100,
         offset: int = 0,
     ) -> list[Tuple[str, ...]]:
+        snapshot_args, snapshot_kwargs = _snapshot_async_inputs(
+            prefix=prefix,
+            suffix=suffix,
+            max_depth=max_depth,
+            limit=limit,
+            offset=offset,
+        )
         return await asyncio.to_thread(
-            self.list_namespaces, prefix=prefix, suffix=suffix,
-            max_depth=max_depth, limit=limit, offset=offset,
+            self.list_namespaces, *snapshot_args, **snapshot_kwargs,
         )
 
 
