@@ -239,6 +239,91 @@ class TrustedMemoryAdapter:
         except AuthorityRegistryError as exc:
             raise MemoryAccessDenied("memory operation budget exhausted or authority revoked") from exc
 
+    def _authorised_node(
+        self,
+        object_id: str,
+        version_id: str,
+        *,
+        purpose: str,
+        capability_token: str,
+    ) -> Tuple[MemoryAccessContext, LineageNode, Tuple[LineageNode, ...], Tuple[str, ...]]:
+        """Apply the complete read policy to lineage metadata without fetching values."""
+        context = self._verified_context(
+            capability_token, "mem_read", object_id, purpose,
+        )
+        node = self.repository.get_version(object_id, version_id)
+        if node is None:
+            raise MemoryAccessDenied("memory object/version is unknown")
+        if node.purpose != purpose:
+            raise MemoryAccessDenied("memory purpose mismatch")
+        ancestry = self.repository.ancestors(node.node_id)
+        if self.repository.revoked_nodes(ancestor.node_id for ancestor in ancestry):
+            raise MemoryAccessDenied("memory depends on revoked information lineage")
+        for ancestor in ancestry:
+            self._check_label_for_tenant(ancestor.label, context.tenant)
+            if ancestor.purpose is not None and ancestor.purpose != purpose:
+                raise MemoryAccessDenied("memory ancestry is bound to a different purpose")
+
+        authority_ids = self.repository.authority_ids_for_node(node.node_id)
+        for inherited_authority_id in authority_ids:
+            try:
+                self.registry.assert_active(inherited_authority_id)
+            except AuthorityRegistryError as exc:
+                raise MemoryAccessDenied(
+                    "memory depends on an expired, revoked or stale authority"
+                ) from exc
+        try:
+            authorised = all(
+                bool(self._authorize(context, ancestor)) for ancestor in ancestry
+            )
+        except Exception as exc:
+            raise MemoryAccessDenied("memory policy evaluation failed closed") from exc
+        if not authorised:
+            raise MemoryAccessDenied("memory read denied by metadata policy")
+        return context, node, ancestry, authority_ids
+
+    def _recheck_read_authority(
+        self,
+        context: MemoryAccessContext,
+        ancestry: Tuple[LineageNode, ...],
+        authority_ids: Tuple[str, ...],
+    ) -> None:
+        """Recheck authority and information revocation after a mediated operation."""
+        try:
+            self.registry.assert_active(context.authority_id)
+            for inherited_authority_id in authority_ids:
+                self.registry.assert_active(inherited_authority_id)
+            if self.repository.revoked_nodes(
+                ancestor.node_id for ancestor in ancestry
+            ):
+                raise MemoryAccessDenied("memory lineage was revoked during retrieval")
+        except AuthorityRegistryError as exc:
+            raise MemoryAccessDenied(
+                "memory authority was revoked during retrieval"
+            ) from exc
+
+    def authorize_metadata(
+        self,
+        object_id: str,
+        version_id: str,
+        *,
+        purpose: str,
+        capability_token: str,
+    ) -> LineageNode:
+        """Authorize metadata disclosure without fetching protected value bytes.
+
+        Namespace listings and similar metadata-only APIs must enforce the same
+        ancestry, tenant, authority and application policy checks as value reads.
+        One durable memory-read budget unit is consumed for each disclosed object.
+        """
+        context, node, ancestry, authority_ids = self._authorised_node(
+            object_id, version_id, purpose=purpose,
+            capability_token=capability_token,
+        )
+        self._consume_budget(context)
+        self._recheck_read_authority(context, ancestry, authority_ids)
+        return node
+
     def _write(self, node: LineageNode, value: Any, capability_token: str) -> Arg:
         context = self._verified_context(
             capability_token, "mem_write", node.object_id, node.purpose or "",
@@ -358,41 +443,11 @@ class TrustedMemoryAdapter:
         purpose: str,
         capability_token: str,
     ) -> Arg:
-        # Authenticate identity, purpose and object scope before even probing
-        # metadata. The protected value store remains untouched until all checks pass.
-        context = self._verified_context(
-            capability_token, "mem_read", object_id, purpose,
+        # Authenticate the complete lineage and policy before fetching any value bytes.
+        context, node, ancestry, authority_ids = self._authorised_node(
+            object_id, version_id, purpose=purpose,
+            capability_token=capability_token,
         )
-        tenant = context.tenant
-        node = self.repository.get_version(object_id, version_id)
-        if node is None:
-            raise MemoryAccessDenied("memory object/version is unknown")
-        if node.purpose != purpose:
-            raise MemoryAccessDenied("memory purpose mismatch")
-        ancestry = self.repository.ancestors(node.node_id)
-        revoked_before_read = self.repository.revoked_nodes(
-            ancestor.node_id for ancestor in ancestry
-        )
-        if revoked_before_read:
-            raise MemoryAccessDenied("memory depends on revoked information lineage")
-        for ancestor in ancestry:
-            self._check_label_for_tenant(ancestor.label, tenant)
-            if ancestor.purpose is not None and ancestor.purpose != purpose:
-                raise MemoryAccessDenied("memory ancestry is bound to a different purpose")
-        self._check_label_for_tenant(node.label, tenant)
-        authority_ids = self.repository.authority_ids_for_node(node.node_id)
-        for inherited_authority_id in authority_ids:
-            try:
-                self.registry.assert_active(inherited_authority_id)
-            except AuthorityRegistryError as exc:
-                raise MemoryAccessDenied("memory depends on an expired, revoked or stale authority") from exc
-        try:
-            authorised = all(bool(self._authorize(context, ancestor)) for ancestor in ancestry)
-        except Exception as exc:
-            raise MemoryAccessDenied("memory policy evaluation failed closed") from exc
-        if not authorised:
-            raise MemoryAccessDenied("memory read denied by metadata policy")
-
         self._consume_budget(context)
         stored = self._values.get(object_id, version_id)
         if stored is None:
@@ -409,18 +464,9 @@ class TrustedMemoryAdapter:
             raise MemoryIntegrityError("memory bytes do not match their immutable lineage digest")
         # Re-check after fetching and validating bytes to narrow the concurrent
         # revocation window. Remote sinks still need commit-time authorization.
-        try:
-            self.registry.assert_active(context.authority_id)
-            for inherited_authority_id in authority_ids:
-                self.registry.assert_active(inherited_authority_id)
-            revoked_after_fetch = self.repository.revoked_nodes(
-                ancestor.node_id for ancestor in ancestry
-            )
-            if revoked_after_fetch:
-                raise MemoryAccessDenied("memory lineage was revoked during retrieval")
-        except AuthorityRegistryError as exc:
-            raise MemoryAccessDenied("memory authority was revoked during retrieval") from exc
+        self._recheck_read_authority(context, ancestry, authority_ids)
         return Arg(value, node.label, frozenset({node.node_id}), False)
+
 
 
 class TrustedConnectorAdapter:
