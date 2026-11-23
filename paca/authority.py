@@ -170,20 +170,22 @@ class AuthorityLineage:
     def validate_capability(
         self,
         *,
+        capability_id: str,
         principal: str,
         tenant: str,
         task_id: str,
         grants: Mapping[str, Iterable[str]],
         expires: int,
-        has_parent: bool,
+        parent_id: Optional[str],
     ) -> None:
         """Fail if a mutable Capability has drifted from this immutable grant record."""
         if (
-            principal != self.principal
+            capability_id != self.authority_id
+            or principal != self.principal
             or tenant != self.tenant
             or task_id != self.task_id
             or expires != self.expires
-            or has_parent != (self.parent_id is not None)
+            or parent_id != self.parent_id
             or normalise_grants(grants) != self.grants
         ):
             raise ValueError("capability fields do not match their authority-lineage record")
