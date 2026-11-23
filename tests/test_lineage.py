@@ -150,6 +150,20 @@ def test_derived_lineage_requires_known_parents_and_cannot_drop_tenant_or_origin
         graph.add_lineage_node(dropped_origin)
 
 
+def test_graph_rejects_a_root_node_that_drops_its_source_identifier():
+    graph = ProvenanceGraph()
+    root = LineageNode(
+        object_id="source-without-origin",
+        version_id="v1",
+        source="mail:missing-origin",
+        source_class="external_content",
+        content_digest=_digest("message"),
+        label=Label("untrusted"),
+    )
+    with pytest.raises(ValueError, match="source identifier"):
+        graph.add_lineage_node(root)
+
+
 def test_graph_rejects_unknown_parents_and_exposes_only_a_snapshot():
     graph = ProvenanceGraph()
     node = LineageNode(
