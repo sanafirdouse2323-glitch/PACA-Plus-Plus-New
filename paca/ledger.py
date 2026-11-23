@@ -182,8 +182,6 @@ class SQLiteOperationLedger:
                         expires_at REAL NOT NULL,
                         consumed_at REAL
                     );
-                    CREATE INDEX IF NOT EXISTS operations_task_created
-                        ON operations(task_scope, created_at);
                     """
                 )
                 self._validate_scope_schema(conn)
@@ -249,6 +247,10 @@ class SQLiteOperationLedger:
                     raise LedgerError("operation ledger schema version is unsupported")
 
             if version == 3 and not legacy_or_incomplete:
+                conn.execute(
+                    "CREATE INDEX IF NOT EXISTS operations_task_created "
+                    "ON operations(task_scope, created_at)"
+                )
                 conn.commit()
                 return
 
@@ -306,6 +308,10 @@ class SQLiteOperationLedger:
                 "issued_at REAL NOT NULL,"
                 "expires_at REAL NOT NULL,"
                 "consumed_at REAL)"
+            )
+            conn.execute(
+                "CREATE INDEX operations_task_created "
+                "ON operations(task_scope, created_at)"
             )
             conn.execute(
                 "CREATE INDEX operations_task_created "
