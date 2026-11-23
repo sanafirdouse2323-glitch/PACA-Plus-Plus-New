@@ -1,0 +1,43 @@
+name: PACA++ Formal Model
+
+on:
+  pull_request:
+    branches: [main, "security/**"]
+    paths:
+      - "models/**"
+      - "scripts/run_tlc.sh"
+      - ".github/workflows/formal.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  tlc:
+    name: TLA+ model checking
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Download and verify pinned TLA+ tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --location --silent --show-error \
+            https://github.com/tlaplus/tlaplus/releases/download/v1.7.4/tla2tools.jar \
+            --output /tmp/tla2tools-1.7.4.jar
+          echo "936a262061c914694dfd669a543be24573c45d5aa0ff20a8b96b23d01e050e88  /tmp/tla2tools-1.7.4.jar" \
+            | sha256sum --check
+
+      - name: Run bounded PACA++ authorization model
+        run: |
+          cd models
+          java -jar /tmp/tla2tools-1.7.4.jar PACAAuth.tla
