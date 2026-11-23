@@ -425,3 +425,22 @@ def test_populated_legacy_operation_history_fails_closed_without_tenant_mapping(
             "SELECT cap_id, task_id, request_digest FROM operations"
         ).fetchone()
     assert row == ("legacy-cap", "same-task", "old-digest")
+
+def test_operation_history_rejects_tenant_task_scope_tampering(tmp_path):
+    database = tmp_path / "tampered-history.sqlite3"
+    ledger = SQLiteOperationLedger(database)
+    capability = make_capability(
+        cap_id="history-integrity",
+        tenant="tenant-a",
+        task_id="task-a",
+    )
+    ledger.record_decision(
+        capability, "read_file", "digest-a", "deny", ("C1",), True,
+    )
+    with sqlite3.connect(database) as connection:
+        connection.execute(
+            "UPDATE operations SET tenant='tenant-b' WHERE cap_id='history-integrity'"
+        )
+
+    with pytest.raises(LedgerError, match="tenant/task scope"):
+        ledger.operations(tenant="tenant-b")
