@@ -48,7 +48,13 @@ def _snapshot_async_inputs(
 ) -> Tuple[Tuple[Any, ...], Dict[str, Any]]:
     """Detach LangGraph async-call inputs before handing blocking work to a thread."""
     try:
-        snapshot_args, snapshot_kwargs = copy.deepcopy((args, kwargs))
+        # NOT_PROVIDED is an identity sentinel in the LangGraph BaseStore
+        # contract. Preserve that singleton rather than deepcopying it into a
+        # distinct object that put() could misinterpret as an explicit TTL.
+        snapshot_args, snapshot_kwargs = copy.deepcopy(
+            (args, kwargs),
+            memo={id(NOT_PROVIDED): NOT_PROVIDED},
+        )
     except Exception as exc:
         raise MemoryAccessDenied(
             "asynchronous LangGraph store inputs cannot be safely snapshotted"
