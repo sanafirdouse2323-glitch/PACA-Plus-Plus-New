@@ -18,3 +18,4 @@ echo "$SHA256  $JAR" | sha256sum --check --status || {
 
 cd "$ROOT/models"
 java -jar "$JAR" PACAAuth.tla
+java -jar "$JAR" PACALifecycle.tla
