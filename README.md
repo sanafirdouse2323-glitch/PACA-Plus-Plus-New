@@ -23,7 +23,7 @@ Open `docs/index.html` for the checked-in historical interactive report (also de
 |---|---|---|
 | Task-bound, target-bound, expiring **capabilities** (default deny) | `runtime.py`, `monitor.py` C1/C2 | stale authority, goal hijack, cross-stage drift, cost DoS |
 | **Provenance labels and optional typed lineage** (object/version IDs, content digests, parent transformations, source metadata); unlabelled `Arg` values default to untrusted | `provenance.py` | provenance laundering, fragmentation, memory poisoning |
-| **Separate authority lineage** with immutable grant scope, purpose, parent, expiry and policy epoch; bound into request digests | `authority.py`, `runtime.py` | delegation drift, stale grant metadata and effect-token substitution |
+| **Separate authority lineage** with immutable grant scope, purpose, parent-chain digest, expiry and policy epoch; bound into request digests | `authority.py`, `runtime.py` | delegation drift, stale grant metadata and effect-token substitution |
 | Policy rules in the PACA DSL over those labels (packaged default: `paca/policies/agent_policy.paca`; identical example copy: `examples/agent_policy.paca`) | `engine.py`, `monitor.py` | indirect injection, exfiltration, confused deputy, SSRF, config tampering |
 | **Manifest pinning** (hash+version of each tool authorised for the task) | C3 | MCP poisoning/rug-pull, tool-selection hijack, supply chain |
 | **Delegation attenuation**, fan-out limit, quarantine after definitive denials | C8/C11/C12 | multi-agent escalation, worms, repeated denied actions |
