@@ -205,7 +205,15 @@ class PACAProvenancePostgresSaver(BaseCheckpointSaver):
     def _checkpoint_node(self, object_id: str, checkpoint_id: Optional[str]) -> Any:
         if checkpoint_id:
             return self.repository.get_version(object_id, checkpoint_id)
-        return self.repository.latest_node(object_id)
+        # PostgresSaver.get_tuple(config without checkpoint_id) selects
+        # ORDER BY checkpoint_id DESC LIMIT 1. Do not substitute SQLite
+        # insertion sequence: concurrent writes may commit in a different
+        # order from checkpoint IDs.
+        nodes = [
+            node for node in self.repository.list_nodes(object_id_prefix=object_id)
+            if node.object_id == object_id and not self.repository.is_revoked(node.node_id)
+        ]
+        return max(nodes, key=lambda node: node.version_id, default=None)
 
     @staticmethod
     def _provider_configurable(
