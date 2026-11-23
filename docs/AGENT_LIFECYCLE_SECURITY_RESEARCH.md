@@ -1,0 +1,282 @@
+# PACA++ New: Agent-Lifecycle Security Research Programme
+
+**Research scope:** security of LLM-based agents across their lifecycle.  
+**Repository boundary:** this document applies only to `PACA-Plus-Plus-New`. It does not define or implement the enterprise gateway project in the separate `PACA-Plus-Plus` repository.  
+**Research status:** proposed research architecture and work programme, not a completed implementation or validated security guarantee.  
+**Evidence cut-off:** 23 November 2026.
+
+## 1. Research objective
+
+PACA++ New studies how security-relevant information and authority propagate through an LLM agent over time. The target is not merely to decide whether an isolated tool call is allowed. It is to determine whether an agent's evolving state, memory, plans, delegated work, messages and proposed effects remain consistent with the user's authorised task and the system's current policy.
+
+The central problem is **lifecycle continuity**:
+
+- untrusted information can influence a plan without appearing in the final tool arguments;
+- a memory write can preserve an attack after the original input disappears;
+- a summary or transformation can obscure the source of a value;
+- a downstream agent can misinterpret data received from another agent as trusted instruction;
+- a capability can remain usable after the task, policy or delegation context that justified it has changed; and
+- an action can be authorised at planning time but executed later with changed arguments, state, recipient, tool implementation or policy.
+
+The research goal is to define, implement and evaluate a reference-monitor architecture that tracks both **information provenance** and **authority provenance** across those transitions, and re-evaluates usage constraints at each security-relevant transition.
+
+This is a systems-security problem. Model alignment, prompt wording and injection classifiers may be useful defence-in-depth, but they are not the authority boundary.
+
+## 2. What the existing PACA++ New repository actually contains
+
+The current codebase is a research prototype, not a complete agent runtime.
+
+| Existing component | Current role | Boundary that must not be overstated |
+|---|---|---|
+| `paca/provenance.py` | `Label`, `Arg`, and explicit `derive()` propagation for integrity, sensitivity, tenant and origin metadata | Propagation is explicit and adapter-dependent; it is not automatic tracking of every LLM context dependency |
+| `paca/runtime.py` | Action catalogue, request digest, capability and decision data structures | A declared action contract does not prove every real tool effect is represented |
+| `paca/monitor.py` | Policy checks for selected memory, tool, delegation, file and egress requests | The simulator/reference monitor does not mediate all stages of an arbitrary agent framework |
+| `paca/harness.py` | Deterministic scenario/session simulator; selected memory reads/writes and effects are modelled | `receive()` is a simulated input path, not a production inbound-message enforcement point; planning is not independently mediated |
+| `paca/integrations/agentdojo.py` | Adapter before AgentDojo function dispatch | It is an AgentDojo integration, not a universal executor or lifecycle hook |
+| `paca/integrations/agentdojo_workspace.py` | Task-scoped mapping for 14 workspace read/search operations | Mutating operations remain unsupported and fail closed |
+| `paca/integrations/agentdojo_benchmark.py` | Paired benchmark runner | Current scope is limited to compatible workspace tasks and configured model runs |
+| `paca/ledger.py` on the phase-1 branch | Optional SQLite persistence for capability and token state | Single-host shared-file coordination; not a multi-host service and not an agent memory-provenance store |
+| `paca/secure_io.py`, `paca/secure_network.py` on the phase-1 branch | Filesystem and connection-time network primitives | Not yet wired into every real connector or executor |
+| `models/PACAAuth.tla` on the phase-1 branch | Bounded abstract authorization protocol | Does not model the full lifecycle, memory poisoning, communication provenance, revocation propagation or implementation refinement |
+
+The current provenance model is a useful foundation: unlabelled `Arg` values default to untrusted, and `derive()` joins explicitly supplied labels. However, the label does not yet represent a full provenance graph, purpose, freshness, retention, revocation epoch or transformation record. The current capability contains task/action/target grants, expiry, budgets, tool pins and a parent identifier, but the complete lifecycle semantics for capability renewal, revocation, memory reuse and cross-agent handoff are not implemented.
+
+The phase-1 PR's SQLite ledger is not the same thing as the enterprise gateway's operation journal in the sibling repository. Here it is an optional persistence mechanism for the New monitor's capability and token state. It must remain subordinate to the agent-lifecycle research objective, not become the product's central research contribution.
+
+## 3. Research landscape and positioning
+
+The literature rules out several overly broad novelty claims.
+
+### 3.1 Tool-call privilege control and information-flow enforcement
+
+- **CaMeL, “Defeating Prompt Injections by Design”** separates trusted control flow from untrusted data, tracks value-level capabilities and checks data flows at tool calls. Its reported AgentDojo results and SaTML 2026 publication make it a direct comparator. PACA++ New must not claim to be the first capability- or provenance-aware agent monitor. [Paper](https://arxiv.org/abs/2503.18813) · [SaTML 2026 publication](https://ieeexplore.ieee.org/abstract/document/11691650/authors)
+- **Progent** generates and updates symbolic privilege policies and uses an SMT check to distinguish policy narrowing from expansion, enforcing monotonic confinement unless an expansion is approved. PACA++ New must not present dynamic tool-scope policy or monotonic privilege narrowing alone as novel. [Paper](https://arxiv.org/abs/2504.11703)
+- **AgentDojo** supplies a dynamic tool-using environment with 97 tasks and 629 security test cases; it is an evaluation baseline, not a complete lifecycle assurance proof. [NeurIPS 2024](https://papers.nips.cc/paper_files/paper/2024/hash/97091a5177d8dc64b1da8bf3e1f6fb54-Abstract-Datasets_and_Benchmarks_Track.html)
+- **Agent Security Bench (ASB)** covers multiple domains, tools, attack/defence methods and metrics, including memory and planning attacks. It is a complementary benchmark source. [ICLR 2025](https://mlanthology.org/iclr/2025/zhang2025iclr-agent/)
+- **AgentDyn** highlights that static tasks can under-test dynamic replanning, helpful third-party instructions and open-ended utility. It motivates dynamic, multi-step evaluation rather than relying only on fixed tool-call sequences. [2026 preprint](https://arxiv.org/abs/2602.03117)
+
+### 3.2 Persistent memory and delayed compromise
+
+- **AgentPoison** demonstrates backdoor attacks through poisoned long-term memory and knowledge bases. [NeurIPS 2024](https://proceedings.neurips.cc/paper_files/paper/2024/hash/eb113910e9c3f6242541c1652e30dfd6-Abstract-Conference.html)
+- **MPBench / “From Untrusted Input to Trusted Memory”** analyses four memory-write channels and six attack classes, and reports that prompt-injection defences do not adequately cover memory poisoning. It is a direct comparator for memory security. [2026 preprint](https://arxiv.org/abs/2606.04329)
+
+### 3.3 Multi-agent provenance and boundary laundering
+
+**“Can CaMeLs Talk?” (October 2026)** reports that individually protected agents do not automatically compose: untrusted data can be reinterpreted as trusted input at an agent boundary. Its multi-CaMeL protocol separates trusted instructions and untrusted data in inter-agent communication. PACA++ New must treat this as existing work and compare with it; it cannot claim first cross-agent provenance preservation. [2026 preprint](https://arxiv.org/abs/2610.05640)
+
+### 3.4 Lifecycle-wide evidence gaps
+
+A June 2026 survey of 247 papers identifies persistent state, information flow and delegated authority as interacting lifecycle concerns, and notes comparatively thin work on provenance, revocation, inter-agent trust and topology-aware containment. [Survey](https://arxiv.org/abs/2606.10749)
+
+A structured review published 10 November 2026 specifically examines authorization assurance for tool-using agents. Its corpus-bounded findings report gaps in evaluated revocation assurance, delegation containment, trajectory-wide effective privilege and the distinction between correct final state and correctly authorized execution. These findings are scoped to that review's corpus; they are not proof that no such work exists anywhere. [Review](https://link.springer.com/article/10.1007/s10207-026-01343-w)
+
+The OWASP Top 10 for Agentic Applications 2026 independently identifies goal hijack, tool misuse, identity/privilege abuse, supply-chain risks, memory/context poisoning, insecure inter-agent communication, cascading failures and rogue agents among its risk categories. [OWASP 2026](https://genai.owasp.org/top-10-for-agentic-applications-2026/)
+
+**Positioning conclusion:** “secure the whole agent lifecycle”, “use provenance”, “use capabilities”, and “mediate tool calls” are not, individually, novel contributions. A defensible research contribution must specify a narrower mechanism, its invariants, the lifecycle transitions it covers, and experiments that distinguish it from CaMeL, Progent, multi-CaMeL and memory-security baselines.
+
+## 4. Proposed research direction: provenance-conditioned authority continuity
+
+The working research direction is **UCAUM — Unified Continuous Authorisation and Usage-Control Model**. The name is a project label, not a claim of novelty or a standard.
+
+The candidate contribution is a formal and executable model in which information provenance and delegated authority are tracked as related but distinct histories. Every lifecycle transition that can change information, authority or an external effect is checked against the current task, principal, policy version and state.
+
+The specific hypothesis is:
+
+> A monitor that preserves provenance and authority lineage across memory reuse, planning, delegation and communication, and revalidates them at the point of each consequential transition, will prevent classes of delayed and cross-agent policy violations that are not detected by isolated tool-call checks, while retaining measurable benign-task utility.
+
+This hypothesis must be tested. It is not an established result.
+
+### 4.1 Two linked graphs, not one overloaded label
+
+**Information provenance graph.** Each data object has a stable object/version identifier and a lineage record describing:
+- source and authenticated source identity, where available;
+- source class and trust status (user instruction, organisation policy, external content, tool output, memory, peer-agent message, model-generated content);
+- tenant and sensitivity, including explicit unknown/mixed ownership;
+- parent objects and transformation events;
+- purpose, retention/expiry and freshness where the source provides meaningful semantics;
+- integrity/confidentiality labels and any explicit, authorised declassification event.
+
+**Authority lineage graph.** Each capability records:
+- authenticated principal/agent identity and tenant;
+- task and purpose;
+- permitted action/effect types and resource predicates;
+- constraints on data provenance and destinations;
+- parent capability and delegation chain;
+- expiry, use budget, policy epoch and revocation state;
+- required approval conditions and evidence identifiers.
+
+Do not conflate the two. Data being trusted does not grant authority; having authority does not make data trusted.
+
+### 4.2 Lifecycle state and transition checks
+
+Represent the runtime as a sequence of typed events:
+
+`e_t = (actor, stage, operation, object_versions, provenance_refs, capability_ref, policy_epoch, effect_ref, outcome)`
+
+The state is:
+
+`X_t = (P_t, A_t, M_t, D_t, C_t, E_t, R_t)`
+
+where `P` is provenance state, `A` is authority/delegation state, `M` is memory state, `D` is pending plan/decision state, `C` is communication state, `E` is the effect/operation history, and `R` is revocation/policy-version state.
+
+A transition is accepted only if its preconditions hold and the state update preserves the invariants. A model-generated plan is an untrusted proposal; it is never itself an authorization credential.
+
+| Lifecycle transition | Required security behaviour |
+|---|---|
+| Input and observation | Attach source identity and provenance before content enters the agent's usable context; distinguish trusted instructions from external data |
+| Retrieval and memory read | Authorise before releasing stored content; retrieve its original lineage and version; enforce tenant, purpose, freshness and revocation constraints |
+| Derivation and summarisation | Preserve dependency lineage; if dependencies cannot be established, use a conservative unknown/untrusted label rather than silently upgrading trust |
+| Memory write, compaction and proceduralisation | Treat all write channels as security-sensitive; record writer, source lineage, transformation, policy and task; prevent untrusted content from becoming privileged instruction or procedure |
+| Planning and action selection | Record plan provenance and dependencies; treat plans as proposals; re-evaluate the selected action rather than trusting the model's explanation |
+| Delegation | Issue a child capability no broader than the parent; bind it to the receiving agent, subtask, purpose, data constraints, expiry and revocation chain |
+| Inter-agent communication | Preserve authenticated sender, message type, provenance and authority separately; prevent data from becoming trusted instructions merely because an agent forwarded it |
+| Tool execution and external effect | Validate exact action, complete arguments, destination, resource version, tool identity, capability status and current policy immediately before the effect |
+| Revocation and recovery | Reject stale capabilities; propagate revocation through descendants; identify memory and derived objects affected by compromised sources; quarantine/re-evaluate rather than silently trusting old state |
+
+### 4.3 Candidate invariants
+
+These are proposed properties to formalise and test, not currently proven guarantees.
+
+1. **No provenance upgrade by transformation:** summarising, embedding, storing, retrieving or forwarding content does not increase its trust or erase its source lineage without an explicit, authorised declassification event.
+2. **Memory lineage preservation:** a memory read returns the stored object's current provenance and version; a missing or inconsistent record fails closed.
+3. **No authority from content:** external content, tool output, memory entries and peer-agent messages cannot mint or expand capabilities.
+4. **Delegation attenuation:** every child capability is a subset of the parent's authority under a clearly defined order over actions, resources, purpose, time and constraints.
+5. **Revocation closure:** after a capability or trust source is revoked, no descendant capability or derived state may authorise a protected effect unless a new trusted authorisation explicitly re-establishes it.
+6. **Plan is not permit:** a plan, chain-of-thought, tool suggestion or model assertion cannot substitute for an independently checked authorization decision.
+7. **Effect binding:** the executed operation must match the action, complete effect-relevant arguments, destination, tool identity, object versions and policy epoch that were checked.
+8. **Complete mediation within declared scope:** every path to each declared protected effect crosses an enforcement point; unknown or unmapped effect paths are denied or explicitly excluded from the claim.
+9. **Tenant and purpose isolation:** combining or relaying data cannot erase mixed/unknown tenant provenance or silently broaden the allowed purpose.
+10. **Recovery evidence:** after a suspected compromise, the system can identify affected lineage and authority descendants and can demonstrate containment/recovery outcomes.
+
+The partial order for delegation and the semantics of declassification need precise definitions before implementation. “Subset” over glob strings alone is not a sufficient formal definition.
+
+## 5. What is distinctive enough to investigate
+
+The strongest candidate is not another generic tool firewall. It is the interaction of:
+
+1. **Temporal provenance:** how the origin and validity of information survive memory writes, compaction, summarisation, retrieval and re-use across tasks.
+2. **Authority continuity:** how task-scoped authority is created, narrowed, delegated, renewed and revoked as the agent's state changes.
+3. **Cross-transition composition:** whether individually reasonable memory, tool, planning and communication controls still preserve their guarantees when composed.
+4. **Effect-level evidence:** whether a forbidden effect was actually prevented, not merely whether a policy returned deny or the final task state looked correct.
+
+The research should investigate delayed activation and cross-agent boundary laundering as first-class attack paths. It should not claim these attacks are new; it should define a unified state/authority model and test whether the model prevents them under explicit assumptions.
+
+## 6. Evaluation programme
+
+Use external benchmarks and a separately authored lifecycle extension. Do not rely on the repository's self-authored 30 attack simulations as the primary evidence.
+
+### 6.1 Baselines
+
+At minimum compare:
+- no defence / unguarded agent;
+- AgentDojo's built-in `tool_filter` where supported;
+- a least-privilege tool gate (including a faithful Progent-style comparator where feasible);
+- CaMeL where its architecture and task compatibility permit;
+- multi-CaMeL or its published protocol for inter-agent provenance scenarios;
+- PACA++ New ablations: provenance only, authority only, lifecycle checks without revocation, and the complete proposed model.
+
+State exactly which baselines are actually implemented. Do not label a simplified local approximation as the original system.
+
+### 6.2 Benchmark coverage
+
+- AgentDojo: tool-mediated indirect prompt injection and benign utility.
+- ASB: broader attack/defence categories, including memory and planning.
+- AgentDyn: dynamic replanning and helpful third-party instructions.
+- MPBench: memory-write channels and delayed memory poisoning.
+- MultiAgentDojo: multi-agent communication and boundary-laundering cases, subject to availability and reproducibility.
+- PACA++ New lifecycle extension: cross-session memory reuse, compaction/procedural memory, capability renewal/revocation, delegated subtask chains, message forwarding and policy changes mid-trajectory.
+
+Do not assume all benchmark packages or compatible task IDs are installed. Discover exact versions, interfaces and supported tasks before implementation.
+
+### 6.3 Required metrics
+
+Report at least:
+- unauthorized protected-effect rate and attack success rate;
+- benign task success and task utility under attack;
+- false blocks and unnecessary approval rate;
+- effective privilege over the full trajectory (granted, available, requested and exercised authority);
+- memory poisoning persistence and delayed-trigger success;
+- revocation latency and stale-authority success after revocation;
+- delegation escape/attenuation violations;
+- cross-agent provenance-loss/boundary-laundering rate;
+- recovery/quarantine coverage and time to containment;
+- policy latency, end-to-end latency and model/tool cost;
+- errors, timeouts, unsupported tasks and skipped samples.
+
+Use paired tasks, fixed model/version/configuration, repeated trials where stochasticity matters, confidence intervals and raw per-task traces. Separate security from utility. A correct final environment state is not enough: verify that identity, consent, ordering, policy version, delegation and approval were valid at the time of each effect.
+
+## 7. Formal and implementation plan
+
+### Phase A — Baseline audit and threat model
+- Freeze a precise lifecycle boundary and enumerate all data, state, authority and effect transitions.
+- Build an adapter coverage matrix for the simulator and AgentDojo.
+- Identify trusted computing base, attacker capabilities, non-goals and explicit exclusions.
+- Record the current monitor's exact checks and the gaps between simulator and real framework execution.
+
+### Phase B — Provenance and authority semantics
+- Define typed provenance records and stable object/version identifiers.
+- Define capability order, delegation attenuation, purpose constraints and policy epochs.
+- Define memory write/read/compaction/retrieval semantics and explicit declassification.
+- Add property-based tests for label joins, lineage preservation and authority narrowing.
+
+### Phase C — Lifecycle reference runtime
+- Add an instrumented lifecycle event interface for input, memory, planning, decision, delegation, communication, tool call, effect and recovery.
+- Enforce memory access before data release and memory write before persistence.
+- Treat plan output as a proposal and re-authorise the chosen action at execution.
+- Add authenticated agent identities and typed inter-agent envelopes; compare against multi-CaMeL rather than inventing a competing channel format without evidence.
+- Add revocation propagation and recovery/quarantine for dependent memory and delegated capabilities.
+- Keep filesystem/network helpers as effect-boundary components; integrate them only where the declared agent tools need them.
+
+### Phase D — Formal specification
+- Extend TLA+ (or a complementary formalism where appropriate) to model provenance objects, memory transitions, policy epochs, revocation, delegation graphs, inter-agent messages and effect commits.
+- Check invariants under concurrency, retries, crashes and stale-state transitions.
+- Add explicit adversarial actions: wrong tenant, altered digest, revoked parent, untrusted-to-trusted memory promotion, cross-agent relabelling, changed tool identity and bypass path.
+- Define refinement obligations linking each model transition to Python code and tests. TLC passing alone is not proof that the implementation refines the model.
+
+### Phase E — Adversarial evaluation
+- Reproduce selected public benchmark baselines first.
+- Add lifecycle-extension cases for delayed activation, multi-hop delegation, message forwarding, memory compaction and mid-task policy revocation.
+- Test direct bypasses around adapters, including alternate tools and framework paths.
+- Publish raw traces and a transparent coverage/limitations table.
+
+### Phase F — Assurance and release
+- Make claims only for instrumented paths and measured threat models.
+- Require independent review of the threat model, policy semantics, adapters and evaluation scripts.
+- Keep the reference/demo API explicitly separate from a trusted production authorization issuer or executor.
+
+## 8. Explicit non-goals and separation from the sibling repository
+
+PACA++ New is not the enterprise authorization gateway. It must not absorb the sibling project's FastAPI/OPA/PostgreSQL gateway, JWT/OIDC service, tenant RLS deployment, gateway UI, enterprise onboarding or production gateway roadmap.
+
+PACA++ New may use authenticated identity or an external protected resource as an assumption or integration boundary in experiments, but its research contribution is the agent's lifecycle state, provenance, authority, memory, communication, planning and effect transitions.
+
+The optional SQLite ledger, secure filesystem/network primitives and bounded authorization model on the phase-1 branch are supporting components only. They do not redefine the research objective. Avoid building a second enterprise gateway or a second generic transaction service here.
+
+## 9. Decision gates and claim discipline
+
+Do not call PACA++ New “complete lifecycle protection” until:
+- every in-scope lifecycle transition is inventoried and instrumented;
+- memory, communication, planning, delegation and effect bypasses have negative tests;
+- provenance and authority continuity survive restart and cross-agent handoffs;
+- revocation is tested against already-issued descendants and previously stored derived state;
+- benchmark baselines and lifecycle-specific attacks are reproduced;
+- formal properties are linked to implementation tests; and
+- the residual trusted components and excluded paths are documented.
+
+Until then, describe it as a **research prototype for provenance-aware, capability-based authorization across selected LLM-agent lifecycle boundaries**.
+
+## 10. Selected references
+
+1. Debenedetti et al., [AgentDojo: A Dynamic Environment to Evaluate Prompt Injection Attacks and Defenses for LLM Agents](https://papers.nips.cc/paper_files/paper/2024/hash/97091a5177d8dc64b1da8bf3e1f6fb54-Abstract-Datasets_and_Benchmarks_Track.html), NeurIPS 2024.
+2. Debenedetti et al., [Defeating Prompt Injections by Design (CaMeL)](https://arxiv.org/abs/2503.18813), 2025; SaTML 2026.
+3. Shi et al., [Progent: Programmable Privilege Control for LLM Agents](https://arxiv.org/abs/2504.11703), 2025.
+4. Zhang et al., [Agent Security Bench (ASB)](https://mlanthology.org/iclr/2025/zhang2025iclr-agent/), ICLR 2025.
+5. Chen et al., [AgentPoison: Red-teaming LLM Agents via Poisoning Memory or Knowledge Bases](https://proceedings.neurips.cc/paper_files/paper/2024/hash/eb113910e9c3f6242541c1652e30dfd6-Abstract-Conference.html), NeurIPS 2024.
+6. Li et al., [AgentDyn: A Dynamic Open-Ended Benchmark for Evaluating Prompt Injection Attacks](https://arxiv.org/abs/2602.03117), 2026.
+7. Dash et al., [From Untrusted Input to Trusted Memory: A Systematic Study of Memory Poisoning Attacks in LLM Agents](https://arxiv.org/abs/2606.04329), 2026.
+8. Ling et al., [Toward Secure LLM Agents: Threat Surfaces, Attacks, Defenses, and Evaluation](https://arxiv.org/abs/2606.10749), 2026.
+9. Peters-Gill et al., [Can CaMeLs Talk? Securing Multi-Agent Systems Against Indirect Prompt Injection Attacks](https://arxiv.org/abs/2610.05640), 2026.
+10. Elmasry, [Authorization assurance for tool-using LLM agents: a structured review of enforcement semantics and effect-level security evidence](https://link.springer.com/article/10.1007/s10207-026-01343-w), published 10 November 2026.
+11. OWASP, [Top 10 for Agentic Applications 2026](https://genai.owasp.org/top-10-for-agentic-applications-2026/).
+
+This is a selected, non-exhaustive reading list, not a systematic literature review. Novelty, completeness and comparative claims require further verification.
