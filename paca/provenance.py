@@ -201,6 +201,32 @@ class ProvenanceGraph:
     def get_node(self, node_id: str) -> Optional[LineageNode]:
         return self._lineage_nodes.get(node_id)
 
+    def ancestors(self, node_id: str) -> Tuple[LineageNode, ...]:
+        """Return the root-to-node lineage chain, deduplicating shared parents."""
+        if node_id not in self._lineage_nodes:
+            raise KeyError(node_id)
+        ordered: List[LineageNode] = []
+        visited = set()
+        visiting = set()
+
+        def visit(current_id: str) -> None:
+            if current_id in visiting:
+                raise RuntimeError("cycle detected in information-lineage graph")
+            if current_id in visited:
+                return
+            node = self._lineage_nodes.get(current_id)
+            if node is None:
+                raise ValueError("lineage graph contains a missing parent reference")
+            visiting.add(current_id)
+            for parent_id in node.parent_ids:
+                visit(parent_id)
+            visiting.remove(current_id)
+            visited.add(current_id)
+            ordered.append(node)
+
+        visit(node_id)
+        return tuple(ordered)
+
     def add_lineage_node(self, node: LineageNode) -> LineageNode:
         if not isinstance(node, LineageNode):
             raise TypeError("node must be a LineageNode")
