@@ -1,6 +1,6 @@
 # Direct-bypass evaluation boundary
 
-Scope: PACA++ New only. This is a boundary inventory and a set of deliberate negative controls. It does not claim that arbitrary agent execution is contained.
+Scope: PAC++ New only. This is a boundary inventory and a set of deliberate negative controls. It does not claim that arbitrary agent execution is contained.
 
 | Execution path | What the PACA adapter mediates | Direct bypass that remains |
 |---|---|---|
