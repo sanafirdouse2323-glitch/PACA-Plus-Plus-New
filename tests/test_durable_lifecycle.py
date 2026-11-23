@@ -2356,3 +2356,32 @@ def test_langgraph_batch_namespace_filters_run_before_metadata_authorization(tmp
     # restricted namespace, so the full listing must fail closed.
     with pytest.raises(MemoryAccessDenied, match="metadata policy"):
         store.batch([ListNamespacesOp()])
+
+@pytest.mark.parametrize(
+    ("column", "tampered_value", "lookup_object", "lookup_version"),
+    [
+        ("object_id", "mem/relocated-by-sql", "mem/relocated-by-sql", "v1"),
+        ("version_id", "v999", "mem/source-1", "v999"),
+    ],
+)
+def test_provenance_repository_rejects_indexed_identity_column_tampering(
+    tmp_path, column, tampered_value, lookup_object, lookup_version,
+):
+    env = _environment(tmp_path)
+    source = _ingest(env, {"text": "immutable indexed identity"})
+    node_id = next(iter(source.lineage_refs))
+
+    # SQL lookup columns are used for object/version selection, so they must
+    # agree with the immutable canonical record and its node digest.
+    with sqlite3.connect(env["repo"].database) as connection:
+        connection.execute(
+            f"UPDATE lineage_nodes SET {column}=? WHERE node_id=?",
+            (tampered_value, node_id),
+        )
+
+    with pytest.raises(LineageIntegrityError, match="indexed object/version columns"):
+        env["repo"].get_node(node_id)
+    with pytest.raises(LineageIntegrityError, match="indexed object/version columns"):
+        env["repo"].get_version(lookup_object, lookup_version)
+    with pytest.raises(LineageIntegrityError, match="indexed object/version columns"):
+        env["repo"].list_nodes()
