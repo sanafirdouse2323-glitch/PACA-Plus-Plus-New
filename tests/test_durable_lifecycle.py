@@ -1826,3 +1826,103 @@ def test_runtime_freezes_authorized_request_before_monitor_and_executor(tmp_path
     assert len(executed) == 1
     assert executed[0] is not original
     assert executed[0].args["path"].value == "/acme/public/report.txt"
+
+def test_langchain_middleware_blocks_tool_call_mutated_after_authorization(tmp_path):
+    pytest.importorskip("langgraph")
+    pytest.importorskip("langchain")
+    from paca.integrations.langgraph import PACALangChainToolMiddleware
+
+    env = _environment(tmp_path)
+    capability = env["issuer"].verify(env["root"].token).capability
+    tool_request = SimpleNamespace(
+        tool_call={
+            "name": "read_file",
+            "args": {"path": "/acme/public/report.txt"},
+            "id": "mutated-after-auth",
+        },
+        state={},
+        runtime=None,
+        tool=SimpleNamespace(name="read_file"),
+    )
+
+    class MutatingMonitor:
+        def decide(self, request):
+            return Decision("allow", digest=request.digest)
+
+        def verify(self, request, decision):
+            # Simulate a mutable framework request being changed after the PACA
+            # decision but before the tool handler receives it.
+            tool_request.tool_call["args"]["path"] = "/acme/private/secrets.txt"
+            return decision.digest == request.digest
+
+    runtime = PACAAgentRuntime(
+        env["issuer"], env["memory"], MutatingMonitor(), env["messages"],
+    )
+    middleware = PACALangChainToolMiddleware(
+        runtime,
+        capability_token_provider=lambda _request: env["root"].token,
+        tool_manifest_provider=lambda _tool: _read_file_tool(),
+        request_factory=lambda _request: Request(
+            "read_file",
+            {"path": Arg(
+                "/acme/public/report.txt",
+                Label("trusted", tenant="acme"),
+            )},
+            capability,
+            1,
+            tool=_read_file_tool(),
+        ),
+    )
+    handled = []
+    with pytest.raises(MemoryAccessDenied, match="changed after PACA authorization"):
+        middleware.wrap_tool_call(
+            tool_request,
+            lambda original: handled.append(original) or "unsafe",
+        )
+    assert handled == []
+
+
+def test_langchain_middleware_rejects_request_factory_mutating_tool_args(tmp_path):
+    pytest.importorskip("langgraph")
+    pytest.importorskip("langchain")
+    from paca.integrations.langgraph import PACALangChainToolMiddleware
+
+    env = _environment(tmp_path)
+    capability = env["issuer"].verify(env["root"].token).capability
+    tool_request = SimpleNamespace(
+        tool_call={
+            "name": "read_file",
+            "args": {"path": "/acme/public/report.txt"},
+            "id": "mutated-by-factory",
+        },
+        state={},
+        runtime=None,
+        tool=SimpleNamespace(name="read_file"),
+    )
+
+    def request_factory(request):
+        request.tool_call["args"]["path"] = "/acme/private/secrets.txt"
+        return Request(
+            "read_file",
+            {"path": Arg(
+                "/acme/public/report.txt",
+                Label("trusted", tenant="acme"),
+            )},
+            capability,
+            1,
+            tool=_read_file_tool(),
+        )
+
+    middleware = PACALangChainToolMiddleware(
+        _allowing_runtime(env),
+        capability_token_provider=lambda _request: env["root"].token,
+        tool_manifest_provider=lambda _tool: _read_file_tool(),
+        request_factory=request_factory,
+    )
+    handled = []
+    with pytest.raises(MemoryAccessDenied, match="changed while its PACA request"):
+        middleware.wrap_tool_call(
+            tool_request,
+            lambda original: handled.append(original) or "unsafe",
+        )
+    assert handled == []
