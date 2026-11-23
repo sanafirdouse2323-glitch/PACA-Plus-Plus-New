@@ -1,4 +1,4 @@
-name: PACA++ CI
+name: PAC++ New CI
 
 on:
   push:
@@ -69,7 +69,7 @@ jobs:
           python -m venv /tmp/paca-wheel-env
           /tmp/paca-wheel-env/bin/pip install dist/*.whl "fastapi>=0.110.0" "uvicorn[standard]>=0.30.0"
           cd /tmp
-          /tmp/paca-wheel-env/bin/python -c "from paca.monitor import Monitor; m = Monitor(); assert m.rules.policies; from paca_executor import app; assert app.title == 'PACA++ Reference Decision API'"
+          /tmp/paca-wheel-env/bin/python -c "from paca.monitor import Monitor; m = Monitor(); assert m.rules.policies; from paca_executor import app; assert app.title == 'PAC++ New Reference Decision API'"
 
 
   agentdojo-integration:
@@ -83,7 +83,7 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Install PACA++ and pinned AgentDojo integration dependency
+      - name: Install PAC++ New and pinned AgentDojo integration dependency
         run: |
           python -m pip install --upgrade pip
           pip install -e ".[dev,agentdojo]"
@@ -156,7 +156,7 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Install PACA++ and pinned AgentDojo dependency
+      - name: Install PAC++ New and pinned AgentDojo dependency
         run: |
           python -m pip install --upgrade pip
           pip install -e ".[dev,agentdojo]"
@@ -202,7 +202,7 @@ jobs:
           print("Preflight passed; no model call was made in this step.")
           PY
 
-      - name: Run matched AgentDojo baseline, tool_filter, and PACA++ benchmark
+      - name: Run matched AgentDojo baseline, tool_filter, and PAC++ New benchmark
         if: steps.credential.outputs.configured == 'true'
         run: |
           injection_ids="$(cat /tmp/selected-compatible-injection-ids.txt)"
@@ -309,7 +309,7 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Install PACA++ New with pinned LangGraph and LangChain integration
+      - name: Install PAC++ New New with pinned LangGraph and LangChain integration
         run: |
           python -m pip install --upgrade pip
           pip install -e ".[dev,langgraph]"
