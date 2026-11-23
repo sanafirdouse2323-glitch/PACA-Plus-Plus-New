@@ -584,7 +584,6 @@ class HMACAgentMessageCodec:
     ) -> str:
         if not isinstance(payload, Arg) or not payload.lineage_refs or payload.lineage_incomplete:
             raise MemoryAccessDenied("inter-agent messages require complete explicit provenance")
-        self._assert_payload_matches_lineage(payload.value, payload.lineage_refs)
         signed = self.authority.verify(capability_token)
         authority = signed.capability.authority_lineage
         if authority is None:
@@ -599,6 +598,9 @@ class HMACAgentMessageCodec:
         send_targets = dict(authority.grants).get("send_agent_message", ())
         if not any(grant_pattern_is_subset(recipient, pattern) for pattern in send_targets):
             raise MemoryAccessDenied("sender capability does not authorise this recipient")
+        # Do not perform lineage existence/digest lookups until the sender identity
+        # and recipient grant have been authenticated.
+        self._assert_payload_matches_lineage(payload.value, payload.lineage_refs)
         for node_id in payload.lineage_refs:
             node = self.repository.get_node(node_id)
             if node is None:
