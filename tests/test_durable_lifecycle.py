@@ -425,6 +425,28 @@ def test_authority_parent_record_tampering_invalidates_child_chain(tmp_path):
         env["issuer"].verify(child.token)
 
 
+def test_authority_parent_edge_column_tampering_invalidates_child_chain(tmp_path):
+    env = _environment(tmp_path)
+    child = env["issuer"].issue(
+        parent_token=env["root"].token,
+        principal="worker-b",
+        grants={"mem_read": ("mem/*",), "mem_write": ("mem/*",)},
+        expires_at=1_800,
+        max_calls=20,
+        max_fanout=2,
+    )
+    with sqlite3.connect(env["registry"].database) as connection:
+        connection.execute(
+            "UPDATE authority_records SET parent_id=NULL WHERE authority_id=?",
+            (child.capability.cap_id,),
+        )
+
+    # The immutable JSON record still names the parent. The SQL edge is consumed
+    # by the recursive revocation query, so an inconsistent edge must fail closed.
+    with pytest.raises(CapabilityAuthenticationError):
+        env["issuer"].verify(child.token)
+
+
 def test_parent_authority_revocation_invalidates_delegated_descendants(tmp_path):
     env = _environment(tmp_path)
     child = env["issuer"].issue(
