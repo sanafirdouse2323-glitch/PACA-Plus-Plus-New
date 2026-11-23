@@ -192,6 +192,74 @@ class PACAProvenancePostgresSaver(BaseCheckpointSaver):
             return self.repository.get_version(object_id, checkpoint_id)
         return self.repository.latest_node(object_id)
 
+    @staticmethod
+    def _provider_configurable(
+        config: Any,
+        *,
+        expected_thread_id: str,
+        expected_namespace: str,
+        expected_checkpoint_id: Optional[str] = None,
+    ) -> Mapping[str, Any]:
+        if not isinstance(config, Mapping):
+            raise MemoryIntegrityError("PostgreSQL returned a checkpoint config with an invalid shape")
+        configurable = config.get("configurable")
+        if not isinstance(configurable, Mapping):
+            raise MemoryIntegrityError("PostgreSQL returned a checkpoint config without configurable identity")
+        if (
+            configurable.get("thread_id") != expected_thread_id
+            or configurable.get("checkpoint_ns", "") != expected_namespace
+        ):
+            raise MemoryIntegrityError("PostgreSQL checkpoint config escaped its authenticated thread namespace")
+        if expected_checkpoint_id is not None and (
+            configurable.get("checkpoint_id") != expected_checkpoint_id
+        ):
+            raise MemoryIntegrityError("PostgreSQL checkpoint ID differs from authorized PACA evidence")
+        checkpoint_id = configurable.get("checkpoint_id")
+        if checkpoint_id is not None and (
+            not isinstance(checkpoint_id, str) or not checkpoint_id
+        ):
+            raise MemoryIntegrityError("PostgreSQL returned an invalid checkpoint identifier")
+        return configurable
+
+    def _assert_provider_tuple(
+        self,
+        result: CheckpointTuple,
+        *,
+        tenant: str,
+        thread_id: str,
+        namespace: str,
+        node: Any,
+    ) -> None:
+        provider_thread_id = _provider_thread_id(tenant, thread_id)
+        self._provider_configurable(
+            result.config,
+            expected_thread_id=provider_thread_id,
+            expected_namespace=namespace,
+            expected_checkpoint_id=node.version_id,
+        )
+        expected_parent_ids = {
+            parent.version_id
+            for parent_id in node.parent_ids
+            if (parent := self.repository.get_node(parent_id)) is not None
+            and parent.object_id == node.object_id
+        }
+        if result.parent_config is None:
+            if expected_parent_ids:
+                raise MemoryIntegrityError(
+                    "PostgreSQL omitted the parent checkpoint recorded in PACA lineage"
+                )
+            return
+        parent_configurable = self._provider_configurable(
+            result.parent_config,
+            expected_thread_id=provider_thread_id,
+            expected_namespace=namespace,
+        )
+        parent_id = parent_configurable.get("checkpoint_id")
+        if not isinstance(parent_id, str) or parent_id not in expected_parent_ids:
+            raise MemoryIntegrityError(
+                "PostgreSQL parent checkpoint does not match the immutable PACA parent lineage"
+            )
+
     def _translate_config(self, config: Mapping[str, Any], original_thread_id: str) -> dict[str, Any]:
         value = dict(config)
         configurable = dict(value.get("configurable", {}))
@@ -223,6 +291,10 @@ class PACAProvenancePostgresSaver(BaseCheckpointSaver):
 
         dependencies = tuple(self._provenance_provider(config, checkpoint, metadata))
         parent_id = config.get("configurable", {}).get("checkpoint_id")
+        if parent_id is not None and (
+            not isinstance(parent_id, str) or not parent_id
+        ):
+            raise MemoryAccessDenied("parent checkpoint identifier is invalid")
         if parent_id:
             parent = self.repository.get_version(object_id, parent_id)
             if parent is None:
@@ -255,6 +327,18 @@ class PACAProvenancePostgresSaver(BaseCheckpointSaver):
         # fails, the PACA record is an orphan and reads fail closed.
         provider_config["configurable"]["checkpoint_ns"] = namespace
         saved = self.__delegate.put(provider_config, checkpoint, metadata, new_versions)
+        self._provider_configurable(
+            saved,
+            expected_thread_id=provider_config["configurable"]["thread_id"],
+            expected_namespace=namespace,
+            expected_checkpoint_id=checkpoint_id,
+        )
+        self.memory._verified_context(
+            token, "mem_write", object_id, self.purpose,
+        )
+        self.memory.registry.assert_active(
+            self.memory.authority.verify(token).capability.cap_id
+        )
         return self._translate_config(saved, thread_id)
 
     def _checkpoint_for_write(
@@ -493,6 +577,13 @@ class PACAProvenancePostgresSaver(BaseCheckpointSaver):
         result = self.__delegate.get_tuple(provider_config)
         if result is None:
             raise MemoryIntegrityError("PACA checkpoint evidence exists but PostgreSQL has no matching row")
+        self._assert_provider_tuple(
+            result,
+            tenant=tenant,
+            thread_id=thread_id,
+            namespace=namespace,
+            node=node,
+        )
         if not isinstance(expected, Mapping):
             raise MemoryIntegrityError("PACA checkpoint evidence envelope is invalid")
         stored = self._decode_payload(expected)
@@ -507,6 +598,12 @@ class PACAProvenancePostgresSaver(BaseCheckpointSaver):
             raise MemoryIntegrityError("PostgreSQL checkpoint metadata differs from authorized PACA evidence")
         self._assert_pending_writes_match(
             token, tenant, thread_id, namespace, node.version_id, result.pending_writes,
+        )
+        self.memory.revalidate_read_access(
+            object_id,
+            node.version_id,
+            purpose=self.purpose,
+            capability_token=token,
         )
         return self._translate_tuple(result, thread_id)
 
@@ -528,13 +625,21 @@ class PACAProvenancePostgresSaver(BaseCheckpointSaver):
             before_id = before.get("configurable", {}).get("checkpoint_id")
             if not isinstance(before_id, str) or not before_id:
                 raise MemoryAccessDenied("checkpoint list cursor is invalid")
+        # list_nodes preserves durable insertion order (SQLite seq), whereas
+        # checkpoint IDs are opaque identifiers and are not lexically ordered.
         nodes = [
             node for node in self.repository.list_nodes(object_id_prefix=object_id)
             if node.object_id == object_id and not self.repository.is_revoked(node.node_id)
         ]
-        nodes.sort(key=lambda item: item.version_id, reverse=True)
+        nodes.reverse()
         if before_id:
-            nodes = [item for item in nodes if item.version_id < before_id]
+            before_index = next(
+                (index for index, item in enumerate(nodes) if item.version_id == before_id),
+                None,
+            )
+            if before_index is None:
+                raise MemoryAccessDenied("checkpoint list cursor is outside the authorized evidence history")
+            nodes = nodes[before_index + 1:]
         if limit is not None and limit <= 0:
             return
         emitted = 0
@@ -564,20 +669,31 @@ class PACAProvenancePostgresSaver(BaseCheckpointSaver):
             authority = signed.capability.authority_lineage
             if authority is None:
                 raise MemoryAccessDenied("checkpoint capability has no authority lineage")
-            prefix = _thread_prefix(authority.tenant, thread_id)
+            checkpoint_prefix = _thread_prefix(authority.tenant, thread_id)
+            writes_prefix = (
+                "mem/checkpoint-writes/" + _digest(authority.tenant) + "/"
+                + _digest(thread_id) + "/"
+            )
             scope = self.memory._verified_context(
-                token, "mem_delete", prefix, self.purpose,
+                token, "mem_delete", checkpoint_prefix, self.purpose,
+            )
+            # Pending-write evidence lives under a separate object namespace and
+            # must have its own explicit deletion grant as well.
+            self.memory._verified_context(
+                token, "mem_delete", writes_prefix, self.purpose,
             )
             self.memory._consume_budget(scope)
+            for prefix in (checkpoint_prefix, writes_prefix):
+                for node in self.repository.list_nodes(object_id_prefix=prefix):
+                    if not self.repository.is_revoked(node.node_id):
+                        self.repository.revoke_lineage(
+                            node.node_id, "LangGraph checkpoint thread deleted",
+                        )
+            self.memory.registry.assert_active(authority.authority_id)
         except MemoryAccessDenied:
             raise
         except Exception as exc:
             raise MemoryAccessDenied("checkpoint deletion authority validation failed") from exc
-        for node in self.repository.list_nodes(object_id_prefix=prefix):
-            if not self.repository.is_revoked(node.node_id):
-                self.repository.revoke_lineage(
-                    node.node_id, "LangGraph checkpoint thread deleted",
-                )
         self.__delegate.delete_thread(_provider_thread_id(authority.tenant, thread_id))
 
     def get_next_version(self, current: Optional[str], channel: Optional[str]) -> str:
