@@ -134,6 +134,7 @@ class Request:
                 "value": canonical(arg.value),
                 "label": label_data(arg.label),
                 "lineage_refs": sorted(arg.lineage_refs),
+                "lineage_incomplete": arg.lineage_incomplete,
             }
 
         self.cap.validate_authority_lineage()
