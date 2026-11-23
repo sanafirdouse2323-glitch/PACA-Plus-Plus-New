@@ -180,6 +180,14 @@ class MemoryAccessContext:
     max_calls: int
 
 
+@dataclass(frozen=True)
+class _AuthorizedMemoryReference:
+    context: MemoryAccessContext
+    node: LineageNode
+    ancestry: Tuple[LineageNode, ...]
+    authority_ids: Tuple[str, ...]
+
+
 class TrustedMemoryAdapter:
     """Memory API that enforces metadata and authority checks before value release."""
 
@@ -301,6 +309,133 @@ class TrustedMemoryAdapter:
             raise MemoryAccessDenied(
                 "memory authority was revoked during retrieval"
             ) from exc
+
+    @staticmethod
+    def _assert_label_covers_lineage(
+        label: Label,
+        ancestry: Tuple[LineageNode, ...],
+    ) -> None:
+        """Reject request labels that hide any restriction in durable ancestry."""
+        if not isinstance(label, Label):
+            raise MemoryAccessDenied("lineage-bound request label is invalid")
+        for ancestor in ancestry:
+            source = ancestor.label
+            if source.integrity == "untrusted" and label.integrity != "untrusted":
+                raise MemoryAccessDenied("request label upgrades untrusted lineage integrity")
+            if label.sensitivity < source.sensitivity:
+                raise MemoryAccessDenied("request label lowers lineage sensitivity")
+            if not source.origins.issubset(label.origins):
+                raise MemoryAccessDenied("request label omits lineage origins")
+            if not source.tenants.issubset(label.tenants):
+                raise MemoryAccessDenied("request label omits lineage tenant ownership")
+            if source.tenant_unknown and not label.tenant_unknown:
+                raise MemoryAccessDenied("request label hides unknown-tenant lineage")
+
+    def authorize_argument(
+        self,
+        argument: Arg,
+        *,
+        purpose: str,
+        capability_token: str,
+    ) -> Tuple[_AuthorizedMemoryReference, ...]:
+        """Validate request argument bytes against the exact durable lineage node.
+
+        An Arg with no lineage references is an untracked literal/input. It remains
+        dependent on the trusted ingress/application labeling boundary. Known
+        incomplete or multi-reference uncommitted derivations fail closed.
+        """
+        if not isinstance(argument, Arg):
+            raise MemoryAccessDenied("effect argument is not a typed PACA Arg")
+        if argument.lineage_incomplete:
+            raise MemoryAccessDenied("effect argument has incomplete information lineage")
+        if not argument.lineage_refs:
+            return ()
+        refs = tuple(argument.lineage_refs)
+        if len(refs) != 1:
+            raise MemoryAccessDenied(
+                "effect argument must bind to one persisted value/version; "
+                "persist combined derivations before use"
+            )
+        node = self.repository.get_node(refs[0])
+        if node is None:
+            raise MemoryAccessDenied("effect argument references unknown information lineage")
+        context, verified, ancestry, authority_ids = self._authorised_node(
+            node.object_id,
+            node.version_id,
+            purpose=purpose,
+            capability_token=capability_token,
+        )
+        if verified.node_id != refs[0]:
+            raise MemoryAccessDenied("effect argument lineage identity does not match the stored node")
+        try:
+            digest = hashlib.sha256(canonical_value_bytes(argument.value)).hexdigest()
+        except TypeError as exc:
+            raise MemoryAccessDenied(
+                "effect argument is not canonical JSON bound to its lineage"
+            ) from exc
+        if not hmac.compare_digest(digest, verified.content_digest):
+            raise MemoryAccessDenied(
+                "effect argument bytes do not match their immutable lineage digest"
+            )
+        self._assert_label_covers_lineage(argument.label, ancestry)
+        self._consume_budget(context)
+        access = _AuthorizedMemoryReference(
+            context, verified, ancestry, authority_ids,
+        )
+        self._recheck_read_authority(context, ancestry, authority_ids)
+        return (access,)
+
+    def authorize_reference(
+        self,
+        node_id: str,
+        *,
+        label: Label,
+        purpose: str,
+        capability_token: str,
+    ) -> _AuthorizedMemoryReference:
+        """Authorize a resource-lineage reference and its externally supplied label."""
+        if not isinstance(node_id, str) or not node_id:
+            raise MemoryAccessDenied("resource lineage reference is invalid")
+        node = self.repository.get_node(node_id)
+        if node is None:
+            raise MemoryAccessDenied("resource references unknown information lineage")
+        context, verified, ancestry, authority_ids = self._authorised_node(
+            node.object_id,
+            node.version_id,
+            purpose=purpose,
+            capability_token=capability_token,
+        )
+        if verified.node_id != node_id:
+            raise MemoryAccessDenied("resource lineage identity does not match the stored node")
+        self._assert_label_covers_lineage(label, ancestry)
+        self._consume_budget(context)
+        access = _AuthorizedMemoryReference(
+            context, verified, ancestry, authority_ids,
+        )
+        self._recheck_read_authority(context, ancestry, authority_ids)
+        return access
+
+    def revalidate_authorized_references(
+        self,
+        accesses: Iterable[_AuthorizedMemoryReference],
+        *,
+        capability_token: str,
+        purpose: str,
+    ) -> None:
+        """Re-run policy, authority and revocation checks immediately before an effect."""
+        for access in accesses:
+            context, node, ancestry, authority_ids = self._authorised_node(
+                access.node.object_id,
+                access.node.version_id,
+                purpose=purpose,
+                capability_token=capability_token,
+            )
+            if (
+                node.node_id != access.node.node_id
+                or context.authority_id != access.context.authority_id
+            ):
+                raise MemoryAccessDenied("effect lineage authorization changed before execution")
+            self._recheck_read_authority(context, ancestry, authority_ids)
 
     def authorize_metadata(
         self,
