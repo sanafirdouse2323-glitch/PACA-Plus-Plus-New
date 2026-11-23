@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import hashlib
+import hmac
 from types import SimpleNamespace
 import json
 import sqlite3
@@ -520,6 +522,43 @@ def test_inter_agent_envelope_authenticates_both_sides_and_preserves_lineage(tmp
     assert opened.value == payload.value
     assert opened.label == payload.label
     assert opened.lineage_refs == payload.lineage_refs
+
+    # Reusing a valid source reference for different caller-supplied bytes must
+    # not inherit that source's integrity/sensitivity label.
+    forged_payload = Arg(
+        {"text": "changed after ingestion"},
+        payload.label,
+        payload.lineage_refs,
+        False,
+    )
+    with pytest.raises(MemoryAccessDenied, match="digest"):
+        env["messages"].seal(
+            forged_payload,
+            sender="agent-a",
+            recipient="worker-b",
+            capability_token=env["root"].token,
+        )
+
+    # Also exercise receiver-side verification against a correctly signed but
+    # internally inconsistent envelope, as can occur with a compromised sender.
+    body_part_valid, _signature = sealed.split(".")
+    padded = body_part_valid + "=" * (-len(body_part_valid) % 4)
+    body = json.loads(base64.urlsafe_b64decode(padded))
+    body["value"] = {"text": "changed inside signed envelope"}
+    encoded_body = json.dumps(
+        body, sort_keys=True, separators=(",", ":"), ensure_ascii=False,
+        allow_nan=False,
+    ).encode("utf-8")
+    forged_signature = hmac.new(
+        env["messages"]._key, encoded_body, hashlib.sha256,
+    ).digest()
+    forged_token = (
+        base64.urlsafe_b64encode(encoded_body).rstrip(b"=").decode("ascii")
+        + "."
+        + base64.urlsafe_b64encode(forged_signature).rstrip(b"=").decode("ascii")
+    )
+    with pytest.raises(MemoryAccessDenied, match="digest"):
+        env["messages"].open(forged_token, recipient_token=recipient.token)
 
     body_part, signature_part = sealed.split(".")
     body_part = ("A" if body_part[0] != "A" else "B") + body_part[1:]
