@@ -1639,3 +1639,190 @@ def test_derived_memory_cannot_bypass_application_metadata_policy(tmp_path):
             capability_token=env["root"].token,
         )
     assert env["repo"].get_version("mem/policy-denied-derived", "v1") is None
+
+def _allowing_runtime(env):
+    class AllowMonitor:
+        def decide(self, request):
+            return Decision("allow", digest=request.digest)
+
+        def verify(self, request, decision):
+            return decision.digest == request.digest
+
+    return PACAAgentRuntime(
+        env["issuer"], env["memory"], AllowMonitor(), env["messages"],
+    )
+
+
+def test_runtime_blocks_forged_argument_bytes_reusing_real_lineage(tmp_path):
+    env = _environment(tmp_path)
+    source = env["connector"].ingest(
+        "/acme/public/report.txt",
+        object_id="mem/effect-path",
+        version_id="v1",
+        purpose="prepare-report",
+        capability_token=env["root"].token,
+    )
+    forged = Arg(
+        "/acme/private/secrets.txt",
+        source.label,
+        source.lineage_refs,
+        False,
+    )
+    request = Request(
+        "read_file",
+        {"path": forged},
+        env["issuer"].verify(env["root"].token).capability,
+        1,
+        tool=_read_file_tool(),
+    )
+    runtime = _allowing_runtime(env)
+    executions = []
+
+    with pytest.raises(MemoryAccessDenied, match="bytes do not match"):
+        runtime.execute_effect(
+            env["root"].token,
+            request,
+            lambda snapshot: executions.append(snapshot) or "read",
+        )
+    assert executions == []
+
+
+def test_runtime_blocks_argument_label_downgrade_against_lineage(tmp_path):
+    env = _environment(tmp_path)
+    source = env["connector"].ingest(
+        "/acme/public/report.txt",
+        object_id="mem/effect-path-label",
+        version_id="v1",
+        purpose="prepare-report",
+        capability_token=env["root"].token,
+    )
+    downgraded = Arg(
+        source.value,
+        Label("trusted", sensitivity=0, tenant="acme"),
+        source.lineage_refs,
+        False,
+    )
+    request = Request(
+        "read_file",
+        {"path": downgraded},
+        env["issuer"].verify(env["root"].token).capability,
+        1,
+        tool=_read_file_tool(),
+    )
+    executions = []
+
+    with pytest.raises(MemoryAccessDenied, match="upgrades untrusted"):
+        _allowing_runtime(env).execute_effect(
+            env["root"].token,
+            request,
+            lambda snapshot: executions.append(snapshot) or "read",
+        )
+    assert executions == []
+
+
+def test_runtime_rejects_effect_using_source_from_revoked_authority(tmp_path):
+    env = _environment(tmp_path)
+    source = _ingest(env, "/acme/public/report.txt", object_id="mem/effect-revoked")
+    independent = env["issuer"].issue(
+        principal="independent-reader",
+        tenant="acme",
+        task_id="task-1",
+        purpose="prepare-report",
+        grants={
+            "mem_read": ("mem/*",),
+            "read_file": ("/acme/*",),
+        },
+        expires_at=1_900,
+        max_calls=20,
+        tool_pins={"read_file": _read_file_tool().hash},
+    )
+    env["registry"].revoke(
+        env["root"].capability.cap_id,
+        "source authority revoked before effect",
+    )
+    request = Request(
+        "read_file",
+        {"path": source},
+        env["issuer"].verify(independent.token).capability,
+        1,
+        tool=_read_file_tool(),
+    )
+    executions = []
+
+    with pytest.raises(MemoryAccessDenied, match="authority"):
+        _allowing_runtime(env).execute_effect(
+            independent.token,
+            request,
+            lambda snapshot: executions.append(snapshot) or "read",
+        )
+    assert executions == []
+
+
+def test_runtime_resource_lineage_must_be_authorized_and_labelled(tmp_path):
+    env = _environment(tmp_path)
+    source = _ingest(env, {"text": "restricted resource metadata"})
+    source_id = next(iter(source.lineage_refs))
+    request = Request(
+        "read_file",
+        {
+            "path": Arg(
+                "/acme/public/report.txt",
+                Label("trusted", tenant="acme"),
+            )
+        },
+        env["issuer"].verify(env["root"].token).capability,
+        1,
+        tool=_read_file_tool(),
+        resource=Label("trusted", sensitivity=0, tenant="acme"),
+        resource_lineage_refs=frozenset({source_id}),
+    )
+    executions = []
+
+    with pytest.raises(MemoryAccessDenied, match="upgrades untrusted"):
+        _allowing_runtime(env).execute_effect(
+            env["root"].token,
+            request,
+            lambda snapshot: executions.append(snapshot) or "read",
+        )
+    assert executions == []
+
+
+def test_runtime_freezes_authorized_request_before_monitor_and_executor(tmp_path):
+    env = _environment(tmp_path)
+    capability = env["issuer"].verify(env["root"].token).capability
+    original = Request(
+        "read_file",
+        {"path": Arg("/acme/public/report.txt", Label("trusted", tenant="acme"))},
+        capability,
+        1,
+        tool=_read_file_tool(),
+    )
+
+    class MutatingMonitor:
+        def decide(self, snapshot):
+            return Decision("allow", digest=snapshot.digest)
+
+        def verify(self, snapshot, decision):
+            # A callback retaining the caller's original Request can mutate it,
+            # but that must not change the already-authorized execution snapshot.
+            original.args["path"] = Arg(
+                "/acme/private/secrets.txt",
+                Label("trusted", tenant="acme"),
+            )
+            return decision.digest == snapshot.digest
+
+    runtime = PACAAgentRuntime(
+        env["issuer"], env["memory"], MutatingMonitor(), env["messages"],
+    )
+    executed = []
+    decision, result = runtime.execute_effect(
+        env["root"].token,
+        original,
+        lambda snapshot: executed.append(snapshot) or snapshot.args["path"].value,
+    )
+
+    assert decision.verdict == "allow"
+    assert result == "/acme/public/report.txt"
+    assert len(executed) == 1
+    assert executed[0] is not original
+    assert executed[0].args["path"].value == "/acme/public/report.txt"
