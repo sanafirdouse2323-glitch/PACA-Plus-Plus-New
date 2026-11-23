@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import copy
 import hashlib
 from collections.abc import Iterable, Iterator, Mapping, Sequence
 from typing import Any, Callable, Optional, Tuple
@@ -32,6 +33,17 @@ except ImportError as exc:  # pragma: no cover - optional dependency
 from ..durable import SQLiteProvenanceRepository
 from ..memory import MemoryAccessDenied, MemoryIntegrityError, TrustedMemoryAdapter
 from ..provenance import Arg
+
+
+def _snapshot_thread_arguments(*args: Any, **kwargs: Any) -> Tuple[Tuple[Any, ...], dict[str, Any]]:
+    """Detach caller-owned checkpoint inputs before handing them to a worker thread."""
+    try:
+        snapshot_args, snapshot_kwargs = copy.deepcopy((args, kwargs))
+    except Exception as exc:
+        raise MemoryAccessDenied(
+            "asynchronous checkpoint inputs cannot be safely snapshotted"
+        ) from exc
+    return snapshot_args, snapshot_kwargs
 
 
 def _digest(*parts: str) -> str:
@@ -666,7 +678,11 @@ class PACAProvenancePostgresSaver(BaseCheckpointSaver):
             if before_index is None:
                 raise MemoryAccessDenied("checkpoint list cursor is outside the authorized evidence history")
             nodes = nodes[before_index + 1:]
-        if limit is not None and limit <= 0:
+        if limit is not None and (
+            isinstance(limit, bool) or not isinstance(limit, int) or limit < 0
+        ):
+            raise ValueError("checkpoint list limit must be a non-negative integer or None")
+        if limit == 0:
             return
         emitted = 0
         for node in nodes:
@@ -726,13 +742,16 @@ class PACAProvenancePostgresSaver(BaseCheckpointSaver):
         return self.__delegate.get_next_version(current, channel)
 
     async def aput(self, *args: Any, **kwargs: Any) -> Mapping[str, Any]:
-        return await asyncio.to_thread(self.put, *args, **kwargs)
+        snapshot_args, snapshot_kwargs = _snapshot_thread_arguments(*args, **kwargs)
+        return await asyncio.to_thread(self.put, *snapshot_args, **snapshot_kwargs)
 
     async def aput_writes(self, *args: Any, **kwargs: Any) -> None:
-        await asyncio.to_thread(self.put_writes, *args, **kwargs)
+        snapshot_args, snapshot_kwargs = _snapshot_thread_arguments(*args, **kwargs)
+        await asyncio.to_thread(self.put_writes, *snapshot_args, **snapshot_kwargs)
 
     async def aget_tuple(self, config: Mapping[str, Any]) -> Optional[CheckpointTuple]:
-        return await asyncio.to_thread(self.get_tuple, config)
+        snapshot_args, snapshot_kwargs = _snapshot_thread_arguments(config)
+        return await asyncio.to_thread(self.get_tuple, *snapshot_args, **snapshot_kwargs)
 
     async def alist(
         self,
@@ -742,8 +761,11 @@ class PACAProvenancePostgresSaver(BaseCheckpointSaver):
         before: Optional[Mapping[str, Any]] = None,
         limit: Optional[int] = None,
     ):
+        snapshot_args, snapshot_kwargs = _snapshot_thread_arguments(
+            config, filter=filter, before=before, limit=limit,
+        )
         results = await asyncio.to_thread(
-            lambda: list(self.list(config, filter=filter, before=before, limit=limit))
+            lambda: list(self.list(*snapshot_args, **snapshot_kwargs))
         )
         for result in results:
             yield result
