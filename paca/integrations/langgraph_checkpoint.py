@@ -225,10 +225,13 @@ class PACAProvenancePostgresSaver(BaseCheckpointSaver):
             raise MemoryAccessDenied("checkpoint write requires complete trusted provenance")
 
         persisted_metadata = get_serializable_checkpoint_metadata(provider_config, metadata)
-        evidence = {
+        # Store only the checkpoint saver serializer envelope in the JSON value
+        # store. Checkpoint channel values may include MessagePack/JsonPlus objects
+        # that are not JSON serialisable on their own.
+        evidence = self._typed_payload({
             "checkpoint": dict(checkpoint),
             "metadata": persisted_metadata,
-        }
+        })
         self.memory.write_derived(
             evidence,
             *dependencies,
@@ -302,15 +305,18 @@ class PACAProvenancePostgresSaver(BaseCheckpointSaver):
     ) -> list[Tuple[str, str, Any]]:
         prefix = _writes_prefix(tenant, thread_id, namespace, checkpoint_id)
         nodes = self.repository.list_nodes(object_id_prefix=prefix)
-        records = []
+        records: dict[str, Tuple[str, list[Tuple[str, Any]]]] = {}
         seen_tasks: set[Tuple[str, str]] = set()
         for node in nodes:
-            value = self.memory.read(
+            envelope = self.memory.read(
                 node.object_id,
                 node.version_id,
                 purpose=self.purpose,
                 capability_token=token,
             ).value
+            if not isinstance(envelope, Mapping):
+                raise MemoryIntegrityError("pending-write provenance envelope is not a mapping")
+            value = self._decode_payload(envelope)
             if not isinstance(value, Mapping):
                 raise MemoryIntegrityError("pending-write provenance record is not a mapping")
             task_id = value.get("task_id")
@@ -333,15 +339,23 @@ class PACAProvenancePostgresSaver(BaseCheckpointSaver):
                 raise MemoryIntegrityError(
                     "provider pending-write return type cannot disambiguate one task ID across paths"
                 )
+            normalized_writes: list[Tuple[str, Any]] = []
             for write in writes:
                 if (
                     not isinstance(write, (tuple, list)) or len(write) != 2
                     or not isinstance(write[0], str) or not write[0]
                 ):
                     raise MemoryIntegrityError("pending-write provenance contains an invalid channel")
-                records.append((task_path, task_id, write[0], write[1]))
-        records.sort(key=lambda row: (row[0], row[1]))
-        return [(task_id, channel, value) for _path, task_id, channel, value in records]
+                normalized_writes.append((write[0], write[1]))
+            records[task_id] = (task_path, normalized_writes)
+        # The PostgreSQL saver exposes pending writes as (task_id, channel, value)
+        # tuples without task_path. Sort task IDs, retaining channel order within
+        # each task, to produce a stable contract-comparable sequence.
+        return [
+            (task_id, channel, value)
+            for task_id in sorted(records)
+            for channel, value in records[task_id][1]
+        ]
 
     def _assert_pending_writes_match(
         self,
@@ -396,8 +410,10 @@ class PACAProvenancePostgresSaver(BaseCheckpointSaver):
                 write_object, existing.version_id, purpose=self.purpose,
                 capability_token=token,
             ).value
-            expected_record = self._pending_write_payload(task_id, task_path, clean_writes)
-            if self._typed_payload(existing_record) != self._typed_payload(expected_record):
+            expected_record = self._typed_payload(
+                self._pending_write_payload(task_id, task_path, clean_writes)
+            )
+            if existing_record != expected_record:
                 raise MemoryAccessDenied("pending-write task identity is immutable within a checkpoint")
             actual_for_task = [
                 item for item in self._pending_write_args(current.pending_writes)
@@ -423,7 +439,9 @@ class PACAProvenancePostgresSaver(BaseCheckpointSaver):
             ):
                 raise MemoryAccessDenied("pending-write provenance is incomplete")
             self.memory.write_derived(
-                self._pending_write_payload(task_id, task_path, clean_writes),
+                self._typed_payload(
+                    self._pending_write_payload(task_id, task_path, clean_writes)
+                ),
                 *dependencies,
                 object_id=write_object,
                 version_id=hashlib.sha256(
@@ -461,15 +479,18 @@ class PACAProvenancePostgresSaver(BaseCheckpointSaver):
         result = self.__delegate.get_tuple(provider_config)
         if result is None:
             raise MemoryIntegrityError("PACA checkpoint evidence exists but PostgreSQL has no matching row")
-        if not isinstance(expected, Mapping) or "checkpoint" not in expected or "metadata" not in expected:
+        if not isinstance(expected, Mapping):
+            raise MemoryIntegrityError("PACA checkpoint evidence envelope is invalid")
+        stored = self._decode_payload(expected)
+        if not isinstance(stored, Mapping) or "checkpoint" not in stored or "metadata" not in stored:
             raise MemoryIntegrityError("PACA checkpoint evidence has an invalid structure")
         actual_public = {
             "checkpoint": result.checkpoint,
             "metadata": result.metadata,
         }
         if self._typed_payload(actual_public) != self._typed_payload({
-            "checkpoint": expected["checkpoint"],
-            "metadata": expected["metadata"],
+            "checkpoint": stored["checkpoint"],
+            "metadata": stored["metadata"],
         }):
             raise MemoryIntegrityError("PostgreSQL checkpoint differs from authorized PACA evidence")
         self._assert_pending_writes_match(
