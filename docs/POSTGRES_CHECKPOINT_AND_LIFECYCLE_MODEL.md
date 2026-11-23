@@ -22,7 +22,7 @@ The PostgreSQL PendingWrite read contract returns three-tuples containing task I
 
 models/PACALifecycle.tla and its TLC configuration cover:
 - memory, checkpoint and pending-write lineage with exact parent value/digest validation and non-empty dependencies;
-- provider-returned checkpoint identity, namespace and parent-config binding; insertion-ordered checkpoint listing and same-thread cursor validation;
+- provider-returned checkpoint identity, namespace and parent-config binding; PostgresSaver-compatible descending checkpoint-ID listing and same-thread cursor validation;
 - pending-write evidence revocation when a checkpoint thread is deleted;
 - delegated authority ancestry and attenuated grants;
 - tenant, purpose and task continuity across derived data;
