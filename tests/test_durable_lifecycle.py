@@ -902,6 +902,12 @@ def test_langgraph_store_rejects_untracked_write_and_unsupported_semantic_search
     )
     with pytest.raises(MemoryAccessDenied, match="complete trusted provenance"):
         store.put(("acme", "memories"), "untracked", {"text": "no source"})
+    with pytest.raises(NotImplementedError, match="vector/index"):
+        store.put(
+            ("acme", "memories"), "indexed",
+            {"text": "index is not silently ignored"},
+            index=["text"],
+        )
     with pytest.raises(NotImplementedError, match="semantic/vector"):
         store.search(("acme",), query="find similar memories")
 
