@@ -460,10 +460,14 @@ class PACAProvenanceLangGraphStore(BaseStore):
         for object_id, node in latest.items():
             if self.repository.is_revoked(node.node_id):
                 continue
-            # Namespace enumeration leaks metadata, so it is gated by the same
-            # read capability and tenant/purpose checks as value retrieval.
-            self.memory._verified_context(
-                token, "mem_read", object_id, self.purpose,
+            # Namespace enumeration discloses object metadata. Apply the
+            # same ancestry, tenant, inherited-authority and application policy
+            # checks as value retrieval, without fetching the protected value.
+            self.memory.authorize_metadata(
+                object_id,
+                node.version_id,
+                purpose=self.purpose,
+                capability_token=token,
             )
             try:
                 decoded_tenant, namespace, _key = _decode_object_id(object_id)
