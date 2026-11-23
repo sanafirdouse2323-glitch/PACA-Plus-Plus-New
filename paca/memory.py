@@ -500,72 +500,17 @@ class TrustedMemoryAdapter:
             raise TypeError("derived memory requires one or more Arg inputs")
         if any(not item.lineage_refs or item.lineage_incomplete for item in inputs):
             raise MemoryAccessDenied("cannot persist a derived memory with incomplete lineage")
-        # A reference set and conservative label do not prove that the supplied
-        # input bytes are the value recorded by that lineage. Require each input
-        # to be one persisted value/version whose immutable digest matches exactly.
-        # Unrecorded transformations must first be persisted as their own node.
-        # Also re-authorize every dependency under the current capability and
-        # application policy: an Arg retained from an earlier read is not a lease
-        # to use data after source authority or policy has been revoked.
+        # Validate the exact value digest, current read authority, revocation,
+        # tenant/purpose ancestry and application metadata policy for every input.
+        # Persisted intermediates are required for multi-step transformations.
         input_accesses = []
         for item in inputs:
-            refs = tuple(item.lineage_refs)
-            if len(refs) != 1:
-                raise MemoryAccessDenied(
-                    "derived input must reference one versioned value bound to its exact digest"
-                )
-            parent = self.repository.get_node(refs[0])
-            if parent is None:
-                raise MemoryAccessDenied("derived input references unknown lineage")
-            context, verified_parent, ancestry, authority_ids = self._authorised_node(
-                parent.object_id,
-                parent.version_id,
+            input_accesses.extend(self.authorize_argument(
+                item,
                 purpose=purpose,
                 capability_token=capability_token,
-            )
-            if verified_parent.node_id != refs[0]:
-                raise MemoryAccessDenied("derived input lineage identity changed")
-            try:
-                input_digest = hashlib.sha256(
-                    canonical_value_bytes(item.value)
-                ).hexdigest()
-            except TypeError as exc:
-                raise MemoryAccessDenied(
-                    "derived input is not canonical JSON bound to its lineage"
-                ) from exc
-            if not hmac.compare_digest(input_digest, verified_parent.content_digest):
-                raise MemoryAccessDenied(
-                    "derived input bytes do not match their immutable lineage digest"
-                )
-            self._consume_budget(context)
-            input_accesses.append((context, ancestry, authority_ids))
+            ))
         parent_ids = tuple(sorted(set().union(*(item.lineage_refs for item in inputs))))
-        for parent_id in parent_ids:
-            parent = self.repository.get_node(parent_id)
-            if parent is None:
-                raise MemoryAccessDenied("derived memory references unknown lineage")
-            if parent.purpose is not None and parent.purpose != purpose:
-                raise MemoryAccessDenied("derived memory cannot silently change source purpose")
-        if self.repository.revoked_nodes(parent_ids):
-            raise MemoryAccessDenied("derived memory depends on revoked lineage")
-        # The caller-supplied Arg label must be at least as restrictive as every
-        # referenced durable parent. No trusted relabelling at the adapter boundary.
-        for item in inputs:
-            parents = [self.repository.get_node(ref) for ref in item.lineage_refs]
-            if any(parent is None for parent in parents):
-                raise MemoryAccessDenied("derived input references unknown lineage")
-            for parent in parents:
-                assert parent is not None
-                if parent.label.integrity == "untrusted" and item.label.integrity != "untrusted":
-                    raise MemoryAccessDenied("derived input attempts to upgrade untrusted integrity")
-                if item.label.sensitivity < parent.label.sensitivity:
-                    raise MemoryAccessDenied("derived input attempts to lower sensitivity")
-                if not parent.label.origins.issubset(item.label.origins):
-                    raise MemoryAccessDenied("derived input attempts to erase source origins")
-                if not parent.label.tenants.issubset(item.label.tenants):
-                    raise MemoryAccessDenied("derived input attempts to erase tenant lineage")
-                if parent.label.tenant_unknown and not item.label.tenant_unknown:
-                    raise MemoryAccessDenied("derived input attempts to erase unknown-tenant provenance")
         label = Label.join(*(item.label for item in inputs))
         encoded = canonical_value_bytes(value)
         node = LineageNode(
@@ -580,10 +525,14 @@ class TrustedMemoryAdapter:
             purpose=purpose,
         )
         written = self._write(node, value, capability_token)
-        # Recheck dependency authority and revocation after persistence. The
-        # derived node remains unreadable if a parent was revoked during the write.
-        for context, ancestry, authority_ids in input_accesses:
-            self._recheck_read_authority(context, ancestry, authority_ids)
+        # Re-run the configured application policy, authority and revocation
+        # checks after persistence. The derived node remains unreadable if a
+        # dependency changes state during the write.
+        self.revalidate_authorized_references(
+            input_accesses,
+            capability_token=capability_token,
+            purpose=purpose,
+        )
         return written
 
     def summarise(
