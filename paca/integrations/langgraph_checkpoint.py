@@ -336,9 +336,25 @@ class PACAProvenancePostgresSaver(BaseCheckpointSaver):
         self.memory._verified_context(
             token, "mem_write", object_id, self.purpose,
         )
-        self.memory.registry.assert_active(
-            self.memory.authority.verify(token).capability.cap_id
+        signed_after_write = self.memory.authority.verify(token)
+        self.memory.registry.assert_active(signed_after_write.capability.cap_id)
+        self.memory.revalidate_read_access(
+            object_id,
+            checkpoint_id,
+            purpose=self.purpose,
+            capability_token=token,
         )
+        for dependency in dependencies:
+            for node_id in dependency.lineage_refs:
+                source_node = self.repository.get_node(node_id)
+                if source_node is None:
+                    raise MemoryAccessDenied("checkpoint source lineage disappeared after provider persistence")
+                self.memory.revalidate_read_access(
+                    source_node.object_id,
+                    source_node.version_id,
+                    purpose=self.purpose,
+                    capability_token=token,
+                )
         return self._translate_config(saved, thread_id)
 
     def _checkpoint_for_write(
@@ -622,7 +638,17 @@ class PACAProvenancePostgresSaver(BaseCheckpointSaver):
         )
         before_id = None
         if before is not None:
-            before_id = before.get("configurable", {}).get("checkpoint_id")
+            if not isinstance(before, Mapping):
+                raise MemoryAccessDenied("checkpoint list cursor is invalid")
+            before_configurable = before.get("configurable")
+            if not isinstance(before_configurable, Mapping):
+                raise MemoryAccessDenied("checkpoint list cursor has no configurable scope")
+            if (
+                before_configurable.get("thread_id") != _thread_id
+                or before_configurable.get("checkpoint_ns", "") != _namespace
+            ):
+                raise MemoryAccessDenied("checkpoint list cursor belongs to another thread or namespace")
+            before_id = before_configurable.get("checkpoint_id")
             if not isinstance(before_id, str) or not before_id:
                 raise MemoryAccessDenied("checkpoint list cursor is invalid")
         # list_nodes preserves durable insertion order (SQLite seq), whereas
