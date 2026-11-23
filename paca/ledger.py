@@ -314,10 +314,6 @@ class SQLiteOperationLedger:
                 "ON operations(task_scope, created_at)"
             )
             conn.execute(
-                "CREATE INDEX operations_task_created "
-                "ON operations(task_scope, created_at)"
-            )
-            conn.execute(
                 "INSERT INTO ledger_meta(key,value) VALUES('schema_version','3') "
                 "ON CONFLICT(key) DO UPDATE SET value='3'"
             )
