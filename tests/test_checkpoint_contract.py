@@ -31,6 +31,15 @@ class _Repository:
             None,
         )
 
+    def list_nodes(self, *, object_id_prefix=None):
+        return tuple(
+            node for node in self._nodes.values()
+            if object_id_prefix is None or node.object_id.startswith(object_id_prefix)
+        )
+
+    def is_revoked(self, _node_id):
+        return False
+
 
 def _node(node_id, version_id, parent_ids=()):
     return SimpleNamespace(
@@ -239,3 +248,13 @@ def test_provider_tuple_rejects_parent_when_transition_evidence_has_none():
             node=current,
             expected_parent_id=None,
         )
+
+def test_latest_checkpoint_selection_matches_postgres_order_not_sqlite_insertion_order():
+    first_inserted = _node("first-inserted", "00000000000000000000000000000000")
+    last_inserted = _node("last-inserted", "ffffffffffffffffffffffffffffffff")
+    saver = object.__new__(PACAProvenancePostgresSaver)
+    saver.repository = _Repository((last_inserted, first_inserted))
+
+    selected = saver._checkpoint_node(first_inserted.object_id, None)
+
+    assert selected is last_inserted
