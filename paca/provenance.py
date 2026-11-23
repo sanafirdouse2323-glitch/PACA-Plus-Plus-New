@@ -88,6 +88,8 @@ class Arg:
     def __post_init__(self) -> None:
         if not isinstance(self.label, Label):
             raise TypeError("Arg.label must be a Label assigned by a trusted adapter")
+        if isinstance(self.lineage_refs, (str, bytes)):
+            raise TypeError("lineage_refs must be a collection of node identifiers")
         refs = frozenset(self.lineage_refs)
         if any(not isinstance(ref, str) or not ref for ref in refs):
             raise ValueError("lineage references must be non-empty strings")
@@ -138,6 +140,8 @@ class LineageNode:
             not isinstance(self.purpose, str) or not self.purpose
         ):
             raise ValueError("purpose must be a non-empty string or None")
+        if isinstance(self.parent_ids, (str, bytes)):
+            raise TypeError("parent_ids must be a collection of node identifiers")
         raw_parents = tuple(self.parent_ids)
         if any(not isinstance(parent, str) or not parent for parent in raw_parents):
             raise ValueError("parent identifiers must be non-empty strings")
