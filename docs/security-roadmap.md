@@ -1,8 +1,8 @@
-# PACA++ New: Agent-lifecycle implementation status and roadmap
+# PAC++ New: Agent-lifecycle implementation status and roadmap
 
 This document is subordinate to [the Agent-Lifecycle Security Research Programme](AGENT_LIFECYCLE_SECURITY_RESEARCH.md), which defines the research scope, related work, proposed UCAUM model, threat model, hypotheses, evaluation plan and claim limits.
 
-**Project boundary:** PACA++ New focuses on LLM-agent lifecycle security. The separate PACA++ repository focuses on the enterprise authorization gateway. Do not merge their codebases, roadmaps or completion claims.
+**Project boundary:** PAC++ New focuses on LLM-agent lifecycle security. The separate PACA++ repository focuses on the enterprise authorization gateway. Do not merge their codebases, roadmaps or completion claims.
 
 ## Current status
 
@@ -101,12 +101,12 @@ A lifecycle surface is not complete because a helper or unit test exists. It is 
 
 ## Current maturity statement
 
-PACA++ New remains a **research prototype for provenance-aware, capability-based authorization across selected LLM-agent lifecycle boundaries**. It is not a complete lifecycle security product, production agent runtime, enterprise gateway or independently validated security guarantee.
+PAC++ New remains a **research prototype for provenance-aware, capability-based authorization across selected LLM-agent lifecycle boundaries**. It is not a complete lifecycle security product, production agent runtime, enterprise gateway or independently validated security guarantee.
 
 
 ## Lifecycle tranche: PostgreSQL checkpoint mediation and bounded formal model
 
-PACA++ New now includes an optional adapter around LangGraph's PostgreSQL checkpointer. Checkpoint state and pending task writes receive separate immutable provenance/evidence records. The adapter authenticates and checks the PACA evidence path before returning provider state, compares provider data to the evidence, and tenant-scopes provider thread IDs. The integration requires the application to supply trusted, complete provenance callbacks for checkpoint and pending-write inputs.
+PAC++ New now includes an optional adapter around LangGraph's PostgreSQL checkpointer. Checkpoint state and pending task writes receive separate immutable provenance/evidence records. The adapter authenticates and checks the PACA evidence path before returning provider state, compares provider data to the evidence, and tenant-scopes provider thread IDs. The integration requires the application to supply trusted, complete provenance callbacks for checkpoint and pending-write inputs.
 
 The PostgreSQL service is the actual checkpoint provider. The PACA authority registry, lineage graph, and value evidence remain the existing local SQLite stores. They do not share one transaction or distributed consensus protocol. Provider credentials and raw saver objects must remain in a trusted service boundary; callers with direct database access can bypass a Python wrapper. The current implementation wraps the synchronous PostgreSQL saver; async calls are run through worker threads rather than a native async pool. Provider PendingWrite tuples omit task_path, so the adapter rejects ambiguous reuse of a task ID across multiple paths for one checkpoint.
 
