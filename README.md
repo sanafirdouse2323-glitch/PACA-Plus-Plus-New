@@ -115,14 +115,23 @@ authorizes using a separately stored label before looking up the stored value, b
 in-memory test harness, not an integrated memory-store adapter. Inbound communication through
 `Session.receive` and agent planning are not independently mediated by a real runtime in this prototype.
 
-The monitor's C14 check verifies that required arguments are present and that the target is a non-empty string. C16 is a non-ablatable structural denial for generic call_tool dispatch until the integration maps the tool operation to a specific PACA action. The monitor does not validate every action-specific payload type or semantic constraint; a real executor must enforce those schemas before acting. Pending needs_approval decisions do not increment the repeated-denial quarantine counter; only definitive denials do. Filesystem grant matching performs lexical path validation only; a real executor must also prevent
-symlink escapes and TOCTOU races. Network integrations must resolve and re-check destinations and
-redirects at connection time to reduce DNS-rebinding and redirect-based SSRF. A deployment must route
-every consequential effect through an executor that verifies and consumes the monitor's single-use
-token. The default monitor does not accept approvals unless the integrator supplies an
-`approval_verifier` that validates a signed approval from a separately authenticated approval
-service. The benchmark injects a test-only verifier and simulates the human decision; its digest
-check is not an authentication mechanism and must not be reused in production.
+The monitor's C14 check verifies that required arguments are present and that the target is a non-empty string. C16 is a non-ablatable structural denial for generic call_tool dispatch until the integration maps the tool operation to a specific PACA action. The monitor does not validate every action-specific payload type or semantic constraint; a real executor must enforce those schemas before acting. Pending needs_approval decisions do not increment the repeated-denial quarantine counter; only definitive denials do.
+
+**Optional persistent state:** the default Monitor still uses process-local capability counters, token state and audit state. The optional `SQLiteOperationLedger` backend persists capability fingerprints, call budgets, denial strikes, destination fan-out, decision records and token state. It uses atomic transactions for budget/fan-out reservation and single-use token consumption. It supports multiple processes sharing one local SQLite database file; it is not a multi-host distributed database. A distributed deployment needs a server-database implementation of the same ledger contract. The AgentDojo adapter's step allocator is still process-local. Token consumption is not an exactly-once guarantee for an external effect.
+
+```python
+from paca.ledger import SQLiteOperationLedger
+from paca.monitor import Monitor
+
+ledger = SQLiteOperationLedger("/var/lib/paca/operations.sqlite3")
+monitor = Monitor(ledger=ledger)
+```
+
+**Filesystem and network primitives:** grant matching still performs lexical path checks. The new `SecureRoot` helper uses Linux `openat2` with beneath-root and no-symlink resolution and fails closed if those guarantees are unavailable. The new network helpers reject non-public or mixed DNS answer sets and can connect to a vetted numeric IP without a second DNS lookup. These helpers are not yet wired into every file, HTTP or AgentDojo tool implementation. Redirects must be separately revalidated by the caller, and a client must not open a second hostname-resolved connection. A production executor must route every consequential effect through the appropriate secure primitive and verify/consume the monitor's token immediately before the effect.
+
+The default monitor does not accept approvals unless the integrator supplies an `approval_verifier` that validates a signed approval from a separately authenticated approval service. The verifier interface exists, but this repository does not yet implement that production approval service. Manifest pinning checks the declared tool manifest; it does not attest the implementation actually loaded by a runtime. The benchmark injects a test-only verifier and simulates the human decision; its digest check is not an authentication mechanism and must not be reused in production.
+
+The bounded protocol model and reproducible TLC runner are in `models/PACAAuth.tla`, `models/PACAAuth.cfg` and `scripts/run_tlc.sh`. The model does not prove that the Python implementation refines it. See [docs/security-roadmap.md](docs/security-roadmap.md) for the six workstreams, implementation status and acceptance gates.
 
 **Provenance scope:** joined labels preserve all contributing tenant identifiers and retain an
 unknown-tenant marker when any sensitive source lacks tenant metadata; the monitor denies such
