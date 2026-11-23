@@ -2394,3 +2394,38 @@ def test_provenance_repository_rejects_indexed_identity_column_tampering(
         env["repo"].get_version(lookup_object, lookup_version)
     with pytest.raises(LineageIntegrityError, match="indexed object/version columns"):
         env["repo"].list_nodes()
+
+def test_async_runtime_rejects_already_scheduled_task_before_effect_body(tmp_path):
+    env = _environment(tmp_path)
+    source = _ingest(env, "/acme/public/report.txt", object_id="mem/effect-task")
+    request = Request(
+        "read_file",
+        {"path": source},
+        env["issuer"].verify(env["root"].token).capability,
+        1,
+        tool=_read_file_tool(),
+    )
+    started = []
+    tasks = []
+
+    def executor(_snapshot):
+        async def effect_body():
+            started.append(True)
+            return "must-not-run"
+
+        task = asyncio.create_task(effect_body())
+        tasks.append(task)
+        return task
+
+    async def exercise():
+        with pytest.raises(MemoryAccessDenied, match="unstarted native coroutine"):
+            await _allowing_runtime(env).aexecute_effect(
+                env["root"].token,
+                request,
+                executor,
+            )
+        await asyncio.gather(*tasks, return_exceptions=True)
+
+    asyncio.run(exercise())
+    assert started == []
+    assert tasks and tasks[0].cancelled()
