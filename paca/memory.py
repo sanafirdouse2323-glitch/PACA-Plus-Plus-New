@@ -672,14 +672,24 @@ class HMACAgentMessageCodec:
         authority: HMACCapabilityAuthority,
         repository: SQLiteProvenanceRepository,
         *,
+        memory: TrustedMemoryAdapter,
         clock=time.time,
     ) -> None:
         if not isinstance(key, bytes) or len(key) < 32:
             raise ValueError("message HMAC key must contain at least 32 bytes")
+        if (
+            not isinstance(memory, TrustedMemoryAdapter)
+            or memory.repository is not repository
+            or memory.authority is not authority
+        ):
+            raise ValueError(
+                "message codec, memory adapter and authority must share the same trusted state"
+            )
         self._key = bytes(key)
         self.authority = authority
         self.registry = authority.registry
         self.repository = repository
+        self.memory = memory
         self.clock = clock
 
     def _assert_payload_matches_lineage(
@@ -735,9 +745,14 @@ class HMACAgentMessageCodec:
         send_targets = dict(authority.grants).get("send_agent_message", ())
         if not any(grant_pattern_is_subset(recipient, pattern) for pattern in send_targets):
             raise MemoryAccessDenied("sender capability does not authorise this recipient")
-        # Do not perform lineage existence/digest lookups until the sender identity
-        # and recipient grant have been authenticated.
-        self._assert_payload_matches_lineage(payload.value, payload.lineage_refs)
+        # A valid message-send grant does not imply a right to read the data.
+        # Re-run the same current memory authority and application policy used
+        # for ordinary reads before transferring the persisted value.
+        self.memory.authorize_argument(
+            payload,
+            purpose=authority.purpose,
+            capability_token=capability_token,
+        )
         for node_id in payload.lineage_refs:
             node = self.repository.get_node(node_id)
             if node is None:
@@ -863,6 +878,15 @@ class HMACAgentMessageCodec:
                 raise ValueError("message provenance crosses or obscures the recipient authority tenant")
             if label.sensitivity > 0 and not label.tenants:
                 raise ValueError("sensitive message has no tenant provenance")
+            received = Arg(body["value"], label, frozenset(refs), False)
+            # Receiving an authenticated envelope is not itself a memory-read
+            # grant. The recipient must independently be allowed to read the
+            # complete persisted lineage under the current application policy.
+            self.memory.authorize_argument(
+                received,
+                purpose=recipient_record.purpose,
+                capability_token=recipient_token,
+            )
             for node_id in refs:
                 node = self.repository.get_node(node_id)
                 if node is None:
@@ -897,7 +921,7 @@ class HMACAgentMessageCodec:
                 raise MemoryAccessDenied(
                     "message replay, receive budget exhaustion or revoked authority was rejected"
                 ) from exc
-            return Arg(body["value"], label, frozenset(refs), False)
+            return received
         except (ValueError, TypeError, KeyError, json.JSONDecodeError, AuthorityRegistryError) as exc:
             raise MemoryAccessDenied("inter-agent message authentication or provenance validation failed") from exc
 
@@ -918,8 +942,14 @@ class PACAAgentRuntime:
         monitor: Any,
         messages: HMACAgentMessageCodec,
     ) -> None:
-        if memory.authority is not authority or messages.authority is not authority:
-            raise ValueError("runtime, memory and message adapters must share the same trusted issuer")
+        if (
+            memory.authority is not authority
+            or messages.authority is not authority
+            or messages.memory is not memory
+        ):
+            raise ValueError(
+                "runtime, memory and message adapters must share the same trusted issuer and memory store"
+            )
         # C13 is the single-use effect-token binding. It may be disabled in
         # isolated benchmark ablations, but never in a runtime that can invoke
         # consequential executors.
