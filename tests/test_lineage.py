@@ -115,7 +115,7 @@ def test_graph_derive_records_parent_edges_and_never_upgrades_trust():
 def test_derived_lineage_requires_known_parents_and_cannot_drop_tenant_or_origin():
     graph = ProvenanceGraph()
     source = _source(graph)
-    with pytest.raises(ValueError, match="not present"):
+    with pytest.raises(ValueError, match="source lineage references"):
         graph.derive(
             "orphaned summary",
             Arg("untracked", Label("trusted", tenant="acme")),
