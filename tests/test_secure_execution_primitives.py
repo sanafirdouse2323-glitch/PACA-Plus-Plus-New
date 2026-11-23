@@ -180,3 +180,24 @@ def test_connect_pinned_rejects_invalid_timeout(timeout):
             timeout=timeout,
             resolver=_resolver_for("93.184.216.34"),
         )
+
+def test_secure_root_rejects_hard_link_to_file_outside_root(tmp_path):
+    root = tmp_path / "workspace"
+    root.mkdir()
+    outside = tmp_path / "outside-secret.txt"
+    outside.write_text("outside data", encoding="utf-8")
+    os.link(outside, root / "linked-secret.txt")
+
+    with _open_root(root) as secure:
+        with pytest.raises(SecurePathError, match="hard-linked"):
+            secure.open_fd("linked-secret.txt", os.O_RDONLY)
+
+
+def test_secure_root_rejects_fifo_without_blocking(tmp_path):
+    root = tmp_path / "workspace"
+    root.mkdir()
+    os.mkfifo(root / "blocked-pipe")
+
+    with _open_root(root) as secure:
+        with pytest.raises(SecurePathError, match="regular file"):
+            secure.open_fd("blocked-pipe", os.O_RDONLY)
