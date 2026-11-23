@@ -40,7 +40,7 @@ Connector authentication, provider account selection, tenant mapping, source ver
 
 - A write requires a valid signed `mem_write` capability, matching tenant and purpose, a content digest calculated from the exact value, and an immutable lineage node.
 - A derived write requires complete explicit parent references. Each input must identify exactly one persisted value/version, and its canonical bytes must match that node's immutable content digest. The current signed capability must also authorize reading every source under the active tenant, purpose, inherited authority and configured application metadata policy; a previously obtained `Arg` is not a lasting authorization. The supplied label must not upgrade integrity or reduce sensitivity, source origins, tenant lineage or unknown-tenant state. Source policy, authority and revocation are rechecked after persistence. Combined or unpersisted transformations must first be written as their own derived node.
-- A read authenticates the capability and checks its object scope before metadata lookup. It reconstructs ancestry, checks each ancestor's tenant, purpose, revocation and bound authority, then applies the configured metadata policy to every ancestor. Only after those checks does it fetch the value bytes, verify the digest and re-check active authority and revocation state before returning an `Arg`.
+- A read authenticates the capability and checks its object scope before metadata lookup. It reconstructs ancestry, checks each ancestor's tenant, purpose, revocation and bound authority, then applies the configured metadata policy to every ancestor. Only after those checks does it fetch the value bytes, verify the digest and re-check active authority, revocation state and the configured application policy before returning an `Arg`. A policy change during the value-store fetch therefore fails closed before the value is returned.
 - Metadata-only disclosures use the same lineage, tenant, inherited-authority and configured policy checks. In particular, LangGraph `list_namespaces` cannot expose a namespace whose stored object would be denied by the application memory policy. It does not fetch value bytes; it consumes one durable memory-read budget unit for each object whose metadata it discloses.
 - Summarisation and compaction create new immutable derived nodes. They do not erase the source references simply because the new text is shorter or model-generated.
 
@@ -122,7 +122,7 @@ The focused lifecycle suite is `tests/test_durable_lifecycle.py`. It covers:
 
 - restart-safe lineage reconstruction, immutable object/version conflicts and missing-parent rollback;
 - concurrent idempotent insertion;
-- connector labels, retrieval-before-value-release checks and fail-closed policy callbacks;
+- connector labels, retrieval-before-value-release checks, fail-closed policy callbacks and policy revalidation after value fetch;
 - lineage propagation through summary and compaction;
 - source and ancestor revocation, including revocation of previously stored derived information;
 - digest tampering and quarantine;
