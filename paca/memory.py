@@ -1082,10 +1082,12 @@ class PACAAgentRuntime:
         decision, snapshot, issued, accesses = self._authorize_effect(
             capability_token, request,
         )
-        if decision is None or snapshot is None or issued is None:
+        if decision is None or issued is None:
             return Decision("deny"), None
         if decision.verdict != "allow":
             return decision, None
+        if snapshot is None:
+            return Decision("deny", digest=decision.digest), None
 
         result = executor(snapshot)
         if hasattr(result, "__await__"):
@@ -1121,10 +1123,12 @@ class PACAAgentRuntime:
         decision, snapshot, issued, accesses = self._authorize_effect(
             capability_token, request,
         )
-        if decision is None or snapshot is None or issued is None:
+        if decision is None or issued is None:
             return Decision("deny"), None
         if decision.verdict != "allow":
             return decision, None
+        if snapshot is None:
+            return Decision("deny", digest=decision.digest), None
         self.authority.registry.assert_active(issued.cap_id)
         authority_record = issued.authority_lineage
         if authority_record is None:
