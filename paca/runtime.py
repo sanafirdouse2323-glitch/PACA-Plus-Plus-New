@@ -92,6 +92,8 @@ class Request:
     resource_lineage_refs: FrozenSet[str] = frozenset()
 
     def __post_init__(self) -> None:
+        if isinstance(self.resource_lineage_refs, (str, bytes)):
+            raise TypeError("resource_lineage_refs must be a collection of node identifiers")
         refs = frozenset(self.resource_lineage_refs)
         if any(not isinstance(ref, str) or not ref for ref in refs):
             raise ValueError("resource lineage references must be non-empty strings")
