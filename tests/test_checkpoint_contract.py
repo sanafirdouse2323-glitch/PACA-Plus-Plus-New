@@ -22,6 +22,15 @@ class _Repository:
     def get_node(self, node_id):
         return self._nodes.get(node_id)
 
+    def get_version(self, object_id, version_id):
+        return next(
+            (
+                node for node in self._nodes.values()
+                if node.object_id == object_id and node.version_id == version_id
+            ),
+            None,
+        )
+
 
 def _node(node_id, version_id, parent_ids=()):
     return SimpleNamespace(
@@ -125,7 +134,7 @@ def test_provider_tuple_rejects_missing_recorded_parent():
         pending_writes=[],
     )
 
-    with pytest.raises(MemoryIntegrityError, match="omitted the expected parent checkpoint config"):
+    with pytest.raises(MemoryIntegrityError, match="omitted the parent checkpoint recorded"):
         saver._assert_provider_tuple(
             result,
             tenant="tenant-a",
