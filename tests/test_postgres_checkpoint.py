@@ -263,3 +263,68 @@ def test_postgres_checkpoint_list_and_async_contracts(tmp_path):
         assert all(
             repository.is_revoked(node.node_id) for node in pending_nodes
         )
+
+def test_checkpoint_source_revocation_during_provider_write_fails_closed(tmp_path, monkeypatch):
+    from langgraph.checkpoint.postgres import PostgresSaver
+    from paca.integrations.langgraph_checkpoint import _provider_thread_id
+    from paca.memory import MemoryAccessDenied
+
+    root, repository, _memory, source = _environment(tmp_path)
+    thread_id = "paca-test-" + uuid.uuid4().hex
+    checkpoint_id = str(uuid.uuid4())
+    timestamp = datetime(2026, 11, 23, tzinfo=timezone.utc)
+    source_id = next(iter(source.lineage_refs))
+
+    with PostgresSaver.from_conn_string(DSN) as raw:
+        saver = _wrap(raw, root, _memory, source)
+        saver.setup()
+        original_put = raw.put
+
+        def persist_then_revoke(*args, **kwargs):
+            saved = original_put(*args, **kwargs)
+            repository.revoke_lineage(
+                source_id,
+                "source revoked during PostgreSQL checkpoint write",
+            )
+            return saved
+
+        monkeypatch.setattr(raw, "put", persist_then_revoke)
+        config = {"configurable": {"thread_id": thread_id, "checkpoint_ns": ""}}
+        with pytest.raises(MemoryAccessDenied, match="revoked"):
+            saver.put(
+                config,
+                _checkpoint(checkpoint_id, "must-not-be-released", timestamp),
+                {"source": "input", "step": -1},
+                {"created_at": "1"},
+            )
+
+        # The external provider row may have committed before the separate
+        # SQLite lineage recheck detects revocation. It remains inaccessible
+        # through PACA, while the raw provider handle is a documented bypass.
+        provider_config = {
+            "configurable": {
+                "thread_id": _provider_thread_id("acme", thread_id),
+                "checkpoint_ns": "",
+                "checkpoint_id": checkpoint_id,
+            }
+        }
+        assert original_put is not None
+        assert raw.get_tuple(provider_config) is not None
+
+        calls = []
+        original_get_tuple = raw.get_tuple
+        monkeypatch.setattr(
+            raw,
+            "get_tuple",
+            lambda cfg: (calls.append(cfg), original_get_tuple(cfg))[1],
+        )
+        with pytest.raises(MemoryAccessDenied, match="revoked"):
+            saver.get_tuple({
+                "configurable": {
+                    "thread_id": thread_id,
+                    "checkpoint_ns": "",
+                    "checkpoint_id": checkpoint_id,
+                }
+            })
+        assert calls == []
+        saver.delete_thread(thread_id)
