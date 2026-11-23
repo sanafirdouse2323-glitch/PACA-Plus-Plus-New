@@ -1926,3 +1926,111 @@ def test_langchain_middleware_rejects_request_factory_mutating_tool_args(tmp_pat
             lambda original: handled.append(original) or "unsafe",
         )
     assert handled == []
+
+def test_runtime_effect_rechecks_application_memory_policy(tmp_path):
+    allowed = [True]
+    env = _environment(tmp_path, authorize=lambda _context, _node: allowed[0])
+    source = _ingest(env, "/acme/public/report.txt", object_id="mem/effect-policy")
+    capability = env["issuer"].verify(env["root"].token).capability
+
+    class PolicyChangingMonitor:
+        def decide(self, request):
+            return Decision("allow", digest=request.digest)
+
+        def verify(self, request, decision):
+            allowed[0] = False
+            return decision.digest == request.digest
+
+    runtime = PACAAgentRuntime(
+        env["issuer"], env["memory"], PolicyChangingMonitor(), env["messages"],
+    )
+    request = Request(
+        "read_file",
+        {"path": source},
+        capability,
+        1,
+        tool=_read_file_tool(),
+    )
+    executions = []
+
+    with pytest.raises(MemoryAccessDenied, match="metadata policy"):
+        runtime.execute_effect(
+            env["root"].token,
+            request,
+            lambda snapshot: executions.append(snapshot) or "read",
+        )
+    assert executions == []
+
+
+def test_runtime_rejects_incomplete_lineage_even_when_value_is_labelled(tmp_path):
+    env = _environment(tmp_path)
+    source = _ingest(env, "/acme/public/report.txt", object_id="mem/effect-incomplete")
+    incomplete = Arg(
+        source.value,
+        source.label,
+        source.lineage_refs,
+        True,
+    )
+    request = Request(
+        "read_file",
+        {"path": incomplete},
+        env["issuer"].verify(env["root"].token).capability,
+        1,
+        tool=_read_file_tool(),
+    )
+    executions = []
+
+    with pytest.raises(MemoryAccessDenied, match="incomplete information lineage"):
+        _allowing_runtime(env).execute_effect(
+            env["root"].token,
+            request,
+            lambda snapshot: executions.append(snapshot) or "read",
+        )
+    assert executions == []
+
+
+def test_runtime_async_rechecks_source_revocation_after_awaitable_creation(tmp_path):
+    env = _environment(tmp_path)
+    source = _ingest(env, "/acme/public/report.txt", object_id="mem/effect-async")
+    capability = env["issuer"].verify(env["root"].token).capability
+
+    class AllowMonitor:
+        def decide(self, request):
+            return Decision("allow", digest=request.digest)
+
+        def verify(self, request, decision):
+            return decision.digest == request.digest
+
+    runtime = PACAAgentRuntime(
+        env["issuer"], env["memory"], AllowMonitor(), env["messages"],
+    )
+    request = Request(
+        "read_file",
+        {"path": source},
+        capability,
+        1,
+        tool=_read_file_tool(),
+    )
+    started = []
+
+    def executor(_snapshot):
+        async def effect_body():
+            started.append(True)
+            return "must-not-run"
+
+        env["registry"].revoke(
+            env["root"].capability.cap_id,
+            "authority revoked after async awaitable construction",
+        )
+        return effect_body()
+
+    async def exercise():
+        with pytest.raises(AuthorityRegistryError):
+            await runtime.aexecute_effect(
+                env["root"].token,
+                request,
+                executor,
+            )
+
+    asyncio.run(exercise())
+    assert started == []
