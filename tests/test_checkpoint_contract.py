@@ -176,3 +176,24 @@ def test_checkpoint_list_rejects_cursor_from_another_thread_or_namespace():
     for cursor in cursors:
         with pytest.raises(MemoryAccessDenied, match="different thread or namespace|another thread or namespace"):
             list(saver.list(config, before=cursor))
+
+def test_async_checkpoint_thread_handoff_snapshots_mutable_inputs():
+    from paca.integrations.langgraph_checkpoint import _snapshot_thread_arguments
+
+    checkpoint = {
+        "id": "checkpoint-1",
+        "channel_values": {"messages": [{"content": "original"}]},
+    }
+    writes = [("messages", {"content": "before thread handoff"})]
+    args, kwargs = _snapshot_thread_arguments(
+        {"configurable": {"thread_id": "thread-1"}},
+        checkpoint,
+        writes,
+        task_id="task-1",
+    )
+
+    checkpoint["channel_values"]["messages"][0]["content"] = "mutated"
+    writes[0][1]["content"] = "mutated"
+    assert args[1]["channel_values"]["messages"][0]["content"] == "original"
+    assert args[2][0][1]["content"] == "before thread handoff"
+    assert kwargs["task_id"] == "task-1"
