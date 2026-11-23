@@ -10,11 +10,13 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from dataclasses import dataclass, field
 from typing import Dict, Iterable, List, Mapping, Optional, Tuple
 
 
 GrantScope = Tuple[Tuple[str, Tuple[str, ...]], ...]
+_SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 
 
 def normalise_grants(grants: Mapping[str, Iterable[str]]) -> GrantScope:
@@ -74,6 +76,8 @@ class AuthorityLineage:
     expires: int
     grants: GrantScope
     parent_id: Optional[str] = None
+    # Parent-chain digest makes this node transitively bind the entire grant chain.
+    parent_digest: Optional[str] = None
 
     def __post_init__(self) -> None:
         for field_name in ("authority_id", "issuer", "principal", "tenant", "task_id", "purpose"):
@@ -88,6 +92,12 @@ class AuthorityLineage:
             not isinstance(self.parent_id, str) or not self.parent_id
         ):
             raise ValueError("parent_id must be a non-empty string or None")
+        if self.parent_id is None and self.parent_digest is not None:
+            raise ValueError("a root authority record cannot have a parent digest")
+        if self.parent_id is not None and (
+            not isinstance(self.parent_digest, str) or not _SHA256_RE.fullmatch(self.parent_digest)
+        ):
+            raise ValueError("a delegated authority record requires its parent's SHA-256 chain digest")
 
         if not isinstance(self.grants, tuple):
             raise TypeError("grants must be created with AuthorityLineage.create()")
@@ -121,6 +131,7 @@ class AuthorityLineage:
         expires: int,
         grants: Mapping[str, Iterable[str]],
         parent_id: Optional[str] = None,
+        parent_digest: Optional[str] = None,
     ) -> "AuthorityLineage":
         return cls(
             authority_id=authority_id,
@@ -133,6 +144,7 @@ class AuthorityLineage:
             expires=expires,
             grants=normalise_grants(grants),
             parent_id=parent_id,
+            parent_digest=parent_digest,
         )
 
     def as_dict(self) -> Dict[str, object]:
@@ -147,6 +159,7 @@ class AuthorityLineage:
             "expires": self.expires,
             "grants": {action: list(patterns) for action, patterns in self.grants},
             "parent_id": self.parent_id,
+            "parent_digest": self.parent_digest,
         }
 
     @property
@@ -196,6 +209,8 @@ class AuthorityLineageGraph:
             parent = self._nodes.get(record.parent_id)
             if parent is None:
                 raise ValueError("authority parent must be recorded before its child")
+            if record.parent_digest != self.digest(record.parent_id):
+                raise ValueError("authority record does not bind the exact parent chain")
             if record.tenant != parent.tenant or record.task_id != parent.task_id:
                 raise ValueError("delegated authority cannot change tenant or task")
             if record.purpose != parent.purpose:
