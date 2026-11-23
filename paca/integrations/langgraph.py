@@ -355,33 +355,15 @@ class PACAProvenanceLangGraphStore(BaseStore):
                     refresh_ttl=op.refresh_ttl,
                 ))
             elif isinstance(op, ListNamespacesOp):
+                # Apply framework match conditions before asking PACA to disclose
+                # namespace metadata. An unrelated restricted namespace must not
+                # break an otherwise-authorized filtered listing.
                 namespaces = self.list_namespaces(
                     limit=2**31 - 1,
                     offset=0,
                     max_depth=op.max_depth,
+                    _match_conditions=tuple(op.match_conditions or ()),
                 )
-                for condition in op.match_conditions or ():
-                    if not isinstance(condition, MatchCondition):
-                        raise TypeError("namespace match condition has an unsupported type")
-                    path = condition.path
-                    if condition.match_type == "prefix":
-                        namespaces = [
-                            ns for ns in namespaces
-                            if len(ns) >= len(path) and all(
-                                expected == "*" or ns[index] == expected
-                                for index, expected in enumerate(path)
-                            )
-                        ]
-                    elif condition.match_type == "suffix":
-                        namespaces = [
-                            ns for ns in namespaces
-                            if len(ns) >= len(path) and all(
-                                expected == "*" or ns[len(ns) - len(path) + index] == expected
-                                for index, expected in enumerate(path)
-                            )
-                        ]
-                    else:
-                        raise ValueError("unsupported namespace match type")
                 results.append(namespaces[op.offset:op.offset + op.limit])
             else:
                 raise TypeError("unsupported LangGraph store operation: " + type(op).__name__)
@@ -513,6 +495,7 @@ class PACAProvenanceLangGraphStore(BaseStore):
         max_depth: Optional[int] = None,
         limit: int = 100,
         offset: int = 0,
+        _match_conditions: Tuple[MatchCondition, ...] = (),
     ) -> list[Tuple[str, ...]]:
         if limit < 0 or offset < 0 or (max_depth is not None and max_depth < 0):
             raise ValueError("invalid namespace pagination or depth")
@@ -526,6 +509,19 @@ class PACAProvenanceLangGraphStore(BaseStore):
             or not all(isinstance(part, str) and part for part in suffix)
         ):
             raise ValueError("suffix must be a tuple of non-empty strings")
+        conditions = tuple(_match_conditions)
+        for condition in conditions:
+            if not isinstance(condition, MatchCondition):
+                raise TypeError("namespace match condition has an unsupported type")
+            path = condition.path
+            if (
+                not isinstance(path, tuple)
+                or not all(isinstance(part, str) and part for part in path)
+            ):
+                raise ValueError("namespace match condition path must be a tuple of non-empty strings")
+            if condition.match_type not in {"prefix", "suffix"}:
+                raise ValueError("unsupported namespace match type")
+
         namespaces = set()
         token = self._token_provider()
         tenant = self._tenant_for_token(token)
@@ -553,6 +549,24 @@ class PACAProvenanceLangGraphStore(BaseStore):
                 or any(expected != "*" and namespace[len(namespace) - len(suffix) + index] != expected
                        for index, expected in enumerate(suffix))
             ):
+                continue
+            condition_match = True
+            for condition in conditions:
+                path = condition.path
+                if condition.match_type == "prefix":
+                    matched = len(namespace) >= len(path) and all(
+                        expected == "*" or namespace[index] == expected
+                        for index, expected in enumerate(path)
+                    )
+                else:
+                    matched = len(namespace) >= len(path) and all(
+                        expected == "*" or namespace[len(namespace) - len(path) + index] == expected
+                        for index, expected in enumerate(path)
+                    )
+                if not matched:
+                    condition_match = False
+                    break
+            if not condition_match:
                 continue
             if max_depth is not None:
                 namespace = namespace[:max_depth]
