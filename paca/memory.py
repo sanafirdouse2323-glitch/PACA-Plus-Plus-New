@@ -306,9 +306,17 @@ class TrustedMemoryAdapter:
                 ancestor.node_id for ancestor in ancestry
             ):
                 raise MemoryAccessDenied("memory lineage was revoked during retrieval")
+            if not all(bool(self._authorize(context, ancestor)) for ancestor in ancestry):
+                raise MemoryAccessDenied("memory application policy changed during retrieval")
+        except MemoryAccessDenied:
+            raise
         except AuthorityRegistryError as exc:
             raise MemoryAccessDenied(
                 "memory authority was revoked during retrieval"
+            ) from exc
+        except Exception as exc:
+            raise MemoryAccessDenied(
+                "memory application policy revalidation failed closed"
             ) from exc
 
     @staticmethod
