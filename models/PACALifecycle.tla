@@ -10,7 +10,7 @@ NoTask == "NO_TASK"
 NodeStates == {"absent", "stored", "revoked"}
 NodeKinds == {"none", "memory", "checkpoint", "pending_write"}
 AuthorityStates == {"absent", "active", "revoked", "expired"}
-EpochValues == {-1, 0, 1}
+EpochValues == {0, 1, 2}
 PolicyEpochValues == {0, 1}
 
 VARIABLES
@@ -84,7 +84,7 @@ Init ==
     /\ authorityTask = [a \in Authorities |->
         IF a = RootAuthority THEN RootTask ELSE NoTask]
     /\ authorityEpoch = [a \in Authorities |->
-        IF a = RootAuthority THEN 0 ELSE -1]
+        IF a = RootAuthority THEN 0 ELSE 2]
     /\ authorityGrants = [a \in Authorities |->
         IF a = RootAuthority THEN RootGrants ELSE {}]
     /\ policyEpoch = 0
