@@ -327,8 +327,9 @@ def test_effect_digest_binds_information_lineage_resource_lineage_and_authority_
     )
     capability = _capability(authority)
     first = _request(capability)
+    original_digest = first.digest
     second = _request(capability, lineage_ref="b" * 64)
-    assert first.digest != second.digest
+    assert original_digest != second.digest
 
     third = _request(capability)
     third.resource_lineage_refs = frozenset({"resource-version-2"})
@@ -336,7 +337,7 @@ def test_effect_digest_binds_information_lineage_resource_lineage_and_authority_
 
     fourth = _request(capability)
     capability.authority_lineage = replace(authority, policy_epoch=8)
-    assert fourth.digest != first.digest
+    assert fourth.digest != original_digest
 
 
 def test_capability_drift_from_immutable_authority_record_invalidates_digest():
