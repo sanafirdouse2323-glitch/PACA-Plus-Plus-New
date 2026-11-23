@@ -40,6 +40,10 @@ def _saver_with_lineage():
     return saver, current, parent
 
 
+def _authenticated_thread():
+    return _provider_thread_id("tenant-a", "thread")
+
+
 def _provider_config(checkpoint_id, *, thread_id="paca-thread-hash"):
     return {
         "configurable": {
@@ -74,18 +78,17 @@ def test_provider_tuple_scope_and_parent_are_bound_to_paca_lineage():
 @pytest.mark.parametrize(
     ("config", "parent_config"),
     [
-        (_provider_config("current-checkpoint") | {"configurable": {
-            "thread_id": "paca-other-thread",
-            "checkpoint_ns": "worker",
-            "checkpoint_id": "current-checkpoint",
-        }}, _provider_config("parent-checkpoint")),
-        (_provider_config("current-checkpoint") | {"configurable": {
-            "thread_id": "paca-thread-hash",
+        (_provider_config("current-checkpoint", thread_id="paca-other-thread"),
+         _provider_config("parent-checkpoint", thread_id=_authenticated_thread())),
+        (_provider_config("current-checkpoint", thread_id=_authenticated_thread()) | {"configurable": {
+            "thread_id": _authenticated_thread(),
             "checkpoint_ns": "other-namespace",
             "checkpoint_id": "current-checkpoint",
-        }}, _provider_config("parent-checkpoint")),
-        (_provider_config("wrong-checkpoint"), _provider_config("parent-checkpoint")),
-        (_provider_config("current-checkpoint"), _provider_config("unrelated-parent")),
+        }}, _provider_config("parent-checkpoint", thread_id=_authenticated_thread())),
+        (_provider_config("wrong-checkpoint", thread_id=_authenticated_thread()),
+         _provider_config("parent-checkpoint", thread_id=_authenticated_thread())),
+        (_provider_config("current-checkpoint", thread_id=_authenticated_thread()),
+         _provider_config("unrelated-parent", thread_id=_authenticated_thread())),
     ],
 )
 def test_provider_tuple_rejects_wrong_checkpoint_scope_or_parent(config, parent_config):
@@ -210,10 +213,10 @@ def test_async_checkpoint_thread_handoff_snapshots_mutable_inputs():
 def test_provider_tuple_rejects_parent_when_transition_evidence_has_none():
     saver, current, _parent = _saver_with_lineage()
     result = CheckpointTuple(
-        config=_provider_config("current-checkpoint"),
+        config=_provider_config("current-checkpoint", thread_id=_authenticated_thread()),
         checkpoint={},
         metadata={},
-        parent_config=_provider_config("parent-checkpoint"),
+        parent_config=_provider_config("parent-checkpoint", thread_id=_authenticated_thread()),
         pending_writes=[],
     )
 
