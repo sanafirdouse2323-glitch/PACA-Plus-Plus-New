@@ -24,6 +24,7 @@ from .obligations import ObligationRunner
 from .parser import parse_policy_set
 from .provenance import Arg, Label
 from .runtime import ACTIONS, Capability, Decision, Request, Violation
+from .ledger import LedgerError, OperationLedger
 
 CHECKS = {
     "C1":  ("Scope: action and target inside the task-bound capability", "capability escalation; goal hijack; cross-stage drift"),
@@ -198,7 +199,8 @@ class Monitor:
     def __init__(self, policy_text: Optional[str] = None, clearance: Optional[Dict[str, int]] = None,
                  protected: Optional[List[str]] = None, quarantine_after: int = 3,
                  disable: Iterable[str] = (), key: Optional[bytes] = None,
-                 approval_verifier: Optional[Callable[[Request, str], bool]] = None) -> None:
+                 approval_verifier: Optional[Callable[[Request, str], bool]] = None,
+                 ledger: Optional[OperationLedger] = None) -> None:
         if policy_text is None:
             policy_text = resources.files("paca").joinpath("policies", "agent_policy.paca").read_text(encoding="utf-8")
         self.rules = parse_policy_set(policy_text, "agent_policy", default_decision="permit")
@@ -208,6 +210,9 @@ class Monitor:
         self.quarantine_after, self.disable = quarantine_after, set(disable)
         self.key = key or os.urandom(32)
         self.approval_verifier = approval_verifier
+        self.ledger = ledger
+        if self.ledger is not None and "C13" in self.disable:
+            raise ValueError("C13 token verification cannot be disabled with a persistent ledger")
         self._issued_tokens: Dict[str, str] = {}
         self.audit = AuditLog()
         self.obligations = ObligationRunner()
@@ -289,6 +294,26 @@ class Monitor:
                                "digest": request_digest[:16], "principal": req.cap.principal})
             return decision
         spec, cap, v = ACTIONS[req.action], req.cap, []
+        if self.ledger is not None:
+            try:
+                ledger_state = self.ledger.register_capability(cap)
+            except Exception:
+                # A missing or inconsistent durable state must never degrade to
+                # process-local authorisation.
+                decision = Decision(
+                    "deny",
+                    [Violation("C13", "deny", "persistent authorisation state unavailable or inconsistent")],
+                    request_digest,
+                )
+                self.audit.append({
+                    "step": req.step, "task": cap.task_id, "action": req.action,
+                    "verdict": "deny", "checks": decision.checks,
+                    "digest": request_digest[:16], "principal": cap.principal,
+                })
+                return decision
+            cap.calls = ledger_state.calls
+            self.strikes[cap.task_id] = ledger_state.strikes
+            self.dests[cap.task_id] = set(ledger_state.destinations)
         # C14 checks required-value presence and the target's basic string shape.
         # A real executor must additionally validate each action's payload schema and semantics.
         missing = []
@@ -389,18 +414,67 @@ class Monitor:
             completed_obligations = []
         d = Decision(verdict, v, request_digest, None, completed_obligations)
         if verdict == "allow":
-            cap.calls += 1
-            if is_egress:
-                destination_key = host if req.action == "fetch_url" else tval
-                self.dests.setdefault(cap.task_id, set()).add(destination_key)
-            nonce = os.urandom(32)
-            token_payload = request_digest.encode("ascii") + b":" + nonce
-            d.token = hmac.new(self.key, token_payload, hashlib.sha256).hexdigest()
-            self._issued_tokens[d.token] = request_digest
+            if self.ledger is not None:
+                destination_key = (host if req.action == "fetch_url" else tval) if is_egress else None
+                try:
+                    token, failure_check = self.ledger.issue_authorization(
+                        capability=cap,
+                        action=req.action,
+                        digest=request_digest,
+                        checks=d.checks,
+                        destination=destination_key,
+                        consequential=consequential,
+                        quarantine_after=self.quarantine_after,
+                    )
+                except Exception:
+                    d.verdict = "deny"
+                    d.violations.append(Violation(
+                        "C13", "deny", "persistent authorisation transaction failed; execution is denied"
+                    ))
+                else:
+                    if token is None:
+                        d.verdict = "deny"
+                        failure_messages = {
+                            "C12": "task quarantined by persistent denial state",
+                            "C2": "persistent capability call budget exhausted",
+                            "C8": "persistent destination fan-out limit reached",
+                        }
+                        d.violations.append(Violation(
+                            failure_check or "C13", "deny",
+                            failure_messages.get(failure_check, "persistent authorisation was not issued"),
+                        ))
+                    else:
+                        d.token = token
+                        cap.calls += 1
+                        if destination_key:
+                            self.dests.setdefault(cap.task_id, set()).add(destination_key)
+            else:
+                cap.calls += 1
+                if is_egress:
+                    destination_key = host if req.action == "fetch_url" else tval
+                    self.dests.setdefault(cap.task_id, set()).add(destination_key)
+                nonce = os.urandom(32)
+                token_payload = request_digest.encode("ascii") + b":" + nonce
+                d.token = hmac.new(self.key, token_payload, hashlib.sha256).hexdigest()
+                self._issued_tokens[d.token] = request_digest
+        elif self.ledger is not None:
+            try:
+                self.ledger.record_decision(
+                    capability=cap,
+                    action=req.action,
+                    digest=request_digest,
+                    verdict=verdict,
+                    checks=d.checks,
+                    consequential=consequential,
+                )
+            except Exception:
+                d.verdict = "deny"
+                d.violations.append(Violation(
+                    "C13", "deny", "persistent decision record could not be committed"
+                ))
         elif consequential and verdict == "deny":
             # A pending approval is not a denied attempt. Only a definitive denial
-            # contributes to quarantine; approval services separately record
-            # rejected or expired approval requests when they can distinguish them.
+            # contributes to quarantine.
             self.strikes[cap.task_id] = self.strikes.get(cap.task_id, 0) + 1
         self.audit.append({"step": req.step, "task": cap.task_id, "action": req.action, "verdict": verdict,
                            "checks": d.checks, "digest": request_digest[:16], "principal": cap.principal})
@@ -410,7 +484,7 @@ class Monitor:
         """Verify and consume a single-use token for the exact authorised request."""
         if d.verdict != "allow" or d.token is None:
             return False
-        if "C13" in self.disable:
+        if "C13" in self.disable and self.ledger is None:
             self.audit.append({"action": req.action, "verdict": "executor_verification_bypassed",
                                "digest": d.digest[:16]})
             return True
@@ -418,8 +492,18 @@ class Monitor:
             current_digest = req.digest
         except (AttributeError, TypeError, ValueError):
             current_digest = None
-        issued_digest = self._issued_tokens.pop(d.token, None)
-        valid = current_digest is not None and d.digest == current_digest and issued_digest == current_digest
+        if self.ledger is not None:
+            try:
+                valid = (
+                    current_digest is not None
+                    and d.digest == current_digest
+                    and self.ledger.consume_token(d.token, current_digest)
+                )
+            except Exception:
+                valid = False
+        else:
+            issued_digest = self._issued_tokens.pop(d.token, None)
+            valid = current_digest is not None and d.digest == current_digest and issued_digest == current_digest
         self.audit.append({"action": req.action, "verdict": "executor_verified" if valid else "executor_rejected",
                            "digest": (current_digest or "")[:16]})
         return valid
