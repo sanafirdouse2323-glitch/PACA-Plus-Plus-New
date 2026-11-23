@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import copy
 import hashlib
 import hmac
 import json
@@ -84,6 +85,42 @@ def _decode_object_id(value: str) -> Tuple[str, Tuple[str, ...], str]:
     ):
         raise ValueError("invalid PACA LangGraph memory object identity")
     return tenant_digest, tuple(parsed[0]), parsed[1]
+
+
+def _snapshot_tool_call_request(
+    request: Any,
+    tool_call: Mapping[str, Any],
+    expected_digest: str,
+) -> Any:
+    """Create a framework request whose tool payload cannot follow caller mutation."""
+    try:
+        copied_call = copy.deepcopy(dict(tool_call))
+        if _tool_call_digest(copied_call) != expected_digest:
+            raise MemoryAccessDenied("LangChain tool call changed while being snapshotted")
+        original_tool = getattr(request, "tool", None)
+        if original_tool is None:
+            raise MemoryAccessDenied("LangChain tool implementation is missing")
+        copied_tool = copy.copy(original_tool)
+        override = getattr(request, "override", None)
+        if callable(override):
+            snapshot = override(tool_call=copied_call, tool=copied_tool)
+        else:
+            snapshot = copy.copy(request)
+            setattr(snapshot, "tool_call", copied_call)
+            setattr(snapshot, "tool", copied_tool)
+        if (
+            _tool_call_digest(getattr(snapshot, "tool_call", {})) != expected_digest
+            or getattr(getattr(snapshot, "tool", None), "name", None)
+            != getattr(original_tool, "name", None)
+        ):
+            raise MemoryAccessDenied("LangChain request snapshot does not preserve the authorized call")
+        return snapshot
+    except MemoryAccessDenied:
+        raise
+    except Exception as exc:
+        raise MemoryAccessDenied(
+            "LangChain request cannot be safely snapshotted for tool execution"
+        ) from exc
 
 
 def _tool_call_digest(tool_call: Mapping[str, Any]) -> str:
@@ -622,6 +659,11 @@ class PACALangChainToolMiddleware(AgentMiddleware):
             raise MemoryAccessDenied("PACA action mapping does not match the registered tool manifest")
         if _tool_call_digest(getattr(request, "tool_call", {})) != tool_call_digest:
             raise MemoryAccessDenied("LangChain tool call changed while its PACA request was being constructed")
+        frozen_request = _snapshot_tool_call_request(
+            request, tool_call, tool_call_digest,
+        )
+        if self._tool_manifest_provider(frozen_request.tool) != actual_manifest:
+            raise MemoryAccessDenied("snapshotted tool implementation differs from the registered manifest")
         token = self._token_provider(request)
         signed = self.runtime.authority.verify(token)
         pin = signed.capability.tool_pins.get(tool_call["name"])
@@ -641,7 +683,11 @@ class PACALangChainToolMiddleware(AgentMiddleware):
             current_manifest = self._tool_manifest_provider(current_tool)
             if current_manifest != actual_manifest:
                 raise MemoryAccessDenied("registered tool manifest changed after PACA authorization")
-            return handler(request)
+            if _tool_call_digest(frozen_request.tool_call) != tool_call_digest:
+                raise MemoryAccessDenied("frozen LangChain tool call changed before handler invocation")
+            if self._tool_manifest_provider(frozen_request.tool) != actual_manifest:
+                raise MemoryAccessDenied("snapshotted tool manifest changed before handler invocation")
+            return handler(frozen_request)
 
         decision, result = self.runtime.execute_effect(
             token,
@@ -677,6 +723,11 @@ class PACALangChainToolMiddleware(AgentMiddleware):
             raise MemoryAccessDenied("PACA action mapping does not match the registered tool manifest")
         if _tool_call_digest(getattr(request, "tool_call", {})) != tool_call_digest:
             raise MemoryAccessDenied("LangChain tool call changed while its PACA request was being constructed")
+        frozen_request = _snapshot_tool_call_request(
+            request, tool_call, tool_call_digest,
+        )
+        if self._tool_manifest_provider(frozen_request.tool) != actual_manifest:
+            raise MemoryAccessDenied("snapshotted tool implementation differs from the registered manifest")
         token = self._token_provider(request)
         signed = self.runtime.authority.verify(token)
         pin = signed.capability.tool_pins.get(tool_call["name"])
@@ -696,7 +747,11 @@ class PACALangChainToolMiddleware(AgentMiddleware):
             current_manifest = self._tool_manifest_provider(current_tool)
             if current_manifest != actual_manifest:
                 raise MemoryAccessDenied("registered tool manifest changed after PACA authorization")
-            result = handler(request)
+            if _tool_call_digest(frozen_request.tool_call) != tool_call_digest:
+                raise MemoryAccessDenied("frozen LangChain tool call changed before handler invocation")
+            if self._tool_manifest_provider(frozen_request.tool) != actual_manifest:
+                raise MemoryAccessDenied("snapshotted tool manifest changed before handler invocation")
+            result = handler(frozen_request)
             if hasattr(result, "__await__"):
                 return await result
             return result
