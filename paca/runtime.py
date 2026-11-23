@@ -16,7 +16,7 @@ ACTIONS: Dict[str, Dict[str, Any]] = {
     "read_calendar":  dict(cls="read",        target="resource", required=["resource"]),
     "read_drive":     dict(cls="read",        target="resource", required=["resource"]),
     "read_file":      dict(cls="read",        target="path",     required=["path"]),
-    "fetch_url":      dict(cls="egress",      target="url",     payload=["query"], required=["url"]),   # egress only if payload present
+    "fetch_url":      dict(cls="egress",      target="url",     payload=["query"], required=["url"]),   # URL label is also classified as outbound data
     "send_email":     dict(cls="egress",      target="to",      payload=["body", "attachment"], required=["to", "body"]),
     "http_post":      dict(cls="egress",      target="url",     payload=["body"], required=["url", "body"]),
     "post_message":   dict(cls="egress",      target="channel", payload=["text"], required=["channel", "text"]),
@@ -98,7 +98,8 @@ class Request:
 
         def label_data(label: Label) -> Dict[str, Any]:
             return {"integrity": label.integrity, "sensitivity": label.sensitivity,
-                    "tenants": sorted(label.tenants), "origins": sorted(label.origins)}
+                    "tenants": sorted(label.tenants), "tenant_unknown": label.tenant_unknown,
+                    "origins": sorted(label.origins)}
 
         args_data = {}
         for name in sorted(self.args):
