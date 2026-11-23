@@ -280,7 +280,26 @@ class Monitor:
                                "digest": request_digest[:16], "principal": req.cap.principal})
             return decision
         spec, cap, v = ACTIONS[req.action], req.cap, []
-        task_key = task_scope_key(cap.tenant, cap.task_id)
+        try:
+            task_key = task_scope_key(cap.tenant, cap.task_id)
+        except (TypeError, ValueError) as exc:
+            decision = Decision(
+                "deny",
+                [Violation("C13", "deny", "capability tenant/task identity is invalid")],
+                request_digest,
+            )
+            self.audit.append({
+                "step": getattr(req, "step", None),
+                "task": str(getattr(cap, "task_id", "<invalid>")),
+                "tenant": str(getattr(cap, "tenant", "<invalid>")),
+                "action": req.action,
+                "verdict": "deny",
+                "checks": decision.checks,
+                "digest": request_digest[:16],
+                "principal": str(getattr(cap, "principal", "<invalid>")),
+                "reason": f"invalid tenant/task identity: {exc}",
+            })
+            return decision
         if self.ledger is not None:
             try:
                 ledger_state = self.ledger.register_capability(cap)
