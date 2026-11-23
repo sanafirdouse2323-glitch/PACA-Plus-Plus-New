@@ -285,13 +285,14 @@ def test_authority_child_requires_parent_to_be_recorded_first():
 def _capability(authority: AuthorityLineage | None = None) -> Capability:
     grants = {"send_email": ("bob@corp.example",)}
     return Capability(
-        "cap-1",
+        authority.authority_id if authority is not None else "cap-1",
         "agent-a",
         "acme",
         "task-report",
         "assistant",
         grants,
         100,
+        parent=authority.parent_id if authority is not None else None,
         authority_lineage=authority,
     )
 
@@ -389,3 +390,32 @@ def test_authority_child_must_bind_the_exact_parent_chain_digest():
     )
     with pytest.raises(ValueError, match="exact parent chain"):
         graph.add(child)
+
+
+def test_capability_must_match_exact_authority_and_parent_ids():
+    authority = AuthorityLineage.create(
+        authority_id="authority-exact-id",
+        issuer="trusted-policy-service",
+        principal="agent-a",
+        tenant="acme",
+        task_id="task-report",
+        purpose="prepare-report",
+        policy_epoch=7,
+        expires=100,
+        grants={"send_email": ("bob@corp.example",)},
+    )
+    capability = _capability(authority)
+    request = _request(capability)
+    original_digest = request.digest
+
+    capability.cap_id = "different-capability-id"
+    with pytest.raises(ValueError, match="do not match"):
+        _ = request.digest
+
+    capability.cap_id = authority.authority_id
+    capability.parent = "different-parent-id"
+    with pytest.raises(ValueError, match="do not match"):
+        _ = request.digest
+
+    capability.parent = None
+    assert request.digest == original_digest
