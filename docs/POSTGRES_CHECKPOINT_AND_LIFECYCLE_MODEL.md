@@ -1,6 +1,6 @@
 # PostgreSQL-backed LangGraph checkpoint mediation
 
-Scope: PACA++ New only. This is a provider-backed integration tranche, not a claim of complete agent-lifecycle protection.
+Scope: PAC++ New only. This is a provider-backed integration tranche, not a claim of complete agent-lifecycle protection.
 
 ## Provider adapter
 
