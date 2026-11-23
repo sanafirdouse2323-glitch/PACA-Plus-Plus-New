@@ -7,6 +7,7 @@ database and adapter credentials inaccessible to agent-controlled code.
 """
 from __future__ import annotations
 
+import copy
 import hashlib
 import hmac
 import json
@@ -966,17 +967,31 @@ class PACAAgentRuntime:
         self.memory.repository.revoke_lineage(node_id, reason, revoked_at=int(self.memory.clock()))
 
 
-    async def aexecute_effect(
+    def _prepare_effect(
         self,
         capability_token: str,
         request: Request,
-        executor: Callable[[Request], Any],
-    ) -> Tuple[Decision, Optional[Any]]:
-        """Async effect path with active-authority check immediately before await."""
+    ) -> Tuple[Any, Request, str, Tuple[_AuthorizedMemoryReference, ...]]:
+        """Authenticate and snapshot an effect before authorizing any consequence."""
+        if not isinstance(request, Request):
+            raise MemoryAccessDenied("effect request must be a typed PACA Request")
         signed = self.authority.verify(capability_token)
         issued = signed.capability
-        supplied = request.cap
-        supplied.validate_authority_lineage()
+
+        try:
+            original_digest = request.digest
+            snapshot = copy.deepcopy(request)
+            snapshot_digest = snapshot.digest
+        except Exception as exc:
+            raise MemoryAccessDenied("effect request could not be safely snapshotted") from exc
+        if snapshot_digest != original_digest:
+            raise MemoryAccessDenied("effect request changed while being snapshotted")
+
+        supplied = snapshot.cap
+        try:
+            supplied.validate_authority_lineage()
+        except Exception as exc:
+            raise MemoryAccessDenied("request capability lineage is invalid") from exc
         if (
             supplied.cap_id != issued.cap_id
             or supplied.authority_lineage != issued.authority_lineage
@@ -992,24 +1007,103 @@ class PACAAgentRuntime:
             or supplied.tool_pins != issued.tool_pins
         ):
             raise MemoryAccessDenied("request capability does not match the authenticated token")
-        self._assert_tool_binding(issued, request)
+        self._assert_tool_binding(issued, snapshot)
         self.authority.registry.assert_active(issued.cap_id)
-        decision = self.monitor.decide(request)
+
+        authority_record = issued.authority_lineage
+        if authority_record is None:
+            raise MemoryAccessDenied("effect capability has no immutable authority lineage")
+        purpose = authority_record.purpose
+        accesses = []
+        for argument in snapshot.args.values():
+            accesses.extend(self.memory.authorize_argument(
+                argument,
+                purpose=purpose,
+                capability_token=capability_token,
+            ))
+
+        if snapshot.resource_lineage_refs:
+            if snapshot.resource is None:
+                raise MemoryAccessDenied(
+                    "resource lineage references require an explicit resource label"
+                )
+            for node_id in sorted(snapshot.resource_lineage_refs):
+                accesses.append(self.memory.authorize_reference(
+                    node_id,
+                    label=snapshot.resource,
+                    purpose=purpose,
+                    capability_token=capability_token,
+                ))
+
+        if snapshot.digest != original_digest:
+            raise MemoryAccessDenied("effect request changed during provenance authorization")
+        return issued, snapshot, original_digest, tuple(accesses)
+
+    def _authorize_effect(
+        self,
+        capability_token: str,
+        request: Request,
+    ) -> Tuple[Optional[Decision], Optional[Request], Optional[Any], Tuple[_AuthorizedMemoryReference, ...]]:
+        """Run policy and consume a single-use decision for a frozen request snapshot."""
+        issued, snapshot, request_digest, accesses = self._prepare_effect(
+            capability_token, request,
+        )
+        decision = self.monitor.decide(snapshot)
         if decision.verdict != "allow":
-            return decision, None
-        if not self.monitor.verify(request, decision):
-            return Decision("deny", digest=request.digest), None
+            return decision, None, issued, accesses
+        if decision.digest != request_digest or snapshot.digest != request_digest:
+            raise MemoryAccessDenied("monitor decision is not bound to the unchanged effect request")
+        if not self.monitor.verify(snapshot, decision):
+            return Decision("deny", digest=request_digest), None, issued, accesses
+
         self.authority.registry.consume_effect(
             issued.cap_id, max_calls=issued.max_calls,
         )
         self.authority.registry.assert_active(issued.cap_id)
-        result = executor(request)
+        authority_record = issued.authority_lineage
+        if authority_record is None:
+            raise MemoryAccessDenied("effect capability lost its authority lineage")
+        self.memory.revalidate_authorized_references(
+            accesses,
+            capability_token=capability_token,
+            purpose=authority_record.purpose,
+        )
+        if snapshot.digest != request_digest or decision.digest != request_digest:
+            raise MemoryAccessDenied("effect request changed before executor entry")
+        return decision, snapshot, issued, accesses
+
+    async def aexecute_effect(
+        self,
+        capability_token: str,
+        request: Request,
+        executor: Callable[[Request], Any],
+    ) -> Tuple[Decision, Optional[Any]]:
+        """Async effect path with provenance, authority and revocation rechecks."""
+        decision, snapshot, issued, accesses = self._authorize_effect(
+            capability_token, request,
+        )
+        if decision is None or snapshot is None or issued is None:
+            return Decision("deny"), None
+        if decision.verdict != "allow":
+            return decision, None
+
+        result = executor(snapshot)
         if hasattr(result, "__await__"):
-            # The async executor body does not run until awaited. Revalidate after
+            # The coroutine body does not run until awaited. Revalidate after
             # constructing the awaitable and immediately before entering that body.
             try:
                 self.authority.registry.assert_active(issued.cap_id)
-            except AuthorityRegistryError:
+                authority_record = issued.authority_lineage
+                if authority_record is None:
+                    raise MemoryAccessDenied("effect capability lost its authority lineage")
+                self.memory.revalidate_authorized_references(
+                    accesses,
+                    capability_token=capability_token,
+                    purpose=authority_record.purpose,
+                )
+                if snapshot.digest != decision.digest:
+                    raise MemoryAccessDenied("effect request changed before async execution")
+            except Exception:
                 close = getattr(result, "close", None)
                 if callable(close):
                     close()
@@ -1023,44 +1117,26 @@ class PACAAgentRuntime:
         request: Request,
         executor: Callable[[Request], Any],
     ) -> Tuple[Decision, Optional[Any]]:
-        """Check active signed authority before decision and immediately before effect."""
-        signed = self.authority.verify(capability_token)
-        issued = signed.capability
-        supplied = request.cap
-        supplied.validate_authority_lineage()
-        if (
-            supplied.cap_id != issued.cap_id
-            or supplied.authority_lineage != issued.authority_lineage
-            or supplied.principal != issued.principal
-            or supplied.tenant != issued.tenant
-            or supplied.task_id != issued.task_id
-            or supplied.grants != issued.grants
-            or supplied.expires != issued.expires
-            or supplied.parent != issued.parent
-            or supplied.role != issued.role
-            or supplied.max_calls != issued.max_calls
-            or supplied.max_fanout != issued.max_fanout
-            or supplied.tool_pins != issued.tool_pins
-        ):
-            raise MemoryAccessDenied("request capability does not match the authenticated token")
-        self._assert_tool_binding(issued, request)
-        self.authority.registry.assert_active(issued.cap_id)
-        decision = self.monitor.decide(request)
+        """Check signed authority and exact request provenance immediately before effect."""
+        decision, snapshot, issued, accesses = self._authorize_effect(
+            capability_token, request,
+        )
+        if decision is None or snapshot is None or issued is None:
+            return Decision("deny"), None
         if decision.verdict != "allow":
             return decision, None
-        if not self.monitor.verify(request, decision):
-            return Decision(
-                "deny",
-                digest=request.digest,
-            ), None
-        self.authority.registry.consume_effect(
-            issued.cap_id, max_calls=issued.max_calls,
-        )
-        # Revalidation after durable usage consumption closes the ordinary
-        # stale-token window. A remote resource must still enforce its own
-        # authorization at commit time to close the remaining cross-system race.
         self.authority.registry.assert_active(issued.cap_id)
-        return decision, executor(request)
+        authority_record = issued.authority_lineage
+        if authority_record is None:
+            raise MemoryAccessDenied("effect capability lost its authority lineage")
+        self.memory.revalidate_authorized_references(
+            accesses,
+            capability_token=capability_token,
+            purpose=authority_record.purpose,
+        )
+        if snapshot.digest != decision.digest:
+            raise MemoryAccessDenied("effect request changed before executor entry")
+        return decision, executor(snapshot)
 
 
 __all__ = [
