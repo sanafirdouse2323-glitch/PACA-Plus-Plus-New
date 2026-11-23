@@ -285,10 +285,10 @@ class TrustedMemoryAdapter:
             parent = self.repository.get_node(parent_id)
             if parent is None:
                 raise MemoryAccessDenied("derived memory references unknown lineage")
-        if self.repository.revoked_nodes(parent_ids):
-            raise MemoryAccessDenied("derived memory depends on revoked lineage")
             if parent.purpose is not None and parent.purpose != purpose:
                 raise MemoryAccessDenied("derived memory cannot silently change source purpose")
+        if self.repository.revoked_nodes(parent_ids):
+            raise MemoryAccessDenied("derived memory depends on revoked lineage")
         # The caller-supplied Arg label must be at least as restrictive as every
         # referenced durable parent. No trusted relabelling at the adapter boundary.
         for item in inputs:
