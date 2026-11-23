@@ -58,7 +58,9 @@ def _environment(tmp_path, *, authorize=lambda _context, _node: True):
         key_id="test-key-1",
         key=b"K" * 32,
         audience="paca-test-runtime",
-        identity_verifier=lambda principal, tenant: bool(principal and tenant == "acme"),
+        identity_verifier=lambda principal, tenant: bool(
+            principal and tenant in {"acme", "other"}
+        ),
         clock=clock,
     )
     repo = SQLiteProvenanceRepository(tmp_path / "lineage.sqlite3")
@@ -752,6 +754,79 @@ def test_langgraph_store_put_get_search_and_delete_are_lineage_mediated(tmp_path
     store.delete(namespace, "report-1")
     assert store.get(namespace, "report-1") is None
     assert store.search(("acme",)) == []
+
+
+def test_langgraph_store_isolates_identical_keys_across_tenants(tmp_path):
+    pytest.importorskip("langgraph")
+    from paca.integrations.langgraph import PACAProvenanceLangGraphStore
+
+    env = _environment(tmp_path)
+    acme_source = _ingest(
+        env, {"text": "acme source"}, object_id="mem/source-acme",
+    )
+    other_root = env["issuer"].issue(
+        principal="agent-b",
+        tenant="other",
+        task_id="task-other",
+        purpose="prepare-report",
+        grants={
+            "mem_read": ("mem/*",),
+            "mem_write": ("mem/*",),
+            "mem_delete": ("mem/*",),
+        },
+        expires_at=2_000,
+        max_calls=40,
+    )
+    other_connector = TrustedConnectorAdapter(
+        env["memory"],
+        connector_id="mail:other",
+        source_class="external_content",
+        tenant="other",
+        sensitivity=1,
+        integrity="untrusted",
+    )
+    other_source = other_connector.ingest(
+        {"text": "other source"},
+        object_id="mem/source-other",
+        version_id="v1",
+        purpose="prepare-report",
+        capability_token=other_root.token,
+    )
+
+    namespace = ("shared", "memories")
+    acme_value = {"owner": "acme"}
+    other_value = {"owner": "other"}
+    acme_store = PACAProvenanceLangGraphStore(
+        env["memory"],
+        capability_token_provider=lambda: env["root"].token,
+        provenance_provider=lambda _namespace, _key, _value: (acme_source,),
+        purpose="prepare-report",
+    )
+    other_store = PACAProvenanceLangGraphStore(
+        env["memory"],
+        capability_token_provider=lambda: other_root.token,
+        provenance_provider=lambda _namespace, _key, _value: (other_source,),
+        purpose="prepare-report",
+    )
+
+    # Identical namespace/key pairs must resolve to different tenant-bound
+    # PACA object identities and must not block or overwrite one another.
+    acme_store.put(namespace, "shared-key", acme_value)
+    other_store.put(namespace, "shared-key", other_value)
+
+    acme_item = acme_store.get(namespace, "shared-key")
+    other_item = other_store.get(namespace, "shared-key")
+    assert acme_item is not None and acme_item.value == acme_value
+    assert other_item is not None and other_item.value == other_value
+    assert [item.value for item in acme_store.search(namespace)] == [acme_value]
+    assert [item.value for item in other_store.search(namespace)] == [other_value]
+    assert acme_store.list_namespaces(prefix=namespace) == [namespace]
+    assert other_store.list_namespaces(prefix=namespace) == [namespace]
+
+    acme_store.delete(namespace, "shared-key")
+    assert acme_store.get(namespace, "shared-key") is None
+    other_item = other_store.get(namespace, "shared-key")
+    assert other_item is not None and other_item.value == other_value
 
 
 def test_langgraph_store_rejects_untracked_write_and_unsupported_semantic_search(tmp_path):
