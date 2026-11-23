@@ -920,6 +920,11 @@ class PACAAgentRuntime:
     ) -> None:
         if memory.authority is not authority or messages.authority is not authority:
             raise ValueError("runtime, memory and message adapters must share the same trusted issuer")
+        # C13 is the single-use effect-token binding. It may be disabled in
+        # isolated benchmark ablations, but never in a runtime that can invoke
+        # consequential executors.
+        if "C13" in getattr(monitor, "disable", ()):
+            raise ValueError("PACAAgentRuntime requires C13 effect-token verification")
         self.authority = authority
         self.memory = memory
         self.monitor = monitor
