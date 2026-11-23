@@ -6,7 +6,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 
-from paca.ledger import CapabilityConflict, SQLiteOperationLedger
+from paca.ledger import CapabilityConflict, LedgerError, SQLiteOperationLedger
 from paca.monitor import Monitor
 from paca.provenance import Arg, Label
 from paca.runtime import Capability, Request
@@ -155,3 +155,183 @@ def test_ledger_token_expiry_is_enforced(tmp_path):
     now[0] = 106.0
     assert not ledger.consume_token(decision.token, request.digest)
     assert ledger.operations("persistent-task")[-1]["execution_state"] == "expired"
+
+def test_persistent_task_state_is_scoped_by_tenant_when_task_ids_collide(tmp_path):
+    ledger = SQLiteOperationLedger(tmp_path / "tenant-scoped.sqlite3")
+    tenant_a = make_capability(
+        cap_id="cap-tenant-a",
+        tenant="tenant-a",
+        task_id="shared-task-id",
+        max_calls=10,
+        max_fanout=1,
+    )
+    tenant_b = make_capability(
+        cap_id="cap-tenant-b",
+        tenant="tenant-b",
+        task_id="shared-task-id",
+        max_calls=10,
+        max_fanout=1,
+    )
+
+    ledger.record_decision(
+        tenant_a, "run_command", "denied-a", "deny", ("C1",), True,
+    )
+    first_token, failure = ledger.issue_authorization(
+        tenant_a, "fetch_url", "allowed-a", destination="a.example",
+        consequential=True, quarantine_after=3,
+    )
+    assert first_token and failure is None
+
+    # A new destination for tenant A exceeds its own fan-out limit and records
+    # another strike. These counters must not be visible to tenant B.
+    denied_token, failure = ledger.issue_authorization(
+        tenant_a, "fetch_url", "denied-fanout-a", destination="another.example",
+        consequential=True, quarantine_after=3,
+    )
+    assert denied_token is None and failure == "C8"
+
+    state_a = ledger.register_capability(tenant_a)
+    assert state_a.calls == 1
+    assert state_a.strikes == 2
+    assert state_a.destinations == frozenset({"a.example"})
+
+    state_b = ledger.register_capability(tenant_b)
+    assert state_b.calls == 0
+    assert state_b.strikes == 0
+    assert state_b.destinations == frozenset()
+
+    # Tenant B can use its own fan-out slot despite the colliding task ID.
+    token_b, failure_b = ledger.issue_authorization(
+        tenant_b, "fetch_url", "allowed-b", destination="b.example",
+        consequential=True, quarantine_after=3,
+    )
+    assert token_b and failure_b is None
+    state_b = ledger.register_capability(tenant_b)
+    assert state_b.calls == 1
+    assert state_b.strikes == 0
+    assert state_b.destinations == frozenset({"b.example"})
+
+
+def test_monitor_local_quarantine_is_scoped_by_tenant_and_task(tmp_path):
+    monitor = Monitor(quarantine_after=1)
+    tenant_a = make_capability(
+        cap_id="local-cap-a",
+        tenant="tenant-a",
+        task_id="shared-local-task",
+        grants={"run_command": ("not-the-command",)},
+    )
+    tenant_b = make_capability(
+        cap_id="local-cap-b",
+        tenant="tenant-b",
+        task_id="shared-local-task",
+        grants={"run_command": ("echo *",)},
+    )
+
+    denied = monitor.decide(Request(
+        "run_command",
+        {"command": Arg("echo safe", Label("trusted", tenant="tenant-a"))},
+        tenant_a,
+        1,
+    ))
+    assert denied.verdict == "deny"
+    assert "C1" in denied.checks
+
+    allowed = monitor.decide(Request(
+        "run_command",
+        {"command": Arg("echo safe", Label("trusted", tenant="tenant-b"))},
+        tenant_b,
+        1,
+    ))
+    assert allowed.verdict == "allow"
+    assert "C12" not in allowed.checks
+
+
+def test_monitor_local_egress_fanout_is_scoped_by_tenant_and_task():
+    monitor = Monitor(quarantine_after=5)
+    tenant_a = make_capability(
+        cap_id="egress-cap-a",
+        tenant="tenant-a",
+        task_id="shared-egress-task",
+        grants={"fetch_url": ("https://*",)},
+        max_fanout=1,
+    )
+    tenant_b = make_capability(
+        cap_id="egress-cap-b",
+        tenant="tenant-b",
+        task_id="shared-egress-task",
+        grants={"fetch_url": ("https://*",)},
+        max_fanout=1,
+    )
+
+    first = monitor.decide(Request(
+        "fetch_url",
+        {"url": Arg("https://a.example/path", Label("trusted", tenant="tenant-a"))},
+        tenant_a,
+        1,
+    ))
+    second = monitor.decide(Request(
+        "fetch_url",
+        {"url": Arg("https://b.example/path", Label("trusted", tenant="tenant-b"))},
+        tenant_b,
+        1,
+    ))
+    assert first.verdict == "allow"
+    assert second.verdict == "allow"
+    assert "C8" not in second.checks
+
+
+def test_unscoped_populated_legacy_ledger_fails_closed_without_resetting_state(tmp_path):
+    database = tmp_path / "legacy.sqlite3"
+    with sqlite3.connect(database) as connection:
+        connection.execute(
+            "CREATE TABLE task_state (task_id TEXT PRIMARY KEY, strikes INTEGER NOT NULL)"
+        )
+        connection.execute(
+            "CREATE TABLE destinations (task_id TEXT NOT NULL, destination TEXT NOT NULL, "
+            "PRIMARY KEY(task_id, destination))"
+        )
+        connection.execute(
+            "INSERT INTO task_state(task_id, strikes) VALUES('legacy-task', 2)"
+        )
+        connection.execute(
+            "INSERT INTO destinations(task_id, destination) VALUES('legacy-task', 'old.example')"
+        )
+
+    with pytest.raises(LedgerError, match="reviewed offline migration"):
+        SQLiteOperationLedger(database)
+
+    with sqlite3.connect(database) as connection:
+        assert connection.execute(
+            "SELECT strikes FROM task_state WHERE task_id='legacy-task'"
+        ).fetchone() == (2,)
+        assert connection.execute(
+            "SELECT destination FROM destinations WHERE task_id='legacy-task'"
+        ).fetchone() == ("old.example",)
+
+
+def test_empty_unscoped_ledger_schema_is_reinitialized_with_tenant_scope(tmp_path):
+    database = tmp_path / "empty-legacy.sqlite3"
+    with sqlite3.connect(database) as connection:
+        connection.execute(
+            "CREATE TABLE task_state (task_id TEXT PRIMARY KEY, strikes INTEGER NOT NULL)"
+        )
+        connection.execute(
+            "CREATE TABLE destinations (task_id TEXT NOT NULL, destination TEXT NOT NULL, "
+            "PRIMARY KEY(task_id, destination))"
+        )
+
+    ledger = SQLiteOperationLedger(database)
+    with sqlite3.connect(database) as connection:
+        task_columns = {
+            row[1] for row in connection.execute("PRAGMA table_info(task_state)")
+        }
+        destination_columns = {
+            row[1] for row in connection.execute("PRAGMA table_info(destinations)")
+        }
+        version = connection.execute(
+            "SELECT value FROM ledger_meta WHERE key='schema_version'"
+        ).fetchone()
+    assert "task_scope" in task_columns and "task_id" not in task_columns
+    assert "task_scope" in destination_columns and "task_id" not in destination_columns
+    assert version == ("2",)
+    assert ledger.register_capability(make_capability()).strikes == 0
