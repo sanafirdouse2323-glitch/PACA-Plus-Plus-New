@@ -22,6 +22,7 @@ from typing import Any
 
 from .authority_runtime import HMACCapabilityAuthority
 from .resource_commit import FencedResourceExecutor, ResourceCommitDenied
+from .runtime import Request
 from .secure_io import SecurePathError, SecurePathUnavailable, SecureRoot
 
 
