@@ -99,7 +99,7 @@ executor = DockerSandboxExecutor(
 )
 ```
 
-The runtime checks the signed Tool hash, and the executor independently compares the configured worker identity before starting the container. Legacy Tool manifests keep their previous hash, but the Docker executor rejects a missing implementation digest. Changing the image, command, CLI environment selection or enforced sandbox limits requires a newly issued tool pin. This does not attest the Docker daemon, host kernel, Docker CLI binary or registry trust, and it does not make isolated execution mandatory or close direct host/framework bypasses.
+The runtime checks the signed Tool hash, and the executor independently compares the configured worker identity before starting the container. The sandbox configuration and Docker CLI environment are immutable after initialization, preventing ordinary runtime mutation between the identity check and launch. Legacy Tool manifests keep their previous hash, but the Docker executor rejects a missing implementation digest. Changing the image, command, CLI environment selection or enforced sandbox limits requires a newly issued tool pin. This does not attest the Docker daemon, host kernel, Docker CLI binary or registry trust, and it does not make isolated execution mandatory or close direct host/framework bypasses.
 
 ### Deterministic tests added in this tranche
 
