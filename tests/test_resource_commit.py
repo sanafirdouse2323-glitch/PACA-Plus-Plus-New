@@ -58,6 +58,7 @@ def _environment(tmp_path, *, max_calls=40):
         purpose="write-report",
         grants={
             "mem_read": ("mem/*",),
+            "mem_write": ("mem/*",),
             "write_file": ("/acme/*",),
         },
         expires_at=2_000,
