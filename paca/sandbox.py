@@ -333,8 +333,8 @@ class DockerSandboxExecutor:
         *,
         commands: Mapping[str, Sequence[str]],
     ) -> None:
-        if not isinstance(sandbox, DockerSandbox):
-            raise TypeError("sandbox must be a DockerSandbox")
+        if not callable(getattr(sandbox, "run", None)):
+            raise TypeError("sandbox must provide a callable run(argv, input_data) method")
         if not isinstance(commands, Mapping) or not commands:
             raise ValueError("commands must be a non-empty trusted action-to-command mapping")
         normalized: Dict[str, Tuple[str, ...]] = {}
@@ -386,6 +386,8 @@ class DockerSandboxExecutor:
         except (TypeError, ValueError) as exc:
             raise SandboxExecutionError("sandbox request is not canonical JSON") from exc
         result = self.sandbox.run(command, encoded)
+        if not isinstance(result, SandboxResult):
+            raise SandboxExecutionError("sandbox runner returned an invalid result object")
         if result.returncode != 0:
             detail = result.stderr[:2048].decode("utf-8", errors="replace")
             raise SandboxExecutionError(
