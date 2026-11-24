@@ -200,6 +200,7 @@ class DockerSandbox:
                 "timeout_seconds": self.timeout_seconds,
                 "max_input_bytes": self.max_input_bytes,
                 "max_output_bytes": self.max_output_bytes,
+                "docker_cli_environment": dict(sorted(self.docker_env.items())),
             },
         }
         encoded = json.dumps(
@@ -418,7 +419,7 @@ class DockerSandboxExecutor:
 
     def __call__(self, request: Any) -> Any:
         from .provenance import Arg
-        from .runtime import Request
+        from .runtime import Request, Tool
 
         if not isinstance(request, Request):
             raise TypeError("DockerSandboxExecutor requires a typed PACA Request")
@@ -428,9 +429,9 @@ class DockerSandboxExecutor:
                 "no isolated worker is registered for this action"
             )
         tool_manifest = request.tool
-        if tool_manifest is None:
+        if not isinstance(tool_manifest, Tool):
             raise SandboxExecutionError(
-                "isolated tool execution requires a capability-pinned tool manifest"
+                "isolated tool execution requires a typed, capability-pinned tool manifest"
             )
         implementation_digest = tool_manifest.implementation_digest
         if implementation_digest is None:
@@ -471,7 +472,6 @@ class DockerSandboxExecutor:
             "version": tool_manifest.version,
             "description": tool_manifest.description,
             "schema": list(tool_manifest.schema),
-            "implementation_digest": implementation_digest,
             "hash": tool_manifest.hash,
         }
         try:
