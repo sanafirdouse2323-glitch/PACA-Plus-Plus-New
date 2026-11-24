@@ -1016,12 +1016,12 @@ def test_filesystem_resource_namespace_isolated_by_task_id(tmp_path):
     executor_one = FilesystemFencedResourceExecutor(
         env_one["executor"].authority,
         root=root,
-        state_dir=tmp_path / "state-one",
+        state_dir=tmp_path / "shared-filesystem-state",
     )
     executor_two = FilesystemFencedResourceExecutor(
         env_two["executor"].authority,
         root=root,
-        state_dir=tmp_path / "state-two",
+        state_dir=tmp_path / "shared-filesystem-state",
     )
     try:
         _, result_one = env_one["runtime"].execute_effect(
