@@ -59,6 +59,14 @@ PROTECTED = ["*/.github/workflows/*", ".github/workflows/*", "*AGENTS.md", "*/.a
 INTERNAL_RE = re.compile(r"^(localhost|127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|169\.254\.|metadata\.|.*\.internal$)")
 PATH_ACTIONS = frozenset({"read_file", "write_file", "delete_file"})
 
+# These rules implement the non-ablatable security policy for consequential
+# runtime integrations. Research ablations remain available to the simulator,
+# but must never be accepted by a runtime that can invoke external effects.
+REQUIRED_RUNTIME_POLICY_IDS = frozenset({
+    "C0", "C4a", "C4b", "C4c", "C4d", "C4e", "C4f", "C4g",
+    "C5", "C6", "C7", "C9", "C10a", "C10b", "C15",
+})
+
 
 def canonical_path_target(value: Any) -> Optional[str]:
     """Return a lexically safe absolute POSIX path, or None for an invalid path.
@@ -205,6 +213,71 @@ class Monitor:
         self.obligations.register("audit_log", lambda **kw: None)   # audit is always written below
         self.strikes: Dict[str, int] = {}
         self.dests: Dict[str, set] = {}
+
+    def assert_consequential_safe(self) -> None:
+        """Reject monitor configurations unsuitable for consequential execution.
+
+        This checks both ablation settings and the exact semantics of the required
+        packaged policy rules. Additional application rules are permitted, but
+        required rules cannot be removed, duplicated or weakened. Call this at
+        construction and immediately before each protected decision.
+        """
+        disabled = sorted(self.disable)
+        if disabled:
+            if "C13" in self.disable:
+                raise ValueError(
+                    "C13 effect-token verification cannot be disabled; "
+                    "PACAAgentRuntime requires C13 effect-token verification"
+                )
+            raise ValueError(
+                "consequential runtime cannot use an ablated monitor; "
+                "disabled checks: " + ", ".join(disabled)
+            )
+        if self.rules.strategy != "deny_overrides":
+            raise ValueError(
+                "consequential runtime requires deny_overrides policy evaluation"
+            )
+        if self.engine.strategy != "deny_overrides":
+            raise ValueError(
+                "consequential runtime requires a deny_overrides policy engine"
+            )
+
+        baseline_text = resources.files("paca").joinpath(
+            "policies", "agent_policy.paca"
+        ).read_text(encoding="utf-8")
+        baseline = parse_policy_set(
+            baseline_text, "runtime_baseline", default_decision="permit",
+        )
+        required = {
+            policy.name: policy
+            for policy in baseline.policies
+            if policy.name in REQUIRED_RUNTIME_POLICY_IDS
+        }
+        configured: Dict[str, List[Any]] = {}
+        for policy in self.rules.policies:
+            if policy.name in REQUIRED_RUNTIME_POLICY_IDS:
+                configured.setdefault(policy.name, []).append(policy)
+
+        for rule_id in sorted(REQUIRED_RUNTIME_POLICY_IDS):
+            expected = required.get(rule_id)
+            matches = configured.get(rule_id, [])
+            if expected is None or len(matches) != 1:
+                raise ValueError(
+                    f"consequential runtime is missing or duplicates required policy rule {rule_id}"
+                )
+            actual = matches[0]
+            expected_semantics = (
+                expected.action, expected.effect, tuple(expected.expressions),
+                tuple(expected.connectors), tuple(expected.obligations),
+            )
+            actual_semantics = (
+                actual.action, actual.effect, tuple(actual.expressions),
+                tuple(actual.connectors), tuple(actual.obligations),
+            )
+            if actual_semantics != expected_semantics:
+                raise ValueError(
+                    f"consequential runtime policy rule {rule_id} differs from the packaged security baseline"
+                )
 
     # ---------------------------------------------------------------- helpers
     def _clearance(self, host: str, trusted_literal: bool) -> int:
