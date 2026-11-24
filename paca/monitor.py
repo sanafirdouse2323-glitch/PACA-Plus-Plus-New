@@ -19,11 +19,13 @@ from typing import Any, Callable, Dict, Iterable, List, Optional
 from urllib.parse import urlparse
 from importlib import resources
 
+from .authority import grant_pattern_is_subset as _grant_is_subset
 from .engine import PolicyEngine
 from .obligations import ObligationRunner
 from .parser import parse_policy_set
 from .provenance import Arg, Label
 from .runtime import ACTIONS, Capability, Decision, Request, Violation
+from .ledger import OperationLedger, task_scope_key
 
 CHECKS = {
     "C1":  ("Scope: action and target inside the task-bound capability", "capability escalation; goal hijack; cross-stage drift"),
@@ -48,6 +50,7 @@ CHECKS = {
     "C13": ("Effect token binds executed effect to the authorised one", "planner/critic manipulation; TOCTOU argument swap"),
     "C14": ("Required arguments are present; the target is a non-empty string", "missing required fields or invalid target shape"),
     "C15": ("Human gate on irreversible release actions", "prompt-to-commit manipulation"),
+    "C16": ("Generic tool call lacks an action-specific effect contract", "unmapped tool effects and opaque tool arguments"),
 }
 
 DEFAULT_CLEARANCE = {"corp.example": 3, "partner.example": 1, "storage.cloud.example": 0,
@@ -129,21 +132,6 @@ def is_allowed_network_host(host: str, allowed_domains: Iterable[str]) -> bool:
                for domain in domains)
 
 
-def _grant_is_subset(child: str, parent: str) -> bool:
-    """Conservative glob-subset check; reject uncertain pattern-to-pattern relations."""
-    if not isinstance(child, str) or not isinstance(parent, str):
-        return False
-    if ".." in child.split("/") or ".." in parent.split("/"):
-        return False
-    if child == parent:
-        return True
-    if is_exact(child):
-        return fnmatch.fnmatchcase(child, parent)
-    if parent.endswith("*") and parent.count("*") == 1 and "?" not in parent and "[" not in parent:
-        return child.startswith(parent[:-1])
-    return False
-
-
 def is_exact(pattern: str) -> bool:
     return not any(c in pattern for c in "*?[")
 
@@ -197,7 +185,8 @@ class Monitor:
     def __init__(self, policy_text: Optional[str] = None, clearance: Optional[Dict[str, int]] = None,
                  protected: Optional[List[str]] = None, quarantine_after: int = 3,
                  disable: Iterable[str] = (), key: Optional[bytes] = None,
-                 approval_verifier: Optional[Callable[[Request, str], bool]] = None) -> None:
+                 approval_verifier: Optional[Callable[[Request, str], bool]] = None,
+                 ledger: Optional[OperationLedger] = None) -> None:
         if policy_text is None:
             policy_text = resources.files("paca").joinpath("policies", "agent_policy.paca").read_text(encoding="utf-8")
         self.rules = parse_policy_set(policy_text, "agent_policy", default_decision="permit")
@@ -207,6 +196,9 @@ class Monitor:
         self.quarantine_after, self.disable = quarantine_after, set(disable)
         self.key = key or os.urandom(32)
         self.approval_verifier = approval_verifier
+        self.ledger = ledger
+        if self.ledger is not None and "C13" in self.disable:
+            raise ValueError("C13 token verification cannot be disabled with a persistent ledger")
         self._issued_tokens: Dict[str, str] = {}
         self.audit = AuditLog()
         self.obligations = ObligationRunner()
@@ -238,8 +230,12 @@ class Monitor:
                 continue          # the exact, human-granted literal is the authority, not the argument's provenance
             untrusted_control = True
         pay = [args[n] for n in spec.get("payload", []) if n in args]
+        # A URL is itself outbound data: its path and query may carry model-derived
+        # or sensitive values even when no separate payload argument is supplied.
+        if req.action in ("fetch_url", "http_post") and tgt is not None:
+            pay.append(tgt)
         pl = Label.join(*(a.label for a in pay)) if pay else Label()
-        is_egress = spec["cls"] == "egress" and (req.action != "fetch_url" or bool(pay))
+        is_egress = spec["cls"] == "egress"
         host = host_of(tgt.value) if tgt is not None else ""
         trusted_dest = tgt is not None and tgt.label.integrity == "trusted"
         clr = self._clearance(host, trusted_dest) if is_egress else 99
@@ -247,16 +243,13 @@ class Monitor:
         raw_value = tgt.value if tgt is not None else ""
         value = (canonical_path_target(raw_value) or "") if req.action in PATH_ACTIONS else str(raw_value)
         scope = "core" if (req.action == "mem_write" and value.startswith("core/")) else ""
-        contributing_tenants = set(pl.tenants)
+        contributing_labels = [pl]
         if req.resource is not None:
-            contributing_tenants.update(req.resource.tenants)
-        cross = any(tenant != cap.tenant for tenant in contributing_tenants)
-        # In this simulator's request model, fetch_url is a read unless it carries
-        # the modeled query payload. A real connector must also represent implicit
-        # headers, credentials, cookies, and other outbound data in its request.
+            contributing_labels.append(req.resource)
+        contributing_tenants = set().union(*(label.tenants for label in contributing_labels))
+        unknown_tenant = any(label.tenant_unknown for label in contributing_labels)
+        cross = unknown_tenant or any(tenant != cap.tenant for tenant in contributing_tenants)
         action_class = spec["cls"]
-        if req.action == "fetch_url" and not is_egress:
-            action_class = "read"
 
         return {
             "action": {"name": req.action, "cls": action_class},
@@ -287,6 +280,46 @@ class Monitor:
                                "digest": request_digest[:16], "principal": req.cap.principal})
             return decision
         spec, cap, v = ACTIONS[req.action], req.cap, []
+        try:
+            task_key = task_scope_key(cap.tenant, cap.task_id)
+        except (TypeError, ValueError) as exc:
+            decision = Decision(
+                "deny",
+                [Violation("C13", "deny", "capability tenant/task identity is invalid")],
+                request_digest,
+            )
+            self.audit.append({
+                "step": getattr(req, "step", None),
+                "task": str(getattr(cap, "task_id", "<invalid>")),
+                "tenant": str(getattr(cap, "tenant", "<invalid>")),
+                "action": req.action,
+                "verdict": "deny",
+                "checks": decision.checks,
+                "digest": request_digest[:16],
+                "principal": str(getattr(cap, "principal", "<invalid>")),
+                "reason": f"invalid tenant/task identity: {exc}",
+            })
+            return decision
+        if self.ledger is not None:
+            try:
+                ledger_state = self.ledger.register_capability(cap)
+            except Exception:
+                # A missing or inconsistent durable state must never degrade to
+                # process-local authorisation.
+                decision = Decision(
+                    "deny",
+                    [Violation("C13", "deny", "persistent authorisation state unavailable or inconsistent")],
+                    request_digest,
+                )
+                self.audit.append({
+                    "step": req.step, "task": cap.task_id, "action": req.action,
+                    "verdict": "deny", "checks": decision.checks,
+                    "digest": request_digest[:16], "principal": cap.principal,
+                })
+                return decision
+            cap.calls = ledger_state.calls
+            self.strikes[task_key] = ledger_state.strikes
+            self.dests[task_key] = set(ledger_state.destinations)
         # C14 checks required-value presence and the target's basic string shape.
         # A real executor must additionally validate each action's payload schema and semantics.
         missing = []
@@ -305,7 +338,7 @@ class Monitor:
         tval = str(tgt.value) if tgt is not None else ""
         consequential = spec["cls"] != "read"
 
-        if consequential and self.strikes.get(cap.task_id, 0) >= self.quarantine_after:
+        if consequential and self.strikes.get(task_key, 0) >= self.quarantine_after:
             v.append(Violation("C12", "deny", "task quarantined after repeated denied/escalated attempts"))
         pat = match_grant(cap, req.action, tval)
         if req.action not in cap.grants:
@@ -316,6 +349,15 @@ class Monitor:
             v.append(Violation("C2", "deny", f"capability expired at step {cap.expires} (now {req.step})"))
         elif cap.calls >= cap.max_calls:
             v.append(Violation("C2", "deny", f"call budget {cap.max_calls} exhausted"))
+        if req.action == "call_tool":
+            if req.tool is None:
+                v.append(Violation("C3", "deny", "generic tool dispatch requires a pinned Tool manifest"))
+            elif tgt is None or req.tool.name != tval:
+                v.append(Violation("C3", "deny", "tool manifest name does not match the authorised tool target"))
+            # A generic invocation cannot infer whether opaque tool arguments perform
+            # reads, writes, disclosure, delegation or irreversible effects. Integrators
+            # must map the operation to a specific PACA action before it can execute.
+            v.append(Violation("C16", "deny", "generic tool dispatch is disabled; use an action-specific effect mapping"))
         if req.tool is not None:
             pinned = cap.tool_pins.get(req.tool.name)
             if pinned is None:
@@ -340,8 +382,11 @@ class Monitor:
 
         ctx, is_egress, host = self._context(req, spec, pat)
         if is_egress:
-            seen = self.dests.setdefault(cap.task_id, set())
-            if tval not in seen and len(seen) >= cap.max_fanout:
+            seen = self.dests.setdefault(task_key, set())
+            # URL fetch fan-out is counted by destination host, not page path, so
+            # reading several pages from one site does not consume recipient slots.
+            destination_key = host if req.action == "fetch_url" else tval
+            if destination_key not in seen and len(seen) >= cap.max_fanout:
                 v.append(Violation("C8", "deny", f"fan-out limit {cap.max_fanout} reached"))
         res = self.engine.evaluate_set(self.rules, ctx, action=req.action)
         obl = sorted({o for n, os_ in res.obligation_map.items() for o in os_})
@@ -353,7 +398,7 @@ class Monitor:
                 v.append(Violation(name, "escalate", note or "human approval required"))
 
         # Action-contract validation is a structural invariant, not an ablatable policy check.
-        v = [x for x in v if x.check not in self.disable or x.check == "C14"]
+        v = [x for x in v if x.check not in self.disable or x.check in {"C14", "C16"}]
         if any(x.severity == "deny" for x in v):
             verdict = "deny"
         elif any(x.severity == "escalate" for x in v):
@@ -375,15 +420,68 @@ class Monitor:
             completed_obligations = []
         d = Decision(verdict, v, request_digest, None, completed_obligations)
         if verdict == "allow":
-            cap.calls += 1
-            if is_egress:
-                self.dests.setdefault(cap.task_id, set()).add(tval)
-            nonce = os.urandom(32)
-            token_payload = request_digest.encode("ascii") + b":" + nonce
-            d.token = hmac.new(self.key, token_payload, hashlib.sha256).hexdigest()
-            self._issued_tokens[d.token] = request_digest
-        elif consequential:
-            self.strikes[cap.task_id] = self.strikes.get(cap.task_id, 0) + 1
+            if self.ledger is not None:
+                destination_key = (host if req.action == "fetch_url" else tval) if is_egress else None
+                try:
+                    token, failure_check = self.ledger.issue_authorization(
+                        capability=cap,
+                        action=req.action,
+                        digest=request_digest,
+                        checks=d.checks,
+                        destination=destination_key,
+                        consequential=consequential,
+                        quarantine_after=self.quarantine_after,
+                    )
+                except Exception:
+                    d.verdict = "deny"
+                    d.violations.append(Violation(
+                        "C13", "deny", "persistent authorisation transaction failed; execution is denied"
+                    ))
+                else:
+                    if token is None:
+                        d.verdict = "deny"
+                        failure_messages = {
+                            "C12": "task quarantined by persistent denial state",
+                            "C2": "persistent capability call budget exhausted",
+                            "C8": "persistent destination fan-out limit reached",
+                        }
+                        d.violations.append(Violation(
+                            failure_check or "C13", "deny",
+                            failure_messages.get(failure_check, "persistent authorisation was not issued"),
+                        ))
+                    else:
+                        d.token = token
+                        cap.calls += 1
+                        if destination_key:
+                            self.dests.setdefault(task_key, set()).add(destination_key)
+            else:
+                cap.calls += 1
+                if is_egress:
+                    destination_key = host if req.action == "fetch_url" else tval
+                    self.dests.setdefault(task_key, set()).add(destination_key)
+                nonce = os.urandom(32)
+                token_payload = request_digest.encode("ascii") + b":" + nonce
+                d.token = hmac.new(self.key, token_payload, hashlib.sha256).hexdigest()
+                self._issued_tokens[d.token] = request_digest
+        elif self.ledger is not None:
+            try:
+                self.ledger.record_decision(
+                    capability=cap,
+                    action=req.action,
+                    digest=request_digest,
+                    verdict=verdict,
+                    checks=d.checks,
+                    consequential=consequential,
+                )
+            except Exception:
+                d.verdict = "deny"
+                d.violations.append(Violation(
+                    "C13", "deny", "persistent decision record could not be committed"
+                ))
+        elif consequential and verdict == "deny":
+            # A pending approval is not a denied attempt. Only a definitive denial
+            # contributes to quarantine.
+            self.strikes[task_key] = self.strikes.get(task_key, 0) + 1
         self.audit.append({"step": req.step, "task": cap.task_id, "action": req.action, "verdict": verdict,
                            "checks": d.checks, "digest": request_digest[:16], "principal": cap.principal})
         return d
@@ -392,7 +490,7 @@ class Monitor:
         """Verify and consume a single-use token for the exact authorised request."""
         if d.verdict != "allow" or d.token is None:
             return False
-        if "C13" in self.disable:
+        if "C13" in self.disable and self.ledger is None:
             self.audit.append({"action": req.action, "verdict": "executor_verification_bypassed",
                                "digest": d.digest[:16]})
             return True
@@ -400,8 +498,18 @@ class Monitor:
             current_digest = req.digest
         except (AttributeError, TypeError, ValueError):
             current_digest = None
-        issued_digest = self._issued_tokens.pop(d.token, None)
-        valid = current_digest is not None and d.digest == current_digest and issued_digest == current_digest
+        if self.ledger is not None:
+            try:
+                valid = (
+                    current_digest is not None
+                    and d.digest == current_digest
+                    and self.ledger.consume_token(d.token, current_digest)
+                )
+            except Exception:
+                valid = False
+        else:
+            issued_digest = self._issued_tokens.pop(d.token, None)
+            valid = current_digest is not None and d.digest == current_digest and issued_digest == current_digest
         self.audit.append({"action": req.action, "verdict": "executor_verified" if valid else "executor_rejected",
                            "digest": (current_digest or "")[:16]})
         return valid

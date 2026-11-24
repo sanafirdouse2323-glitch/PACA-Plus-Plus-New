@@ -1,4 +1,4 @@
-name: PACA++ Release
+name: PAC++ New Release
 
 on:
   push:
@@ -6,7 +6,7 @@ on:
     tags:
       - "v*"
   pull_request:
-    branches: [main]
+    branches: [main, "security/**"]
     paths:
       - ".github/workflows/release.yml"
       - "pyproject.toml"
@@ -85,7 +85,7 @@ jobs:
               file.write(f"release_tag={expected_tag}\n")
               file.write(f"major_minor={major_minor}\n")
 
-          print(f"Validated PACA++ package version {project_version}; release tag is {expected_tag}.")
+          print(f"Validated PAC++ New package version {project_version}; release tag is {expected_tag}.")
           PY
 
       - name: Run complete test suite
@@ -244,7 +244,7 @@ jobs:
           gh release create "$RELEASE_TAG" dist/* \
             --verify-tag \
             --generate-notes \
-            --title "PACA++ $RELEASE_TAG" \
+            --title "PAC++ New $RELEASE_TAG" \
             --repo "$GITHUB_REPOSITORY"
 
   publish-container:

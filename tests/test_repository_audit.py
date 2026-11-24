@@ -151,9 +151,10 @@ def test_unlabelled_action_and_tool_values_default_to_untrusted():
 
     tool = Tool("docs_summarize", "1.0", "Summarise a document")
     session.start_task("Summarise a document", {"call_tool": ["docs_summarize"]}, pins=[tool])
-    assert session.act("call_tool", tool=tool)
+    assert not session.act("call_tool", tool=tool)
     tool_arg = session.trace[-1]["args"]["tool"]
     assert tool_arg[1] == "U/S0"
+    assert any(check["id"] == "C16" for check in session.trace[-1]["checks"])
 
 
 def test_ingest_does_not_promote_an_unlabelled_target_to_trusted():

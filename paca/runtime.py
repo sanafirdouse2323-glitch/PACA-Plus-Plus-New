@@ -5,8 +5,9 @@ import hashlib
 import json
 import math
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, FrozenSet, List, Optional, Tuple
 
+from .authority import AuthorityLineage
 from .provenance import Arg, Label
 
 # action -> effect class, which argument names the target / payload / extra control values.
@@ -16,7 +17,7 @@ ACTIONS: Dict[str, Dict[str, Any]] = {
     "read_calendar":  dict(cls="read",        target="resource", required=["resource"]),
     "read_drive":     dict(cls="read",        target="resource", required=["resource"]),
     "read_file":      dict(cls="read",        target="path",     required=["path"]),
-    "fetch_url":      dict(cls="egress",      target="url",     payload=["query"], required=["url"]),   # egress only if payload present
+    "fetch_url":      dict(cls="egress",      target="url",     payload=["query"], required=["url"]),   # URL label is also classified as outbound data
     "send_email":     dict(cls="egress",      target="to",      payload=["body", "attachment"], required=["to", "body"]),
     "http_post":      dict(cls="egress",      target="url",     payload=["body"], required=["url", "body"]),
     "post_message":   dict(cls="egress",      target="channel", payload=["text"], required=["channel", "text"]),
@@ -62,6 +63,21 @@ class Capability:
     tool_pins: Dict[str, str] = field(default_factory=dict)
     parent: Optional[str] = None
     calls: int = 0
+    # Optional immutable authority history. Legacy callers remain supported, but
+    # lineage-aware capabilities must keep this record aligned with their live fields.
+    authority_lineage: Optional[AuthorityLineage] = None
+
+    def validate_authority_lineage(self) -> None:
+        if self.authority_lineage is not None:
+            self.authority_lineage.validate_capability(
+                capability_id=self.cap_id,
+                principal=self.principal,
+                tenant=self.tenant,
+                task_id=self.task_id,
+                grants=self.grants,
+                expires=self.expires,
+                parent_id=self.parent,
+            )
 
 
 @dataclass
@@ -74,6 +90,15 @@ class Request:
     resource: Optional[Label] = None        # label of the object a read would return
     approval: Optional[str] = None          # human approval, bound to this exact effect's digest
     evil: bool = False                      # ground truth used only by the benchmark
+    resource_lineage_refs: FrozenSet[str] = frozenset()
+
+    def __post_init__(self) -> None:
+        if isinstance(self.resource_lineage_refs, (str, bytes)):
+            raise TypeError("resource_lineage_refs must be a collection of node identifiers")
+        refs = frozenset(self.resource_lineage_refs)
+        if any(not isinstance(ref, str) or not ref for ref in refs):
+            raise ValueError("resource lineage references must be non-empty strings")
+        self.resource_lineage_refs = refs
 
     def values(self) -> Dict[str, Any]:
         return {k: v.value for k, v in self.args.items()}
@@ -98,25 +123,39 @@ class Request:
 
         def label_data(label: Label) -> Dict[str, Any]:
             return {"integrity": label.integrity, "sensitivity": label.sensitivity,
-                    "tenants": sorted(label.tenants), "origins": sorted(label.origins)}
+                    "tenants": sorted(label.tenants), "tenant_unknown": label.tenant_unknown,
+                    "origins": sorted(label.origins)}
 
         args_data = {}
         for name in sorted(self.args):
             arg = self.args[name]
             if not isinstance(arg, Arg):
                 raise TypeError(f"request argument {name!r} must be an Arg")
-            args_data[name] = {"value": canonical(arg.value), "label": label_data(arg.label)}
+            args_data[name] = {
+                "value": canonical(arg.value),
+                "label": label_data(arg.label),
+                "lineage_refs": sorted(arg.lineage_refs),
+                "lineage_incomplete": arg.lineage_incomplete,
+            }
 
+        self.cap.validate_authority_lineage()
+        authority_data = (
+            self.cap.authority_lineage.as_dict()
+            if self.cap.authority_lineage is not None
+            else None
+        )
         cap_data = {
             "id": self.cap.cap_id, "principal": self.cap.principal, "tenant": self.cap.tenant,
             "task": self.cap.task_id, "parent": self.cap.parent, "role": self.cap.role,
             "grants": {name: sorted(patterns) for name, patterns in sorted(self.cap.grants.items())},
             "expires": self.cap.expires, "max_calls": self.cap.max_calls,
             "max_fanout": self.cap.max_fanout, "tool_pins": dict(sorted(self.cap.tool_pins.items())),
+            "authority_lineage": authority_data,
         }
         payload = {
             "action": self.action, "args": args_data, "capability": cap_data, "step": self.step,
             "resource": label_data(self.resource) if self.resource is not None else None,
+            "resource_lineage_refs": sorted(self.resource_lineage_refs),
             "tool": None if self.tool is None else {
                 "name": self.tool.name, "version": self.tool.version, "description": self.tool.description,
                 "schema": list(self.tool.schema), "hash": self.tool.hash,

@@ -1,12 +1,12 @@
-# PACA++ - Provenance-Anchored Continuous Authorization for LLM agents
+# PAC++ New — Provenance-Aware Security Across the LLM-Agent Lifecycle
 
-A small, dependency-free reference monitor that evaluates selected simulated stage-boundary
-operations (memory read/write, delegation, tool invocation and egress) to decide whether an *effect* is authorised,
-using **provenance labels** instead of trusting anything the model says.
+PAC++ New is a research prototype focused on security within LLM agents: how information provenance and delegated authority propagate through input handling, memory, reasoning, planning, communication, delegation, tool use and consequential effects.
 
-> The path that matters is *untrusted content -> model interpretation -> access to data, tools or an
-> external recipient*. PACA++ does not try to stop the model reading malicious text; it stops that
-> chain from ending in an unauthorised effect.
+Its current implementation combines a Python reference monitor, provenance labels, task-scoped capabilities, a deterministic simulator and a limited AgentDojo adapter. It does **not** yet mediate every lifecycle transition or provide a production agent runtime.
+
+**Repository separation:** this project is distinct from the separate [PACA-Plus-Plus enterprise authorization gateway repository](https://github.com/sanafirdouse2323-glitch/PACA-Plus-Plus). PAC++ New does not implement that gateway's FastAPI/OPA/PostgreSQL service or enterprise deployment architecture. The two projects must retain separate scopes, code and evidence.
+
+> Research question: can provenance-aware state management and continuous authorization preserve the relationship between information, authority and effects across an agent's complete lifecycle, including memory reuse and multi-agent handoffs?
 
 ```bash
 pip install -e .[dev]
@@ -22,10 +22,12 @@ Open `docs/index.html` for the checked-in historical interactive report (also de
 | Mechanism | Where | Risk classes exercised in the simulator |
 |---|---|---|
 | Task-bound, target-bound, expiring **capabilities** (default deny) | `runtime.py`, `monitor.py` C1/C2 | stale authority, goal hijack, cross-stage drift, cost DoS |
-| **Provenance labels** that only get worse when data is combined (integrity, sensitivity, tenant, origins); unlabelled `Arg` values default to untrusted | `provenance.py` | provenance laundering, fragmentation, memory poisoning |
+| **Provenance labels and optional typed lineage** (object/version IDs, content digests, parent transformations, source metadata); unlabelled `Arg` values default to untrusted | `provenance.py` | provenance laundering, fragmentation, memory poisoning |
+| **Separate authority lineage** with immutable grant scope, purpose, parent-chain digest, expiry and policy epoch; bound into request digests | `authority.py`, `runtime.py` | delegation drift, stale grant metadata and effect-token substitution |
 | Policy rules in the PACA DSL over those labels (packaged default: `paca/policies/agent_policy.paca`; identical example copy: `examples/agent_policy.paca`) | `engine.py`, `monitor.py` | indirect injection, exfiltration, confused deputy, SSRF, config tampering |
 | **Manifest pinning** (hash+version of each tool authorised for the task) | C3 | MCP poisoning/rug-pull, tool-selection hijack, supply chain |
-| **Delegation attenuation**, fan-out limit, quarantine after repeated denials | C8/C11/C12 | multi-agent escalation, worms, approval fatigue |
+| **Delegation attenuation**, fan-out limit, quarantine after definitive denials | C8/C11/C12 | multi-agent escalation, worms, repeated denied actions |
+| **Fail-closed generic tool dispatch**: opaque `call_tool` requests are rejected until mapped to a specific effect action | C16 | unclassified tool arguments and hidden effects |
 | **Effect tokens**: HMAC over the exact action+args, verified by the executor; approvals bound to the same digest | C13 | planner/critic swap, TOCTOU, replayed approvals |
 | Hash-chained **audit log** | `monitor.AuditLog` | forensics / tamper evidence |
 
@@ -62,6 +64,11 @@ the checked-in `docs/` snapshot. Run `python -m paca bench docs` to regenerate t
   of real products or an independent benchmark suite.
 - High scores on a defence's own suite are expected; useful outputs include the **ablation**
   (which check uniquely stops which attack), residual cases, benign completion, and false blocks.
+- The **Sandbox + scoped permissions** row is a hand-authored toy comparator, not NVIDIA
+  OpenShell, NVIDIA Sentry or an OpenAI-hosted sandbox. New cross-session and cross-tenant
+  tests are protocol fixtures, not tests of a distributed memory backend. See
+  [the sandbox and external-containment evaluation protocol](docs/CONTAINMENT_EVALUATION.md)
+  for real-integration requirements and explicit non-claims.
 - This repository includes an optional AgentDojo ToolsExecutor adapter, a task-scoped
   mapper for 14 workspace read/search operations, and a paired benchmark runner. The runner
   derives exact action/target grants from each selected user's clean AgentDojo ground-truth
@@ -88,8 +95,10 @@ req = Request("send_email", {"to": user_recipient, "body": derive("summary", doc
 d = m.decide(req)                               # allow | needs_approval | deny (+ reasons, token)
 assert m.verify(req, d)                         # executor must verify before acting
 ```
-Integration contract: **labels are assigned by your connectors/memory store, never by the model.**
-If an agent framework lets the model attach its own labels, the guarantees do not hold.
+Integration contract: **labels, content digests and lineage references are assigned by trusted connectors/memory adapters, never by the model.**
+If an agent framework lets the model attach or rewrite those values, the guarantees do not hold.
+
+The typed information and authority graphs currently run in memory as reference structures. They do not yet provide durable lineage storage, authenticated capability issuance, active revocation or automatic provenance instrumentation of hidden LLM context. See [the lifecycle research programme](docs/AGENT_LIFECYCLE_SECURITY_RESEARCH.md) and [the implementation roadmap](docs/security-roadmap.md) for precise boundaries.
 
 **Execution and approval boundaries:** this repository contains an in-process reference monitor
 and a deterministic simulator. An optional AgentDojo ToolsExecutor adapter inserts
@@ -102,25 +111,40 @@ do not yet have dedicated PACA++ action mappings. It is not a generic agent adap
 does not provide an independent production executor. The scenario harness supplies read
 content to `Session.ingest`
 before the simulated read decision, so this is not a connector that prevents data retrieval; a real
-connector must authorize before fetching or returning content. In this request model, `fetch_url`
-treats its declared `query` field as outbound data; implicit HTTP headers, cookies, credentials,
-and other transport-layer state are not modeled. A real connector must include any such data in
-the authorization-bound request representation. The simulator's memory-read path
+connector must authorize before fetching or returning content. The monitor classifies every fetch_url
+request as egress and includes the URL argument label in the flow-sensitivity calculation, including
+when no separate query field is provided. Implicit HTTP headers, cookies, credentials, redirect
+chains, and other transport-layer state are not modeled; a real connector must include the complete
+outbound request and revalidate the destination at connection time. Generic call_tool requests are
+rejected with C16 because the monitor cannot infer the effect class of opaque tool arguments; an
+integrator must map each operation to a specific PACA action and bind every effect-relevant field.
+The simulator's memory-read path
 authorizes using a separately stored label before looking up the stored value, but it is still an
 in-memory test harness, not an integrated memory-store adapter. Inbound communication through
 `Session.receive` and agent planning are not independently mediated by a real runtime in this prototype.
 
-The monitor's C14 check verifies that required arguments are present and that the target is a non-empty string. It does not validate every action-specific payload type or semantic constraint; a real executor must enforce those schemas before acting. Filesystem grant matching performs lexical path validation only; a real executor must also prevent
-symlink escapes and TOCTOU races. Network integrations must resolve and re-check destinations and
-redirects at connection time to reduce DNS-rebinding and redirect-based SSRF. A deployment must route
-every consequential effect through an executor that verifies and consumes the monitor's single-use
-token. The default monitor does not accept approvals unless the integrator supplies an
-`approval_verifier` that validates a signed approval from a separately authenticated approval
-service. The benchmark injects a test-only verifier and simulates the human decision; its digest
-check is not an authentication mechanism and must not be reused in production.
+The monitor's C14 check verifies that required arguments are present and that the target is a non-empty string. C16 is a non-ablatable structural denial for generic call_tool dispatch until the integration maps the tool operation to a specific PACA action. The monitor does not validate every action-specific payload type or semantic constraint; a real executor must enforce those schemas before acting. Pending needs_approval decisions do not increment the repeated-denial quarantine counter; only definitive denials do.
 
-**Provenance scope:** joined labels preserve all contributing tenant identifiers. The label
-mechanism still depends on trusted adapters assigning correct labels and on integrations preserving
+**Optional persistent state:** the default Monitor still uses process-local capability counters, token state and audit state. The optional `SQLiteOperationLedger` backend persists capability fingerprints, call budgets, denial strikes, destination fan-out, decision records and token state. It uses atomic transactions for budget/fan-out reservation and single-use token consumption. It supports multiple processes sharing one local SQLite database file; it is not a multi-host distributed database. A distributed deployment needs a server-database implementation of the same ledger contract. The AgentDojo adapter's step allocator is still process-local. Token consumption is not an exactly-once guarantee for an external effect.
+
+```python
+from paca.ledger import SQLiteOperationLedger
+from paca.monitor import Monitor
+
+ledger = SQLiteOperationLedger("/var/lib/paca/operations.sqlite3")
+monitor = Monitor(ledger=ledger)
+```
+
+**Filesystem and network primitives:** grant matching still performs lexical path checks. The new `SecureRoot` helper uses Linux `openat2` with beneath-root and no-symlink resolution and fails closed if those guarantees are unavailable. The new network helpers reject non-public or mixed DNS answer sets and can connect to a vetted numeric IP without a second DNS lookup. These helpers are not yet wired into every file, HTTP or AgentDojo tool implementation. Redirects must be separately revalidated by the caller, and a client must not open a second hostname-resolved connection. A production executor must route every consequential effect through the appropriate secure primitive and verify/consume the monitor's token immediately before the effect.
+
+The default monitor does not accept approvals unless the integrator supplies an `approval_verifier` that validates a signed approval from a separately authenticated approval service. The verifier interface exists, but this repository does not yet implement that production approval service. Manifest pinning checks the declared tool manifest; it does not attest the implementation actually loaded by a runtime. The benchmark injects a test-only verifier and simulates the human decision; its digest check is not an authentication mechanism and must not be reused in production.
+
+The bounded protocol model and reproducible TLC runner are in `models/PACAAuth.tla`, `models/PACAAuth.cfg` and `scripts/run_tlc.sh`. The model does not prove that the Python implementation refines it. See [docs/AGENT_LIFECYCLE_SECURITY_RESEARCH.md](docs/AGENT_LIFECYCLE_SECURITY_RESEARCH.md) for the research model, literature positioning, threat model and evaluation programme; see [docs/security-roadmap.md](docs/security-roadmap.md) for implementation status and acceptance gates.
+
+**Provenance scope:** joined labels preserve all contributing tenant identifiers and retain an
+unknown-tenant marker when any sensitive source lacks tenant metadata; the monitor denies such
+flows under C6 rather than treating missing ownership as a clean tenant match. The label mechanism
+still depends on trusted adapters assigning correct labels and on integrations preserving
 them across every transformation; it does not establish the truth of a source or protect against
 a compromised adapter. The audit chain detects record alteration within the retained chain, but
 is not an external, append-only log service.
@@ -222,7 +246,7 @@ These checks are also executed automatically in the GitHub Actions workflow.
 
 ## License
 
-PACA++ is free to use for academic research, education, and other non-commercial purposes under the [PACA++ Academic and Non-Commercial License](LICENSE). **Commercial use requires prior written permission and a separate agreement that includes an agreed royalty or revenue share.** This is a source-available licence, not an OSI-approved open-source licence.
+PAC++ New is free to use for academic research, education, and other non-commercial purposes under the [PACA++ Academic and Non-Commercial License](LICENSE). **Commercial use requires prior written permission and a separate agreement that includes an agreed royalty or revenue share.** This is a source-available licence, not an OSI-approved open-source licence.
 
 A prior version was published under MIT. This update does not revoke rights already granted to anyone who received an earlier MIT-licensed copy.
 
