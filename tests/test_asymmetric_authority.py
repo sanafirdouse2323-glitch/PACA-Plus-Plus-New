@@ -385,13 +385,11 @@ def test_ed25519_key_ring_supports_rotation_overlap_and_retirement(tmp_path):
     # During rotation overlap, the new issuer/verifier can still validate
     # credentials signed by the previous key while new credentials use key 2.
     assert (
-        overlapping_verifier.verify(old_signed.token).capability.principal
-        == "agent-a"
+        overlapping_verifier.verify(old_signed.token).capability.principal == "agent-a"
     )
     new_signed = _capability(rotated_issuer)
     assert (
-        overlapping_verifier.verify(new_signed.token).capability.principal
-        == "agent-a"
+        overlapping_verifier.verify(new_signed.token).capability.principal == "agent-a"
     )
 
     old_permit = old_issuer.issue_resource_commit_permit(
