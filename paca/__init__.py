@@ -69,6 +69,7 @@ __all__ = [
     "Ed25519CapabilityAuthority",
     "EvaluationResult",
     "FencedResourceExecutor",
+    "FilesystemFencedResourceExecutor",
     "Expression",
     "HMACAgentMessageCodec",
     "HMACCapabilityAuthority",
