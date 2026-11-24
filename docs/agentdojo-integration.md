@@ -64,17 +64,23 @@ field is included in the monitor's digest but is not interpreted as a policy att
 the request builder must still map each security-relevant value to the correct action
 and provenance fields.
 
-C13 effect-token verification is a structural requirement for this external executor
-and cannot be disabled through Monitor's policy-check ablation setting. The adapter
-rejects such a Monitor configuration at construction time.
+Consequential AgentDojo dispatch requires the complete packaged PACA security policy,
+not only C13. The adapter calls `Monitor.assert_consequential_safe()` at construction
+and again before each dispatch. This rejects every policy-check ablation and verifies
+that required rules (including C4a–C4g, C5, C6, C7, C9, C10a, C10b and C15) retain
+their packaged semantics. Research ablations remain available to the simulator, but
+cannot be used with this consequential dispatcher. This check is repeated so a
+post-construction change to the monitor's ablation configuration is rejected.
 
 ## Task-scoped workspace read mapper
 
 The repository includes `paca.integrations.agentdojo_workspace`, a concrete mapper
 for a deliberately limited subset of AgentDojo's `v1.2.2` workspace suite. It maps
 read/search calls into PACA++ read actions and fails closed for every unlisted tool.
-It does not yet authorise writes, deletes, email sends, file sharing, or calendar
-mutations.
+One supported operation, `get_unread_emails`, also marks the returned messages as
+read and is deliberately mapped to the PACA++ `mark_mail_read` write action. The
+mapper does not authorize general writes, deletes, email sends, file sharing, or
+calendar mutations.
 
 Supported workspace tools:
 
@@ -385,8 +391,10 @@ benchmark's ground-truth attack flag is not an authenticated approval mechanism.
 - Output labels are stored in extra_args under unique result-event keys; the mapper must
   explicitly use them when labelling downstream derived data. The adapter cannot infer
   exact LLM data lineage.
-- The tool's underlying function remains responsible for validating action-specific
-  semantics and ensuring the actual external effect matches the authorised request.
+- The one mapped state change (`get_unread_emails` → `mark_mail_read`) is explicit
+  and limited to the AgentDojo fixture operation. The tool's underlying function
+  remains responsible for validating action-specific semantics and ensuring the
+  actual external effect matches the authorised request.
 - A single-use PACA++ effect token prevents reuse of that token; it does not deduplicate
   separately authorised requests. Connectors for non-idempotent effects (for example,
   sending messages or making payments) must implement their own idempotency keys or

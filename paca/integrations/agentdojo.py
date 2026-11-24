@@ -89,10 +89,7 @@ class PacaToolsExecutor(ToolsExecutor):
     ) -> None:
         if not isinstance(monitor, Monitor):
             raise TypeError("monitor must be a PACA++ Monitor instance")
-        if "C13" in monitor.disable:
-            raise ValueError(
-                "C13 effect-token verification cannot be disabled for external tool execution"
-            )
+        monitor.assert_consequential_safe()
         if not callable(request_builder):
             raise TypeError("request_builder must be callable")
         if approval_provider is not None and not callable(approval_provider):
@@ -199,6 +196,9 @@ class PacaToolsExecutor(ToolsExecutor):
             self.metrics["policy_evaluations"] += 1
             policy_started_ns = time.perf_counter_ns()
             try:
+                # Revalidate in case a trusted host changed monitor configuration
+                # after adapter construction. Policy ablations are simulator-only.
+                self.monitor.assert_consequential_safe()
                 execution_args = copy.deepcopy(dict(supplied_args))
                 for key, value in list(execution_args.items()):
                     if isinstance(value, str) and self._is_string_list(value):
@@ -238,6 +238,10 @@ class PacaToolsExecutor(ToolsExecutor):
                     Label(integrity="untrusted", origins=frozenset({"agentdojo_tool_call"})),
                 )
 
+                # The request builder is trusted host code, but configuration
+                # drift or an accidental mutation there must not weaken policy
+                # between adapter construction and the decision itself.
+                self.monitor.assert_consequential_safe()
                 decision = self.monitor.decide(request)
                 if decision.verdict == "needs_approval":
                     self.metrics["approval_requests"] += 1
@@ -247,6 +251,7 @@ class PacaToolsExecutor(ToolsExecutor):
                         if not isinstance(approval, str) or not approval.strip():
                             raise TypeError("approval_provider must return non-empty authenticated evidence or None")
                         request.approval = approval
+                        self.monitor.assert_consequential_safe()
                         decision = self.monitor.decide(request)
 
                 if decision.verdict != "allow":
