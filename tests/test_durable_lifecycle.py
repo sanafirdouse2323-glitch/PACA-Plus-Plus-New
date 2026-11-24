@@ -2959,8 +2959,16 @@ def test_registry_migrates_empty_v3_database_to_task_quota_schema(tmp_path):
         table = connection.execute(
             "SELECT name FROM sqlite_master WHERE type='table' AND name='task_usage'"
         ).fetchone()
-    assert version == "4"
+    assert version == "5"
     assert table is not None
+    with sqlite3.connect(database) as connection:
+        resource_tables = {
+            row[0] for row in connection.execute(
+                "SELECT name FROM sqlite_master WHERE type='table'"
+            ).fetchall()
+        }
+    assert "paca_resource_commit_receipts" in resource_tables
+    assert "paca_resource_values" in resource_tables
     with pytest.raises(KeyError):
         migrated.task_usage("acme", "not-created")
 
