@@ -5,7 +5,7 @@ CONSTANTS
     Grants, RootGrant, ChildGrant, GrandchildGrant,
     Principals, Tenants, Tasks, Purposes, Actions, Resources, Destinations,
     IntegrityLevels, MaxSensitivity, MaxBudget, MaxTime,
-    ChildPrincipal, GrandchildPrincipal, UseAction, UseResource, UsePurpose,
+    ChildPrincipal, GrandchildPrincipal, UsePrincipalChild, UsePrincipalGrandchild,
     UseDestination, UseTask, UseSensitivity, UseIntegrity, UseApprovalSatisfied,
     RootPrincipal, RootTenant, RootTaskScope, RootPurposeScope, RootActions, RootResources,
     RootDestinations, RootDelegatees, RootMaxSensitivity, RootIntegrityLevels,
@@ -105,8 +105,9 @@ Delegate(child, parent, recipient, task, actions, resources, purposes, destinati
     /\ grantUseCount' = [grantUseCount EXCEPT ![child] = 0]
     /\ UNCHANGED now
 
-UseGrant(g) ==
+UseGrant(g, principal) ==
     /\ g \in Grants
+    /\ principal = grantSubject[g]
     /\ GrantChainActive(g)
     /\ UseAction \in grantActions[g]
     /\ UseResource \in grantResources[g]
@@ -170,7 +171,8 @@ AdvanceTime ==
 Next ==
     \/ DelegateToChild
     \/ DelegateToGrandchild
-    \/ \E g \in Grants: UseGrant(g)
+    \/ UseGrant(ChildGrant, UsePrincipalChild)
+    \/ UseGrant(GrandchildGrant, UsePrincipalGrandchild)
     \/ \E g \in Grants: RevokeGrant(g)
     \/ \E g \in Grants: ExpireGrant(g)
     \/ AdvanceTime

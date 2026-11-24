@@ -110,9 +110,9 @@ ParentsExist ==
 
 NoIntegrityUpgrade ==
     \A n \in Nodes:
-        nodeState[n] = "stored" =>
-            (\E p \in nodeParents[n]: nodeIntegrity[p] = "untrusted")
-            => nodeIntegrity[n] = "untrusted"
+        (nodeState[n] = "stored"
+         /\ (\E p \in nodeParents[n]: nodeIntegrity[p] = "untrusted"))
+        => nodeIntegrity[n] = "untrusted"
 
 NoSilentSensitivityDowngrade ==
     \A n \in Nodes:
