@@ -63,6 +63,14 @@ def _environment(tmp_path, *, authorize=lambda _context, _node: True):
         identity_verifier=lambda principal, tenant: bool(
             principal and tenant in {"acme", "other"}
         ),
+        task_context_verifier=lambda principal, tenant, task_id, purpose: bool(
+            principal and purpose and tenant in {"acme", "other"}
+            and task_id in {
+                "task-1", "task", "task-other", "task-budget", "fanout-task",
+                "budgeted-task", "limited-memory-task", "quota-task",
+                "same-task-id", "fixed-quota-task", "shared-memory-task",
+            }
+        ),
         clock=clock,
     )
     repo = SQLiteProvenanceRepository(tmp_path / "lineage.sqlite3")
@@ -656,6 +664,10 @@ def test_inter_agent_message_replay_is_rejected_after_registry_restart(tmp_path)
         key=b"K" * 32,
         audience="paca-test-runtime",
         identity_verifier=lambda principal, tenant: bool(principal and tenant == "acme"),
+        task_context_verifier=lambda principal, tenant, task_id, purpose: bool(
+            principal and tenant == "acme" and task_id == "task-1"
+            and purpose == "prepare-report"
+        ),
         clock=env["clock"],
     )
     restarted_memory = TrustedMemoryAdapter(
@@ -783,6 +795,9 @@ def test_capability_issuer_rejects_an_unauthenticated_principal(tmp_path):
         key=b"I" * 32,
         audience="runtime",
         identity_verifier=lambda principal, tenant: principal == "known-agent" and tenant == "acme",
+        task_context_verifier=lambda principal, tenant, task_id, purpose: (
+            principal, tenant, task_id, purpose
+        ) == ("known-agent", "acme", "task", "research"),
         clock=lambda: now[0],
     )
     with pytest.raises(CapabilityAuthenticationError, match="not authenticated"):
@@ -803,6 +818,18 @@ def test_capability_issuer_rejects_an_unauthenticated_principal(tmp_path):
         expires_at=2_000,
     )
     assert issuer.verify(accepted.token).capability.principal == "known-agent"
+
+    # A caller cannot reset the aggregate task quota by selecting an
+    # arbitrary task identifier outside the trusted orchestrator context.
+    with pytest.raises(CapabilityAuthenticationError, match="task and purpose"):
+        issuer.issue(
+            principal="known-agent",
+            tenant="acme",
+            task_id="attacker-selected-new-task",
+            purpose="research",
+            grants={"mem_read": ("mem/*",)},
+            expires_at=2_000,
+        )
 
 
 def test_message_open_rejects_revoked_source_authority(tmp_path):

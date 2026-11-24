@@ -72,13 +72,13 @@ The async runtime accepts only a newly-created native coroutine and revalidates 
 ### A-05 — Aggregate quota depends on trusted task identity and one shared registry
 
 **Severity:** High if task IDs or registry selection are caller-controlled  
-**Status:** Open deployment requirement
+**Status:** Partially mitigated on the phase-2 task-context branch; production trust remains deployment-dependent.
 
-PR #14 scopes the aggregate counter by `(tenant, task_id)`. The issuer's identity callback currently verifies principal-to-tenant identity; the task identifier is supplied separately to root capability issuance. A new task ID creates a new quota namespace. Separate SQLite files or hosts also create separate quota namespaces.
+The issuer now requires a separate `task_context_verifier(principal, tenant, task_id, purpose)` callback in addition to principal-to-tenant identity verification. It invokes that callback for root and delegated capability issuance after delegation scope has been derived from the parent record. The callback must consult trusted orchestrator/task-registry state and establish that the requested principal is an authorised participant in that exact tenant/task/purpose context. It must not merely accept caller-supplied identifiers or return true for all tasks.
 
-**Impact:** If an untrusted caller can mint root capabilities with arbitrary task IDs, or route work to independent registry files/hosts, it can split work across counters. This is not a flaw in the atomic SQL update; it is a task-identity and deployment trust-boundary requirement.
+**Residual impact:** The callback is application-supplied code; a permissive or compromised callback restores the original quota-splitting risk. Separate SQLite files or hosts still create separate quota namespaces.
 
-**Required control:** Have a trusted orchestrator assign and authenticate task IDs, bind task identity and quota policy into the issuer decision, and ensure every worker for that task uses the same transactional authority store. For multi-host operation, move the authority/usage contract to a server database with transactional consistency and explicit failover semantics.
+**Required control:** Wire the callback to an authenticated orchestrator/service-owned task registry, protect its credentials and prevent agent-controlled code from invoking the issuer directly. For multi-host operation, move the authority/usage contract to a server database with transactional consistency and explicit failover semantics. The local callback contract reduces the API trust gap but does not itself deliver distributed quotas.
 
 ### A-06 — Message replay validation has an availability/rate-limit gap
 

@@ -766,6 +766,7 @@ class HMACCapabilityAuthority:
         key: bytes,
         audience: str,
         identity_verifier: Callable[[str, str], bool],
+        task_context_verifier: Callable[[str, str, str, str], bool],
         clock=time.time,
     ) -> None:
         if not isinstance(key, bytes) or len(key) < 32:
@@ -779,8 +780,14 @@ class HMACCapabilityAuthority:
         self._key = bytes(key)
         if not callable(identity_verifier):
             raise TypeError("identity_verifier must bind a principal to a tenant using trusted identity state")
+        if not callable(task_context_verifier):
+            raise TypeError(
+                "task_context_verifier must validate principal, tenant, task and purpose "
+                "against trusted orchestrator state"
+            )
         self.audience = audience
         self.identity_verifier = identity_verifier
+        self.task_context_verifier = task_context_verifier
         self.clock = clock
 
     def _encode(self, payload: Mapping[str, object]) -> str:
@@ -870,6 +877,20 @@ class HMACCapabilityAuthority:
             raise CapabilityAuthenticationError("trusted principal authentication failed") from exc
         if not authenticated:
             raise CapabilityAuthenticationError("principal is not authenticated for the requested tenant")
+        try:
+            task_context_authenticated = bool(
+                self.task_context_verifier(
+                    principal, str(tenant), str(task_id), str(purpose),
+                )
+            )
+        except Exception as exc:
+            raise CapabilityAuthenticationError(
+                "trusted task context authentication failed"
+            ) from exc
+        if not task_context_authenticated:
+            raise CapabilityAuthenticationError(
+                "principal is not authorised for the requested task and purpose"
+            )
         authority_id = secrets.token_urlsafe(18)
         record = AuthorityLineage.create(
             authority_id=authority_id,
