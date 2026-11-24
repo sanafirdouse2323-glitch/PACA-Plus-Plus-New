@@ -240,7 +240,6 @@ def test_postgres_resource_commit_serializes_before_revoke_across_clients(monkey
 
 
 
-
 def test_postgres_filesystem_commit_callback_serializes_with_revocation(
     tmp_path,
     monkeypatch,
@@ -316,9 +315,7 @@ def test_postgres_filesystem_commit_callback_serializes_with_revocation(
     assert committed["version"] == 1
     assert env["root"].capability.cap_id in revoked
     assert not env["registry_a"].is_active(env["root"].capability.cap_id)
-    receipt = env["registry_b"].get_resource_commit_receipt(
-        committed["commit_nonce"]
-    )
+    receipt = env["registry_b"].get_resource_commit_receipt(committed["commit_nonce"])
     assert receipt is not None
     assert receipt["task_id"] == env["task_id"]
 
