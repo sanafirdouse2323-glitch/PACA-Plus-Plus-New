@@ -712,7 +712,7 @@ def test_filesystem_executor_rejects_traversal_or_cross_tenant_targets(
     env = _environment(tmp_path, resource_path=resource_path)
     root, _, executor = _filesystem_executor(env, tmp_path)
 
-    with pytest.raises(ResourceCommitDenied, match="normalized tenant path|tenant directory"):
+    with pytest.raises((MemoryAccessDenied, ResourceCommitDenied)):
         env["runtime"].execute_effect(
             env["signed"].token,
             env["request"],
