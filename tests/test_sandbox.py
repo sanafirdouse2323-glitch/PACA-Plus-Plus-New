@@ -84,16 +84,22 @@ def test_docker_artifact_digest_binds_image_command_and_isolation_profile():
 
     assert descriptor["docker_invocation"] == expected_invocation
     assert "--workdir=/tmp" in expected_invocation
-    assert "--env=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" in expected_invocation
-    assert digest == hashlib.sha256(
-        json.dumps(
-            descriptor,
-            sort_keys=True,
-            separators=(",", ":"),
-            ensure_ascii=False,
-            allow_nan=False,
-        ).encode("utf-8")
-    ).hexdigest()
+    assert (
+        "--env=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+        in expected_invocation
+    )
+    assert (
+        digest
+        == hashlib.sha256(
+            json.dumps(
+                descriptor,
+                sort_keys=True,
+                separators=(",", ":"),
+                ensure_ascii=False,
+                allow_nan=False,
+            ).encode("utf-8")
+        ).hexdigest()
+    )
     assert len(digest) == 64
     assert digest == baseline.implementation_digest(command)
     assert digest != baseline.implementation_digest(
