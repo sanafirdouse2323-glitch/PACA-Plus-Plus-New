@@ -34,7 +34,7 @@ The commit method performs all of the following in one `BEGIN IMMEDIATE` transac
 
 **Security guarantee:** within this single-host SQLite resource adapter, a resource commit and authority revocation have one database serialization order. A commit can complete before revocation, or it is rejected after revocation; the permit cannot be replayed to perform a second write. The effect-budget charge and resource write are committed or rolled back together.
 
-**Residual impact:** this is an opt-in reference data plane supporting only `write_file` and `mem_write`. It does not make existing in-process executors safe by default, does not cover every action, and is not a remote resource-server protocol. Gmail, Microsoft Graph, Slack, vector databases and other external services do not share the local SQLite transaction. Those integrations need provider/destination-side conditional authorization, fencing/ETag or equivalent conditional commit semantics, plus idempotency and replay handling. The current HMAC permit is symmetric; a verifier holding the secret can mint one. The local SQLite registry is single-host and assumes the database/issuer process are trusted.
+**Residual impact:** this is an opt-in reference data plane supporting only `write_file` and `mem_write`. It does not make existing in-process executors safe by default, does not cover every action, and is not a remote resource-server protocol. Gmail, Microsoft Graph, Slack, vector databases and other external services do not share the local SQLite transaction. Those integrations need provider/destination-side conditional authorization, fencing/ETag or equivalent conditional commit semantics, plus idempotency and replay handling. In HMAC mode, the permit is symmetric and a verifier holding the shared secret can mint one; Ed25519 mode supports a public-key-only resource verifier, but does not add protected key custody, authenticated key distribution or key rotation. The local SQLite registry is single-host and assumes the database/issuer process are trusted.
 
 **Required control:** make a destination-side commit fence mandatory for every consequential deployment action; implement provider-specific resource-side commit protocols for remote destinations; replace shared-secret permits with asymmetric issuer/verifier separation and protected key rotation; and validate multi-host semantics before distributed production claims.
 
@@ -108,16 +108,18 @@ The receive path commits `consume_message` before calling `authorize_argument`. 
 
 **Required control:** Make the intended semantics explicit. If delivery should be retryable, separate an authenticated pending receipt from a completed receipt, or atomically coordinate receive authorization and receipt completion. Do not roll back replay protection merely to improve retries. Add tests for missing read grant, temporary policy denial, and successful retry policy.
 
-### A-08 — Shared-secret HMAC is not production issuer/verifier separation
+### A-08 — Shared-secret HMAC and production identity/key management
 
 **Severity:** High for multi-service production deployments  
-**Status:** Open production blocker
+**Status:** Partially mitigated by an Ed25519 issuer/verifier primitive; production key custody, rotation and identity integration remain open
 
-The current capability issuer uses HMAC. Any component holding the verification key can mint credentials. The constructor accepts a trusted `identity_verifier` callback but does not implement a production identity provider, OIDC token validation, asymmetric issuer signing, verifier-only public keys, key vault/HSM integration, rotation or revocation distribution.
+The repository now includes Ed25519CapabilityAuthority, using a private-key-configured instance for issuance and a public-key-only instance for verification. Capability envelopes and resource-commit permits bind an explicit signature_algorithm and key_id; verifier-only instances cannot issue capabilities or resource permits. Tests cover public-key verification, denial of issuer methods on verifier-only instances, resource permit verification with only a public key, a complete strict local resource write using a private-key issuer and separate public-key-only resource verifier, wrong key ID, wrong audience, wrong public key, payload tampering and validly signed algorithm-downgrade rejection. HMAC remains available as the compatibility/reference mechanism, and legacy version-2 HMAC capability envelopes without an algorithm field remain verifiable.
 
-**Impact:** Compromise of any verifier holding the shared key can become issuer compromise. Key lifecycle and principal/tenant/task binding remain deployment responsibilities.
+**Impact after phase-3 change:** a service that receives only the Ed25519 public key can verify signatures without receiving the issuer's signing seed. This removes the shared-HMAC secret from the verifier trust boundary when deployments actually configure separate issuer and verifier instances.
 
-**Required control:** Introduce an asymmetric signing interface (for example Ed25519 or an approved asymmetric JOSE profile), verifier-only public keys, `kid`-based rotation with overlap/revocation, protected private-key custody, issuer workload identity, and strict OIDC/JWT validation (issuer, audience, signature algorithm, key ID, expiry, not-before, subject and tenant/task claims). Do not treat a decoded JWT or an unverified identity callback as authentication.
+**Residual risk:** the implementation accepts raw private seed bytes supplied by the application; it does not integrate KMS/HSM custody, encrypted key loading, a managed key ring, key ID rotation/overlap/revocation, automated certificate/public-key distribution, workload identity or OIDC provider verification. The existing identity_verifier and task_context_verifier callbacks are still trusted application interfaces, not a production IdP. A compromised issuer or private seed can still mint credentials. The separate monitor C13 effect-token mechanism is unchanged.
+
+**Required control:** protect the Ed25519 private key using KMS/HSM or workload-bound signing, implement a versioned key ring with overlap and emergency revocation, distribute verifier public keys through authenticated configuration, and bind issuer calls to validated workload identity and authoritative tenant/task membership. Keep HMAC verifiers and keys out of production multi-service deployments.
 
 ### A-09 — Provider integrations are interfaces, not production connectors
 

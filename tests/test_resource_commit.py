@@ -9,7 +9,12 @@ from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+
 from paca.authority_runtime import (
+    CapabilityAuthenticationError,
+    Ed25519CapabilityAuthority,
     HMACCapabilityAuthority,
     SQLiteAuthorityRegistry,
 )
@@ -31,25 +36,55 @@ def _write_tool() -> Tool:
     return Tool("write_file", "1.0", "Write a file to the workspace", ("path", "content"))
 
 
-def _environment(tmp_path, *, max_calls=40):
+def _environment(tmp_path, *, max_calls=40, asymmetric=False):
     now = [1_000]
     clock = lambda: now[0]
     registry = SQLiteAuthorityRegistry(tmp_path / "authority.sqlite3", clock=clock)
-    issuer = HMACCapabilityAuthority(
-        registry,
-        issuer_id="fenced-test-issuer",
-        key_id="fenced-test-key",
-        key=b"R" * 32,
-        audience="fenced-test-runtime",
-        identity_verifier=lambda principal, tenant: bool(principal and tenant == "acme"),
-        task_context_verifier=lambda principal, tenant, task_id, purpose: (
+    callbacks = {
+        "identity_verifier": lambda principal, tenant: bool(principal and tenant == "acme"),
+        "task_context_verifier": lambda principal, tenant, task_id, purpose: (
             principal == "agent-a"
             and tenant == "acme"
             and task_id == "task-fence"
             and purpose == "write-report"
         ),
-        clock=clock,
-    )
+        "clock": clock,
+    }
+    verifier = None
+    if asymmetric:
+        private_seed = b"E" * 32
+        private = Ed25519PrivateKey.from_private_bytes(private_seed)
+        public_key = private.public_key().public_bytes(
+            encoding=serialization.Encoding.Raw,
+            format=serialization.PublicFormat.Raw,
+        )
+        issuer = Ed25519CapabilityAuthority(
+            registry,
+            issuer_id="fenced-test-issuer",
+            key_id="ed-fenced-test-key",
+            audience="fenced-test-runtime",
+            private_key=private_seed,
+            **callbacks,
+        )
+        verifier = Ed25519CapabilityAuthority(
+            registry,
+            issuer_id="fenced-test-issuer",
+            key_id="ed-fenced-test-key",
+            audience="fenced-test-runtime",
+            public_key=public_key,
+            **callbacks,
+        )
+        resource_authority = verifier
+    else:
+        issuer = HMACCapabilityAuthority(
+            registry,
+            issuer_id="fenced-test-issuer",
+            key_id="fenced-test-key",
+            key=b"R" * 32,
+            audience="fenced-test-runtime",
+            **callbacks,
+        )
+        resource_authority = issuer
     tool = _write_tool()
     signed = issuer.issue(
         principal="agent-a",
@@ -114,6 +149,7 @@ def _environment(tmp_path, *, max_calls=40):
         AllowMonitor(),
         messages,
         require_resource_commit_fence=True,
+        resource_commit_verifier=resource_authority,
     )
     request = Request(
         "write_file",
@@ -122,9 +158,10 @@ def _environment(tmp_path, *, max_calls=40):
         1,
         tool=tool,
     )
-    executor = SQLiteFencedResourceExecutor(issuer)
+    executor = SQLiteFencedResourceExecutor(resource_authority)
     return {
         "clock": clock,
+        "verifier": verifier,
         "registry": registry,
         "issuer": issuer,
         "signed": signed,
@@ -169,6 +206,81 @@ def test_resource_write_and_effect_budget_commit_in_one_authority_transaction(tm
     # Two source-argument reads and the actual effect commit were charged.
     assert env["registry"].usage(env["signed"].capability.cap_id)[0] == 5
     assert env["registry"].task_usage("acme", "task-fence")[0] == 5
+
+
+def test_strict_ed25519_runtime_rejects_non_public_only_or_mismatched_verifier(tmp_path):
+    env = _environment(tmp_path, asymmetric=True)
+    issuer = env["issuer"]
+    verifier = env["verifier"]
+    assert verifier is not None
+
+    # A signer is not accepted as its own resource-side verifier in Ed25519 mode.
+    with pytest.raises(ValueError, match="separate public-key-only"):
+        PACAAgentRuntime(
+            issuer,
+            env["memory"],
+            env["runtime"].monitor,
+            env["runtime"].messages,
+            require_resource_commit_fence=True,
+            resource_commit_verifier=issuer,
+        )
+
+    # A verifier using another key ID must not be bound to the issuer's fence.
+    mismatched_verifier = Ed25519CapabilityAuthority(
+        env["registry"],
+        issuer_id="fenced-test-issuer",
+        key_id="different-key-id",
+        audience="fenced-test-runtime",
+        public_key=b"\x31" * 32,
+        identity_verifier=lambda principal, tenant: bool(principal and tenant == "acme"),
+        task_context_verifier=lambda principal, tenant, task_id, purpose: (
+            principal == "agent-a"
+            and tenant == "acme"
+            and task_id == "task-fence"
+            and purpose == "write-report"
+        ),
+        clock=env["clock"],
+    )
+    with pytest.raises(ValueError, match="must match the issuer identity"):
+        PACAAgentRuntime(
+            issuer,
+            env["memory"],
+            env["runtime"].monitor,
+            env["runtime"].messages,
+            require_resource_commit_fence=True,
+            resource_commit_verifier=mismatched_verifier,
+        )
+
+
+def test_ed25519_private_issuer_and_public_only_resource_verifier_commit_write(tmp_path):
+    env = _environment(tmp_path, asymmetric=True)
+    verifier = env["verifier"]
+    assert verifier is not None
+    assert verifier._ed25519_signing_key is None
+
+    decision, result = env["runtime"].execute_effect(
+        env["signed"].token,
+        env["request"],
+        env["executor"],
+    )
+
+    assert decision.verdict == "allow"
+    assert result["resource"] == "/acme/reports/report.txt"
+    assert result["version"] == 1
+    stored = _stored_resource(env["registry"])
+    assert stored is not None
+    assert json.loads(stored[0]) == {"content": "approved report body"}
+
+    with pytest.raises(CapabilityAuthenticationError, match="public-key-only verifier"):
+        verifier.issue_resource_commit_permit(
+            env["signed"].token,
+            request_digest=env["request"].digest,
+            action="write_file",
+            resource="/acme/reports/report.txt",
+            payload_digest=hashlib.sha256(
+                canonical_value_bytes({"content": "approved report body"})
+            ).hexdigest(),
+        )
 
 
 def test_strict_runtime_rejects_in_process_executor_before_any_budget_or_effect(tmp_path):

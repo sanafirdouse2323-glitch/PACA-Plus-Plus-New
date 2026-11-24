@@ -4,6 +4,7 @@ from .authority import AuthorityLineage, AuthorityLineageGraph
 from .authority_runtime import (
     AuthorityRegistryError,
     CapabilityAuthenticationError,
+    Ed25519CapabilityAuthority,
     HMACCapabilityAuthority,
     SignedCapability,
     VerifiedResourceCommitPermit,
