@@ -135,13 +135,18 @@ The trusted connector adapter is a reference ingress abstraction. It does not it
 ### A-10 — Local SQLite state is not a distributed or tamper-evident security authority
 
 **Severity:** High for multi-host deployments  
-**Status:** Open production blocker
+**Status:** Partially mitigated for authority/usage/revocation state by a PostgreSQL shared-primary backend; broader evidence and failover guarantees remain open
 
-The authority registry, provenance repository, value store and operation ledger are local SQLite components. The PostgreSQL checkpoint provider is not atomically coordinated with the SQLite evidence stores. SQLite transactionality protects cooperating writers to the same local file; it does not provide quorum, multi-host consistency, tamper-evident audit, or cross-database atomicity.
+The repository now includes PostgresAuthorityRegistry, a PostgreSQL-backed implementation of the existing authority-registry contract. It stores authority records, policy epoch, revocations, per-capability usage, task-wide aggregate quota, message replay receipts and local resource-commit receipts/values in one shared PostgreSQL database. HMAC and Ed25519 capability issuers can use this registry through the common API. A test suite creates independent registry clients against the same PostgreSQL service and exercises aggregate quota sharing, cross-client revocation, durable message replay, one-use resource commit receipts and a resource-commit/revocation race.
 
-**Impact:** Split-brain workers, restored stale backups, file replacement/rollback, or direct database access can invalidate assumptions about quota, revocation, lineage and audit ordering.
+Every mutating registry operation takes a transaction-scoped SHARE ROW EXCLUSIVE lock across the authority/usage/revocation/receipt/resource tables. This is intentionally conservative: cooperating clients on the same PostgreSQL primary serialize their mutations and observe one serial order. It trades write throughput for an auditable shared consistency boundary.
 
-**Required control:** Move authoritative quota/revocation/receipt state to a transactional shared database or dedicated authorization service. Define backup/restore rollback detection, integrity monitoring, least-privilege DB roles, tamper-evident audit export, and consistency/failover tests.
+**Impact after phase-4 change:** workers using the same PostgreSQL primary and this registry implementation no longer create independent per-process SQLite authority/quota namespaces. The tenant/task aggregate quota and revocation/receipt state are shared across those clients.
+
+**Residual impact:** the backend is single-primary. It does not implement multi-primary consensus, read/write split routing, automatic failover safety, stale-backup rollback detection, quorum semantics or tamper-evident audit export. A failover to a replica that has lost acknowledged commits can roll back quota/revocation/receipt state unless the deployment configures and validates an appropriate durability/failover policy. The provenance repository, memory value store and optional Monitor operation ledger remain separate SQLite stores; they are not made distributed by this authority backend. Cross-database/cross-provider atomicity remains unresolved.
+
+**Required control:** require all workers and issuers to use one authenticated PostgreSQL primary; configure TLS, least-privilege service roles, durable WAL and a failover policy that does not promote a replica missing acknowledged commits; add restore/rollback detection and tamper-evident audit export; move provenance/value/operation-ledger state behind compatible shared transactional interfaces before claiming the entire lifecycle state is distributed.
+
 
 ## 3. Budget-accounting model and charge points
 
