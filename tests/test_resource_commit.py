@@ -51,6 +51,7 @@ def _environment(
     max_calls=40,
     asymmetric=False,
     resource_path="/acme/reports/report.txt",
+    task_id="task-fence",
 ):
     now = [1_000]
 
@@ -62,10 +63,10 @@ def _environment(
         "identity_verifier": lambda principal, tenant: bool(
             principal and tenant == "acme"
         ),
-        "task_context_verifier": lambda principal, tenant, task_id, purpose: (
+        "task_context_verifier": lambda principal, tenant, requested_task_id, purpose: (
             principal == "agent-a"
             and tenant == "acme"
-            and task_id == "task-fence"
+            and requested_task_id == task_id
             and purpose == "write-report"
         ),
         "clock": clock,
@@ -109,7 +110,7 @@ def _environment(
     signed = issuer.issue(
         principal="agent-a",
         tenant="acme",
-        task_id="task-fence",
+        task_id=task_id,
         purpose="write-report",
         grants={
             "mem_read": ("mem/*",),
