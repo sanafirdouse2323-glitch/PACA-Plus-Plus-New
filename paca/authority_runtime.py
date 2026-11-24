@@ -1075,12 +1075,11 @@ class HMACCapabilityAuthority:
         payload_digest: str,
         lifetime_seconds: int = 15,
     ) -> str:
-        """Issue a one-use, short-lived MAC permit bound to one exact resource write.
+        """Issue a one-use, short-lived signed permit for one exact resource write.
 
-        This HMAC reference implementation is suitable only where the issuer and
-        commit verifier remain inside the trusted host. Verifiers that hold this
-        symmetric key can also mint permits; asymmetric issuer/verifier separation
-        remains a separate production requirement.
+        The signature implementation is selected by this authority instance.
+        HMAC verifiers are also signers; Ed25519 verifiers can hold only a public
+        key and cannot mint permits.
         """
         for name, value in (
             ("request_digest", request_digest),
@@ -1127,9 +1126,9 @@ class HMACCapabilityAuthority:
             "payload_digest": payload_digest,
             "nonce": secrets.token_urlsafe(24),
         }
+        payload["signature_algorithm"] = self.SIGNATURE_ALGORITHM
         body = _b64encode(_canonical(payload))
         signing_input = "resource-commit-v1." + self.key_id + "." + body
-        payload["signature_algorithm"] = self.SIGNATURE_ALGORITHM
         signature = _b64encode(self._sign_bytes(signing_input.encode("ascii")))
         return signing_input + "." + signature
 
