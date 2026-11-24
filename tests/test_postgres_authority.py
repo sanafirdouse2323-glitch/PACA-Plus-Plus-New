@@ -115,7 +115,10 @@ def test_postgres_revocation_is_visible_to_independent_verifier_instance():
         env["root"].capability.cap_id,
         "cross-client PostgreSQL revocation propagation test",
     )
-    with pytest.raises(CapabilityAuthenticationError, match="authentication failed"):
+    with pytest.raises(
+        CapabilityAuthenticationError,
+        match="capability authentication or active-state validation failed",
+    ):
         env["issuer_b"].verify(env["root"].token)
     assert not env["registry_b"].is_active(env["root"].capability.cap_id)
 
