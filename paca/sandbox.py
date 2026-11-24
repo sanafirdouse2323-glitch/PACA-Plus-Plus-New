@@ -91,6 +91,7 @@ class DockerSandbox:
         image: str,
         *,
         docker_binary: str = "docker",
+        platform: str = "linux/amd64",
         timeout_seconds: float = 15.0,
         memory_bytes: int = 536_870_912,
         cpu_limit: float = 1.0,
@@ -109,6 +110,12 @@ class DockerSandbox:
             raise ValueError(
                 "docker_binary must be a non-empty executable name or path"
             )
+        if (
+            not isinstance(platform, str)
+            or re.fullmatch(r"[a-z0-9]+/[a-z0-9_]+(?:/[a-z0-9_]+)?", platform)
+            is None
+        ):
+            raise ValueError("platform must be a supported Docker OS/architecture string")
         if (
             isinstance(timeout_seconds, bool)
             or not isinstance(timeout_seconds, (int, float))
@@ -157,6 +164,7 @@ class DockerSandbox:
             raise ValueError("docker_env keys and values must be NUL-free strings")
         self.image = image
         self.docker_binary = docker_binary
+        self.platform = platform
         self.timeout_seconds = float(timeout_seconds)
         self.memory_bytes = memory_bytes
         self.cpu_limit = float(cpu_limit)
@@ -191,6 +199,7 @@ class DockerSandbox:
         descriptor = {
             "profile": "paca-docker-worker-v1",
             "image": self.image,
+            "platform": self.platform,
             "argv": list(command),
             "isolation": {
                 "network": "none",
@@ -234,6 +243,7 @@ class DockerSandbox:
             "--init",
             "--cidfile",
             cidfile,
+            f"--platform={self.platform}",
             "--network=none",
             "--read-only",
             "--cap-drop=ALL",
