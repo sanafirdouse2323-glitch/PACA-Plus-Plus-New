@@ -1114,7 +1114,7 @@ class PACAAgentRuntime:
                 monitor_validator()
             except ValueError as exc:
                 raise MemoryAccessDenied(
-                    "consequential runtime monitor configuration is unsafe"
+                    "consequential runtime monitor configuration is unsafe: " + str(exc)
                 ) from exc
         if self.require_resource_commit_fence and request.action not in {"write_file", "mem_write"}:
             raise MemoryAccessDenied(
