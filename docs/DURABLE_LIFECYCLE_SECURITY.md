@@ -34,6 +34,17 @@ The adapter recomputes the canonical JSON SHA-256 digest before accepting a writ
 
 `TrustedConnectorAdapter` assigns a fixed connector identity, source class, tenant, sensitivity and integrity label from constructor configuration. Those values are not accepted from the model as part of the ingested content. Its default integrity classification is untrusted. A deployment may configure a trusted source only when the connector's authentication and content handling justify that decision.
 
+### Read-only provider adapters and provenance capture
+
+The optional `paca.integrations.providers` module provides `GmailConnector`, `MicrosoftGraphMailConnector`, `SlackHistoryConnector` and `QdrantVectorConnector`. Install with `pip install "paca-plus-plus[providers]"`. Gmail uses the read-only Gmail messages.list/messages.get API and its Gmail readonly scope. Microsoft Graph uses the `/me/messages` collection, a configured `Mail.ReadBasic` delegated scope for the selected metadata fields, and rejects any `@odata.nextLink` that is not the exact Graph hostname/messages collection. Slack uses conversations.history with an explicitly selected history scope for the conversation type. Qdrant uses points/search and an injected API-key provider.
+
+`OAuth2RefreshTokenProvider` requires a fixed HTTPS token endpoint and trusted client/refresh-token configuration. It checks requested scopes against the configured consent grant and token-response scope, caches tokens until expiry, refuses token redirects and requires a persistence callback if the authorization server rotates a refresh token. Do not store the client secret or refresh token in source code, model context or logs; use an encrypted secret store and an authenticated callback for rotation.
+
+Each response is represented by a `ProviderCapture` containing a fixed connector identity, provider object ID, provider version metadata, and a canonical record digest. Its `persist()` method requires the matching `TrustedConnectorAdapter` configured with `integrity="untrusted"` and `source_class="external_content"`; the actual provider record is persisted through the existing memory adapter and bound to its exact content digest. This object is for trusted host integration code only and must not be exposed as a model-facing arbitrary-ingress endpoint.
+
+CI uses mocked HTTP transports; it does not connect to real provider accounts. Tenant/user identity mapping, token subject validation, consent administration, refresh-token KMS storage, webhook/delete propagation, full incremental sync, provider audit trails and remote write/commit protocols remain deployment/integration work. These connectors do not send messages, update mail, write Slack messages or mutate vector collections.
+
+
 Connector authentication, provider account selection, tenant mapping, source version identifiers and transport integrity remain part of the adapter's trusted computing base. The included adapter is a reference interface; it is not a production integration for Gmail, Microsoft Graph, Slack, a vector database or any other provider.
 
 `TrustedMemoryAdapter` mediates reads, writes, summaries and compaction:
