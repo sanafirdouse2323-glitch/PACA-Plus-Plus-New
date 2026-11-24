@@ -112,10 +112,11 @@ class DockerSandbox:
             )
         if (
             not isinstance(platform, str)
-            or re.fullmatch(r"[a-z0-9]+/[a-z0-9_]+(?:/[a-z0-9_]+)?", platform)
-            is None
+            or re.fullmatch(r"[a-z0-9]+/[a-z0-9_]+(?:/[a-z0-9_]+)?", platform) is None
         ):
-            raise ValueError("platform must be a supported Docker OS/architecture string")
+            raise ValueError(
+                "platform must be a supported Docker OS/architecture string"
+            )
         if (
             isinstance(timeout_seconds, bool)
             or not isinstance(timeout_seconds, (int, float))
