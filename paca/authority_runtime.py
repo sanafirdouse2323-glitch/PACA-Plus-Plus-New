@@ -1013,6 +1013,7 @@ class HMACCapabilityAuthority:
     """Issue and verify audience-bound, HMAC-authenticated capability envelopes."""
 
     TOKEN_VERSION = 2
+    SIGNATURE_ALGORITHM = "HS256"
     DEFAULT_TASK_MAX_CALLS = 100
 
     def __init__(
@@ -1048,10 +1049,20 @@ class HMACCapabilityAuthority:
         self.task_context_verifier = task_context_verifier
         self.clock = clock
 
+    def _sign_bytes(self, message: bytes) -> bytes:
+        """Sign bytes with the configured issuer key."""
+        return hmac.new(self._key, message, hashlib.sha256).digest()
+
+    def _verify_bytes(self, message: bytes, signature: bytes) -> bool:
+        """Verify bytes with the configured verification key."""
+        return hmac.compare_digest(self._sign_bytes(message), signature)
+
     def _encode(self, payload: Mapping[str, object]) -> str:
-        body = _b64encode(_canonical(payload))
+        encoded_payload = dict(payload)
+        encoded_payload["signature_algorithm"] = self.SIGNATURE_ALGORITHM
+        body = _b64encode(_canonical(encoded_payload))
         signing_input = self.key_id + "." + body
-        signature = _b64encode(hmac.new(self._key, signing_input.encode("ascii"), hashlib.sha256).digest())
+        signature = _b64encode(self._sign_bytes(signing_input.encode("ascii")))
         return signing_input + "." + signature
 
     def issue_resource_commit_permit(
@@ -1118,9 +1129,8 @@ class HMACCapabilityAuthority:
         }
         body = _b64encode(_canonical(payload))
         signing_input = "resource-commit-v1." + self.key_id + "." + body
-        signature = _b64encode(
-            hmac.new(self._key, signing_input.encode("ascii"), hashlib.sha256).digest()
-        )
+        payload["signature_algorithm"] = self.SIGNATURE_ALGORITHM
+        signature = _b64encode(self._sign_bytes(signing_input.encode("ascii")))
         return signing_input + "." + signature
 
     def verify_resource_commit_permit(
@@ -1135,10 +1145,9 @@ class HMACCapabilityAuthority:
             if version != "resource-commit-v1" or key_id != self.key_id:
                 raise ValueError("resource commit permit version or key identifier mismatch")
             signing_input = version + "." + key_id + "." + body
-            expected = hmac.new(
-                self._key, signing_input.encode("ascii"), hashlib.sha256,
-            ).digest()
-            if not hmac.compare_digest(expected, _b64decode(signature)):
+            if not self._verify_bytes(
+                signing_input.encode("ascii"), _b64decode(signature),
+            ):
                 raise ValueError("resource commit permit signature mismatch")
             payload = json.loads(_b64decode(body))
             if not isinstance(payload, dict) or payload.get("version") != 1:
@@ -1147,8 +1156,10 @@ class HMACCapabilityAuthority:
                 raise ValueError("resource commit permit issuer mismatch")
             if payload.get("key_id") != self.key_id or payload.get("audience") != self.audience:
                 raise ValueError("resource commit permit key or audience mismatch")
+            if payload.get("signature_algorithm") != self.SIGNATURE_ALGORITHM:
+                raise ValueError("resource commit permit signature algorithm mismatch")
             expected_fields = {
-                "version", "issuer", "key_id", "audience", "authority_id",
+                "version", "signature_algorithm", "issuer", "key_id", "audience", "authority_id",
                 "tenant", "task_id", "purpose", "policy_epoch", "issued_at",
                 "expires_at", "max_calls", "action", "resource", "request_digest",
                 "payload_digest", "nonce",
@@ -1345,17 +1356,19 @@ class HMACCapabilityAuthority:
             if key_id != self.key_id:
                 raise ValueError("unknown signing key")
             signing_input = key_id + "." + body
-            expected = hmac.new(
-                self._key, signing_input.encode("ascii"), hashlib.sha256,
-            ).digest()
             supplied = _b64decode(signature)
-            if not hmac.compare_digest(expected, supplied):
+            if not self._verify_bytes(signing_input.encode("ascii"), supplied):
                 raise ValueError("signature mismatch")
             payload = json.loads(_b64decode(body))
             if not isinstance(payload, dict):
                 raise ValueError("token payload is not an object")
             if payload.get("version") != self.TOKEN_VERSION:
                 raise ValueError("unsupported token version")
+            token_algorithm = payload.get("signature_algorithm")
+            if token_algorithm not in (None, self.SIGNATURE_ALGORITHM):
+                raise ValueError("token signature algorithm mismatch")
+            if self.SIGNATURE_ALGORITHM != "HS256" and token_algorithm != self.SIGNATURE_ALGORITHM:
+                raise ValueError("asymmetric token is missing its required signature algorithm")
             if payload.get("key_id") != self.key_id or payload.get("issuer") != self.issuer_id:
                 raise ValueError("issuer or key identifier mismatch")
             expected_audience = audience or self.audience
@@ -1410,9 +1423,129 @@ class HMACCapabilityAuthority:
             raise CapabilityAuthenticationError("capability authentication or active-state validation failed") from exc
 
 
+class Ed25519CapabilityAuthority(HMACCapabilityAuthority):
+    """Ed25519 authority with distinct private-key issuer and public-key verifier roles.
+
+    The verifier receives only a raw Ed25519 public key and cannot mint
+    capabilities or resource-commit permits. The optional cryptography dependency
+    is imported lazily. Key storage, rotation and authenticated public-key
+    distribution remain responsibilities of the deployment.
+    """
+
+    SIGNATURE_ALGORITHM = "Ed25519"
+
+    def __init__(
+        self,
+        registry: SQLiteAuthorityRegistry,
+        *,
+        issuer_id: str,
+        key_id: str,
+        audience: str,
+        identity_verifier: Callable[[str, str], bool],
+        task_context_verifier: Callable[[str, str, str, str], bool],
+        public_key: Optional[bytes] = None,
+        private_key: Optional[bytes] = None,
+        clock=time.time,
+    ) -> None:
+        if public_key is None and private_key is None:
+            raise ValueError("Ed25519 authority requires a public or private key")
+        if public_key is not None and (
+            not isinstance(public_key, bytes) or len(public_key) != 32
+        ):
+            raise ValueError("Ed25519 public key must be 32 raw bytes")
+        if private_key is not None and (
+            not isinstance(private_key, bytes) or len(private_key) != 32
+        ):
+            raise ValueError("Ed25519 private key seed must be 32 raw bytes")
+        try:
+            from cryptography.exceptions import InvalidSignature
+            from cryptography.hazmat.primitives import serialization
+            from cryptography.hazmat.primitives.asymmetric.ed25519 import (
+                Ed25519PrivateKey,
+                Ed25519PublicKey,
+            )
+        except ImportError as exc:
+            raise ImportError(
+                "Ed25519CapabilityAuthority requires the optional 'crypto' dependency"
+            ) from exc
+
+        signing_key = (
+            Ed25519PrivateKey.from_private_bytes(private_key)
+            if private_key is not None else None
+        )
+        derived_public = (
+            signing_key.public_key().public_bytes(
+                encoding=serialization.Encoding.Raw,
+                format=serialization.PublicFormat.Raw,
+            )
+            if signing_key is not None else None
+        )
+        if public_key is not None and derived_public is not None and not hmac.compare_digest(
+            public_key, derived_public,
+        ):
+            raise ValueError("Ed25519 public key does not match the supplied private key")
+        verification_bytes = public_key or derived_public
+        if verification_bytes is None:
+            raise ValueError("Ed25519 verification key is missing")
+
+        # Satisfy the shared base configuration contract, then discard the
+        # placeholder HMAC key. All cryptographic operations use Ed25519 hooks.
+        super().__init__(
+            registry,
+            issuer_id=issuer_id,
+            key_id=key_id,
+            key=b"\x00" * 32,
+            audience=audience,
+            identity_verifier=identity_verifier,
+            task_context_verifier=task_context_verifier,
+            clock=clock,
+        )
+        self._key = b""
+        self._ed25519_signing_key = signing_key
+        self._ed25519_verification_key = Ed25519PublicKey.from_public_bytes(
+            verification_bytes,
+        )
+        self._ed25519_invalid_signature = InvalidSignature
+
+    def _sign_bytes(self, message: bytes) -> bytes:
+        if self._ed25519_signing_key is None:
+            raise CapabilityAuthenticationError(
+                "public-key-only verifier cannot issue signed artifacts"
+            )
+        return self._ed25519_signing_key.sign(message)
+
+    def _verify_bytes(self, message: bytes, signature: bytes) -> bool:
+        try:
+            self._ed25519_verification_key.verify(signature, message)
+            return True
+        except self._ed25519_invalid_signature:
+            return False
+
+    def issue(self, **kwargs: object) -> SignedCapability:
+        if self._ed25519_signing_key is None:
+            raise CapabilityAuthenticationError(
+                "public-key-only verifier cannot issue capabilities"
+            )
+        return super().issue(**kwargs)  # type: ignore[arg-type]
+
+    def issue_resource_commit_permit(
+        self,
+        capability_token: str,
+        **kwargs: object,
+    ) -> str:
+        if self._ed25519_signing_key is None:
+            raise CapabilityAuthenticationError(
+                "public-key-only verifier cannot issue resource commit permits"
+            )
+        return super().issue_resource_commit_permit(
+            capability_token, **kwargs,
+        )  # type: ignore[arg-type]
+
+
 __all__ = [
     "AuthorityRegistryError",
     "CapabilityAuthenticationError",
+    "Ed25519CapabilityAuthority",
     "HMACCapabilityAuthority",
     "SQLiteAuthorityRegistry",
     "SignedCapability",
