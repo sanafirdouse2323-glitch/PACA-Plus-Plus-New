@@ -18,10 +18,10 @@ import secrets
 import sqlite3
 import time
 from collections.abc import Callable, Iterable, Mapping
-from types import MappingProxyType
 from contextlib import closing
 from dataclasses import dataclass
 from pathlib import Path
+from types import MappingProxyType
 
 from .authority import AuthorityLineage, AuthorityLineageGraph, grant_pattern_is_subset
 from .runtime import Capability
@@ -1720,6 +1720,8 @@ class Ed25519CapabilityAuthority(HMACCapabilityAuthority):
                     "verification_keys must be a mapping of key IDs to raw public keys"
                 )
             configured_verification_keys = dict(verification_keys)
+        if len(configured_verification_keys) > 32:
+            raise ValueError("Ed25519 verification key rings are limited to 32 keys")
         for (
             configured_key_id,
             configured_public_key,
