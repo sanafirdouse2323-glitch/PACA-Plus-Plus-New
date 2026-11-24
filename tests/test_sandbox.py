@@ -80,9 +80,7 @@ def test_docker_artifact_digest_binds_image_command_and_isolation_profile():
     baseline = _sandbox()
     digest = baseline.implementation_digest(command)
     descriptor = baseline._implementation_descriptor(command)
-    expected_invocation = list(
-        baseline._build_command(command, "<PACA_CIDFILE>")
-    )
+    expected_invocation = list(baseline._build_command(command, "<PACA_CIDFILE>"))
 
     assert descriptor["docker_invocation"] == expected_invocation
     assert "--workdir=/tmp" in expected_invocation
