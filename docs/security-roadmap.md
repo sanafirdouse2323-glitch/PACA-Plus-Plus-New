@@ -35,7 +35,7 @@ The tests deliberately demonstrate bypasses as well as mediated controls. Direct
 
 ## Highest-priority work
 
-The architecture specification is the target-design reference. Before adding security-sensitive implementation, translate its contracts and invariants into versioned schemas, formal state transitions and conformance tests. Do not introduce a mandatory dependency on a particular OS, framework, protocol, policy engine or storage product.
+The architecture specification is the target-design reference. v0.2.0 adds the explicit broker identity-binding, semantic delegation-containment, declassification, revocation-freshness, commit-linearization and cumulative conformance decisions. The first protocol contract bundle is v1.0.0 under contracts/. These schemas validate structure only; they do not implement cryptographic verification, identity, resource mediation or commit enforcement. The next formal-model gate must verify the concurrency and revocation state transitions before the runtime is expanded. Do not introduce a mandatory dependency on a particular OS, framework, protocol, policy engine or storage product.
 
 Before further security-sensitive changes, a repository administrator must also apply and verify the `main` branch ruleset and release-tag protections described in [REPOSITORY_SECURITY_CONFIGURATION.md](REPOSITORY_SECURITY_CONFIGURATION.md). The guide is configuration guidance, not evidence that protection is currently active.
 

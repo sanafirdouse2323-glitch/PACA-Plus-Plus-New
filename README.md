@@ -86,7 +86,9 @@ Do not deploy PAC++ New as the sole security control protecting company data, ac
 
 ## Documentation map
 
-- [Open, platform-independent architecture specification](docs/ARCHITECTURE_SPECIFICATION.md) — proposed target architecture (Draft v0.1.0; not an implementation or security guarantee).
+- [Open, platform-independent architecture specification](docs/ARCHITECTURE_SPECIFICATION.md) — proposed target architecture (Draft v0.2.0; not an implementation or security guarantee).
+- [Versioned protocol contracts v1.0.0](contracts/v1.0.0/README.md) — JSON Schemas and message-security semantics.
+- [Security semantics](docs/SECURITY_SEMANTICS.md) — delegation, provenance, revocation and commit state rules.
 - [Current implementation status and next gates](docs/security-roadmap.md)
 - [Research question, related work and evaluation plan](docs/AGENT_LIFECYCLE_SECURITY_RESEARCH.md)
 - [Durable lifecycle implementation and trust boundaries](docs/DURABLE_LIFECYCLE_SECURITY.md)
