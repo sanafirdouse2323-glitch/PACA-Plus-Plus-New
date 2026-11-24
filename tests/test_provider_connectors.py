@@ -19,8 +19,6 @@ from paca.integrations.providers import (
     QdrantVectorConnector,
     SlackHistoryConnector,
 )
-from paca.authority_runtime import HMACCapabilityAuthority, SQLiteAuthorityRegistry
-from paca.durable import SQLiteProvenanceRepository
 from paca.memory import (
     SQLiteMemoryValueStore,
     TrustedConnectorAdapter,
@@ -517,6 +515,66 @@ def test_provider_capture_persists_only_through_matching_untrusted_ingress(tmp_p
             }
         )
     ).hexdigest()
+
+
+    trusted_connector = TrustedConnectorAdapter(
+        memory,
+        connector_id="gmail:account-1",
+        source_class="external_content",
+        tenant="acme",
+        sensitivity=1,
+        integrity="trusted",
+    )
+    with pytest.raises(ProviderAuthenticationError, match="untrusted external-content"):
+        capture.persist(
+            trusted_connector,
+            purpose="review-mail",
+            capability_token=root.token,
+        )
+
+
+def test_provider_http_client_rejects_redirect_and_oversized_json():
+    from paca.integrations.providers import _ProviderHTTPClient
+
+    redirect_client = httpx.Client(
+        transport=httpx.MockTransport(
+            lambda _request: httpx.Response(302, headers={"location": "https://attacker.example/collect"})
+        ),
+        follow_redirects=False,
+    )
+    wrapper = _ProviderHTTPClient(client=redirect_client)
+    try:
+        with pytest.raises(ProviderConnectorError, match="redirects are refused"):
+            wrapper.request_json(
+                "GET",
+                "https://provider.example.test/data",
+                headers={},
+            )
+    finally:
+        wrapper.close()
+        redirect_client.close()
+
+    large_client = httpx.Client(
+        transport=httpx.MockTransport(
+            lambda _request: httpx.Response(
+                200,
+                headers={"content-type": "application/json"},
+                content=b'{"payload":"' + (b"x" * 2_000) + b'"}',
+            )
+        ),
+        follow_redirects=False,
+    )
+    wrapper = _ProviderHTTPClient(client=large_client, max_response_bytes=1_024)
+    try:
+        with pytest.raises(ProviderResponseTooLarge):
+            wrapper.request_json(
+                "GET",
+                "https://provider.example.test/data",
+                headers={},
+            )
+    finally:
+        wrapper.close()
+        large_client.close()
 
 
 def test_provider_capture_rejects_wrong_or_trusted_ingress_adapter():
