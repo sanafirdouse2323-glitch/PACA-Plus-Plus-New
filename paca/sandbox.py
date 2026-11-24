@@ -469,12 +469,9 @@ class DockerSandboxExecutor:
             raise SandboxExecutionError(
                 "sandbox worker identity could not be computed"
             ) from exc
-        if (
-            not isinstance(actual_implementation_digest, str)
-            or not hmac.compare_digest(
-                actual_implementation_digest,
-                implementation_digest,
-            )
+        if not isinstance(actual_implementation_digest, str) or not hmac.compare_digest(
+            actual_implementation_digest,
+            implementation_digest,
         ):
             raise SandboxExecutionError(
                 "tool implementation digest does not match the configured sandbox worker"
