@@ -247,8 +247,9 @@ def test_postgres_filesystem_commit_callback_serializes_with_revocation(
     env = _environment()
     target = tmp_path / "resource.txt"
     staged = tmp_path / "resource.staged"
-    staged.write_bytes(b"postgres transactional filesystem resource")
-    with staged.open("rb") as stream:
+    with staged.open("wb") as stream:
+        stream.write(b"postgres transactional filesystem resource")
+        stream.flush()
         os.fsync(stream.fileno())
 
     renamed = threading.Event()
