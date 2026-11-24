@@ -3,7 +3,9 @@ from __future__ import annotations
 import importlib
 import json
 from pathlib import Path
+from typing import Any
 
+import jsonschema
 import pytest
 
 
@@ -65,13 +67,13 @@ def valid_identity_context() -> dict[str, object]:
 
 
 def test_schema_is_valid_and_accepts_identity_context(
-    validator: jsonschema.Draft202012Validator,
+    validator: Any,
 ) -> None:
     validator.validate(valid_identity_context())
 
 
 def test_unknown_security_fields_are_rejected(
-    validator: jsonschema.Draft202012Validator,
+    validator: Any,
 ) -> None:
     message = valid_identity_context()
     message["is_admin"] = True
@@ -80,7 +82,7 @@ def test_unknown_security_fields_are_rejected(
 
 
 def test_broker_write_requires_commit_permit_and_idempotency(
-    validator: jsonschema.Draft202012Validator,
+    validator: Any,
 ) -> None:
     message = envelope("paca.broker-operation.v1")
     message.update(
@@ -104,7 +106,7 @@ def test_broker_write_requires_commit_permit_and_idempotency(
 
 
 def test_broker_read_requires_authorisation_before_disclosure(
-    validator: jsonschema.Draft202012Validator,
+    validator: Any,
 ) -> None:
     message = envelope("paca.broker-operation.v1")
     message.update(
@@ -124,7 +126,7 @@ def test_broker_read_requires_authorisation_before_disclosure(
 
 
 def test_digest_must_be_lowercase_sha256_hex(
-    validator: jsonschema.Draft202012Validator,
+    validator: Any,
 ) -> None:
     message = valid_identity_context()
     message["authentication"]["credential_digest"]["value"] = "A" * 64

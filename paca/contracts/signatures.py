@@ -15,6 +15,8 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
 
+from .canonical import canonicalize
+
 try:
     from cryptography.hazmat.primitives.asymmetric.ed25519 import (
         Ed25519PrivateKey,
@@ -23,8 +25,6 @@ try:
 except ImportError:  # pragma: no cover - depends on optional crypto installation
     Ed25519PrivateKey = None
     Ed25519PublicKey = None
-
-from .canonical import canonicalize
 
 
 _SIGNATURE_DOMAIN = b"PACA++/MESSAGE/V1\n"

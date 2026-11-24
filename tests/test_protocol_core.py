@@ -4,10 +4,9 @@ import hashlib
 import json
 from pathlib import Path
 
-import pytest
-from jsonschema import Draft202012Validator
-
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+from jsonschema import Draft202012Validator
+import pytest
 
 from paca.contracts import (
     CanonicalizationError,
@@ -199,7 +198,12 @@ def test_ed25519_message_signature_verifies_with_scoped_key() -> None:
 
 
 def test_ed25519_message_signature_detects_payload_tampering() -> None:
-    from paca.contracts import MessageAuthenticationError, MessageSigner, MessageVerifier, TrustedMessageKey
+    from paca.contracts import (
+        MessageAuthenticationError,
+        MessageSigner,
+        MessageVerifier,
+        TrustedMessageKey,
+    )
 
     private_key = Ed25519PrivateKey.generate()
     signed = MessageSigner(
@@ -224,7 +228,12 @@ def test_ed25519_message_signature_detects_payload_tampering() -> None:
 
 
 def test_ed25519_message_key_is_scoped_to_issuer_audience_and_type() -> None:
-    from paca.contracts import MessageAuthenticationError, MessageSigner, MessageVerifier, TrustedMessageKey
+    from paca.contracts import (
+        MessageAuthenticationError,
+        MessageSigner,
+        MessageVerifier,
+        TrustedMessageKey,
+    )
 
     private_key = Ed25519PrivateKey.generate()
     signed = MessageSigner(

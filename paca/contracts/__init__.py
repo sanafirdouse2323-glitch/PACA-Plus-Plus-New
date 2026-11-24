@@ -8,6 +8,14 @@ from .canonical import (
     parse_json,
 )
 from .signatures import (
+    MessageAuthenticationError,
+    MessageSigner,
+    MessageSigningConfigurationError,
+    MessageVerifier,
+    TrustedMessageKey,
+    VerifiedMessage,
+)
+from .validation import (
     ContractValidationError,
     ProtocolDependencyError,
     validate_message,
