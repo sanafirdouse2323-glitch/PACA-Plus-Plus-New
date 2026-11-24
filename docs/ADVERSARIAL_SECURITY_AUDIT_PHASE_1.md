@@ -39,13 +39,13 @@ The runtime checks authority/revocation and then invokes an executor. Revocation
 ### A-02 — Untracked literal arguments depend on trusted ingress
 
 **Severity:** High when agent-controlled code can construct PACA values  
-**Status:** Open trust-boundary requirement
+**Status:** Partially mitigated in the protected reference runtime; process trust boundary remains open
 
-`TrustedMemoryAdapter.authorize_argument` returns no lineage access for an `Arg` with no lineage references. The implementation documents that such literals depend on trusted ingress/application labeling. The Python type itself does not prove that the label was assigned by trusted ingress.
+The phase-3 trusted-ingress branch changes `TrustedMemoryAdapter.authorize_argument` to reject every protected effect argument without a durable lineage reference. This includes caller-constructed `Arg` values whose `Label` claims trusted integrity, known origins or tenant provenance. Arguments must be captured and persisted through the configured trusted ingress adapter, and their canonical bytes must match the immutable lineage digest before an effect is authorized. The runtime rejects missing lineage before invoking the policy monitor, consuming the protected effect call budget, or entering the executor.
 
-**Impact:** If untrusted agent code can construct `Arg(value, Label(...trusted...))` or call the runtime with caller-forged labels, it may supply untracked data that is not bound to a persisted provenance digest. The monitor may still evaluate labels and grants, but it cannot independently establish the truth of a caller-supplied label.
+The regression suite covers trusted-looking, default-untrusted and caller-origin-claimed untracked arguments, and verifies that none reaches the monitor or executor. Framework integration tests construct their path arguments through the trusted ingress fixture rather than manually asserting trusted labels.
 
-**Required control:** Keep `Arg`/label construction and capability-bearing runtime entry points inside a trusted adapter boundary. For production integrations, derive labels from authenticated source metadata, reject caller-asserted trusted labels, and require provenance for all arguments that can influence consequential effects. Add explicit negative tests for forged trusted labels at each public ingress API.
+**Residual trust boundary:** Python code already running with access to the trusted connector, capability-token provider, filesystem and authority registry can still misuse those interfaces. A trusted ingress adapter must obtain source metadata from the provider/framework boundary; it must not merely relabel model-supplied bytes. Process isolation and provider-authenticated source capture remain necessary. Static literals that influence protected effects must also be registered as explicit, digest-bound inputs.
 
 ### A-03 — Framework/tool mediation does not cover alternative execution paths
 
