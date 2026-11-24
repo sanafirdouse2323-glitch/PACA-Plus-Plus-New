@@ -86,8 +86,19 @@ def test_docker_artifact_digest_binds_image_command_and_isolation_profile():
     assert digest != _sandbox(memory_bytes=268_435_456).implementation_digest(command)
     assert digest != DockerSandbox(
         IMAGE,
+        platform="linux/arm64",
+    ).implementation_digest(command)
+    assert digest != DockerSandbox(
+        IMAGE,
         docker_env={"DOCKER_HOST": "unix:///run/alternate-docker.sock"},
     ).implementation_digest(command)
+
+
+def test_docker_sandbox_rejects_ambiguous_platform_values():
+    with pytest.raises(ValueError, match="platform"):
+        DockerSandbox(IMAGE, platform="amd64")
+    with pytest.raises(ValueError, match="platform"):
+        DockerSandbox(IMAGE, platform="linux/amd64;--privileged")
 
 
 def test_docker_sandbox_requires_an_immutable_image_digest():
@@ -104,6 +115,7 @@ def test_docker_command_enforces_no_network_no_mounts_and_resource_limits():
         "/tmp/container-id",
     )
     args = list(command)
+    assert "--platform=linux/amd64" in args
     assert "--network=none" in args
     assert "--read-only" in args
     assert "--cap-drop=ALL" in args
