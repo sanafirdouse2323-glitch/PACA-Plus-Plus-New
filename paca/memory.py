@@ -1008,6 +1008,7 @@ class PACAAgentRuntime:
         role: str = "assistant",
         max_calls: int = 40,
         max_fanout: int = 5,
+        max_task_calls: Optional[int] = None,
     ):
         return self.authority.issue(
             parent_token=parent_token,
@@ -1017,6 +1018,7 @@ class PACAAgentRuntime:
             role=role,
             max_calls=max_calls,
             max_fanout=max_fanout,
+            max_task_calls=max_task_calls,
         )
 
     def send_message(
