@@ -693,7 +693,7 @@ def test_provider_capture_repr_redacts_provider_content():
         provider="gmail",
         connector_id="gmail:account-1",
         object_id="gmail:account-1:message:message-1",
-        version_id="v1",
+        version_id=hashlib.sha256(canonical_value_bytes({"body": "sensitive message body"})).hexdigest(),
         provider_version="1",
         value={"body": "sensitive message body"},
     )
@@ -706,7 +706,7 @@ def test_provider_capture_rejects_wrong_or_trusted_ingress_adapter():
         provider="gmail",
         connector_id="gmail:account-1",
         object_id="gmail:account-1:message:message-1",
-        version_id="v1",
+        version_id=hashlib.sha256(canonical_value_bytes({"id": "message-1"})).hexdigest(),
         provider_version="1",
         value={"id": "message-1"},
     )
@@ -783,16 +783,17 @@ def test_qdrant_api_key_provider_errors_do_not_leak_secret_material():
     def secret_provider():
         raise RuntimeError("backend failed while handling api-key=top-secret-value")
 
+    client = httpx.Client(
+        transport=httpx.MockTransport(
+            lambda _request: pytest.fail("request must not run when secret retrieval fails")
+        ),
+        follow_redirects=False,
+    )
     connector = QdrantVectorConnector(
         "https://qdrant.example.test",
         cluster_id="cluster-1",
         api_key_provider=secret_provider,
-        client=httpx.Client(
-            transport=httpx.MockTransport(
-                lambda _request: pytest.fail("request must not run when secret retrieval fails")
-            ),
-            follow_redirects=False,
-        ),
+        client=client,
     )
     try:
         with pytest.raises(ProviderAuthenticationError) as error:
@@ -801,3 +802,4 @@ def test_qdrant_api_key_provider_errors_do_not_leak_secret_material():
         assert "top-secret-value" not in repr(error.value)
     finally:
         connector.close()
+        client.close()
