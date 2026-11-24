@@ -2564,7 +2564,7 @@ def test_task_quota_is_shared_across_delegated_descendants_and_messages(tmp_path
         task_id="quota-task",
         purpose="prepare-report",
         grants={
-            "delegate": ("worker-a",),
+            "delegate": ("worker-a", "worker-b"),
             "read_file": ("/acme/*",),
         },
         expires_at=1_900,
