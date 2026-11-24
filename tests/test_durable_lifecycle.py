@@ -1416,7 +1416,7 @@ def test_runtime_call_budget_cannot_be_reset_by_reverifying_the_token(tmp_path):
     )
     assert decision.verdict == "allow"
     assert result == "first-call"
-    with pytest.raises(AuthorityRegistryError, match="budget"):
+    with pytest.raises(MemoryAccessDenied, match="budget"):
         runtime.execute_effect(
             limited.token, make_request(),
             lambda request: executed.append(request) or "second-call",
