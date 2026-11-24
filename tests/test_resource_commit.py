@@ -511,13 +511,18 @@ def test_sqlite_authority_store_identity_is_stable_and_database_scoped(tmp_path)
     assert first.authority_store_id != separate.authority_store_id
 
 
+def _filesystem_relative_target(root, task_id="task-fence"):
+    task_namespace = hashlib.sha256(task_id.encode("utf-8")).hexdigest()
+    return root / "acme" / "tasks" / task_namespace / "reports" / "report.txt"
+
+
 def _filesystem_executor(env, tmp_path, *, initial_content=None):
     root = tmp_path / "filesystem-root"
-    target_parent = root / "acme" / "reports"
-    target_parent.mkdir(parents=True)
+    target = _filesystem_relative_target(root, env["signed"].capability.task_id)
+    target.parent.mkdir(parents=True)
     root.chmod(0o700)
     if initial_content is not None:
-        (target_parent / "report.txt").write_bytes(initial_content)
+        target.write_bytes(initial_content)
     state_dir = tmp_path / "filesystem-state"
     try:
         executor = FilesystemFencedResourceExecutor(
@@ -541,7 +546,7 @@ def test_filesystem_resource_commit_writes_real_file_under_authority_fence(tmp_p
         executor,
     )
 
-    target = root / "acme" / "reports" / "report.txt"
+    target = _filesystem_relative_target(root, env["signed"].capability.task_id)
     assert decision.verdict == "allow"
     assert target.read_bytes() == b"approved report body"
     assert result["storage"] == "filesystem"
@@ -568,7 +573,7 @@ def test_filesystem_commit_replaces_existing_file_and_keeps_single_link_inode(tm
         executor,
     )
 
-    target = root / "acme" / "reports" / "report.txt"
+    target = _filesystem_relative_target(root, env["signed"].capability.task_id)
     metadata = target.stat()
     assert decision.verdict == "allow"
     assert target.read_bytes() == b"approved report body"
@@ -608,7 +613,7 @@ def test_filesystem_commit_rolls_back_file_when_database_transaction_fails_after
             executor,
         )
 
-    target = root / "acme" / "reports" / "report.txt"
+    target = _filesystem_relative_target(root, env["signed"].capability.task_id)
     assert target.read_bytes() == b"previous report"
     assert env["registry"].get_resource_commit_receipt(
         "no-such-permit"
@@ -635,7 +640,7 @@ def test_filesystem_executor_recovers_committed_journal_after_cleanup_failure(
         env["request"],
         executor,
     )
-    target = root / "acme" / "reports" / "report.txt"
+    target = _filesystem_relative_target(root, env["signed"].capability.task_id)
     assert decision.verdict == "allow"
     assert target.read_bytes() == b"approved report body"
     assert result["recovery_pending"] is True
@@ -683,7 +688,7 @@ def test_filesystem_executor_restores_file_when_revocation_overtakes_commit(tmp_
             executor,
         )
 
-    target = root / "acme" / "reports" / "report.txt"
+    target = _filesystem_relative_target(root, env["signed"].capability.task_id)
     assert target.read_bytes() == b"previous report"
     assert _stored_resource(registry) is None
     executor.close()
@@ -722,7 +727,10 @@ def test_filesystem_executor_rejects_symlink_target_without_touching_outside_fil
     resource_path = "/acme/reports/escape.txt"
     env = _environment(tmp_path, resource_path=resource_path)
     root = tmp_path / "filesystem-root"
-    target_parent = root / "acme" / "reports"
+    target_parent = _filesystem_relative_target(
+        root,
+        env["signed"].capability.task_id,
+    ).parent
     target_parent.mkdir(parents=True)
     root.chmod(0o700)
     outside = tmp_path / "outside-secret.txt"
@@ -754,7 +762,10 @@ def test_filesystem_executor_rejects_symlink_target_without_touching_outside_fil
 def test_filesystem_executor_rejects_hard_link_target(tmp_path):
     env = _environment(tmp_path)
     root = tmp_path / "filesystem-root"
-    target_parent = root / "acme" / "reports"
+    target_parent = _filesystem_relative_target(
+        root,
+        env["signed"].capability.task_id,
+    ).parent
     target_parent.mkdir(parents=True)
     root.chmod(0o700)
     outside = tmp_path / "outside.txt"
@@ -862,7 +873,7 @@ def test_filesystem_commit_holds_authority_transaction_until_destination_rename_
         decision, result = commit_future.result(timeout=10)
         revoked = revoke_future.result(timeout=10)
 
-    target = root / "acme" / "reports" / "report.txt"
+    target = _filesystem_relative_target(root, env["signed"].capability.task_id)
     assert decision.verdict == "allow"
     assert result["storage"] == "filesystem"
     assert target.read_bytes() == b"approved report body"
@@ -874,7 +885,7 @@ def test_filesystem_commit_holds_authority_transaction_until_destination_rename_
 def test_filesystem_executor_configuration_rejects_public_state_directory(tmp_path):
     env = _environment(tmp_path)
     root = tmp_path / "filesystem-root"
-    (root / "acme" / "reports").mkdir(parents=True)
+    _filesystem_relative_target(root).parent.mkdir(parents=True)
     root.chmod(0o700)
     state_dir = tmp_path / "public-state"
     state_dir.mkdir(mode=0o755)
