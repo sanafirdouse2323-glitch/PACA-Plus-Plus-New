@@ -834,11 +834,16 @@ class HMACCapabilityAuthority:
         if any(value is None or not isinstance(value, str) or not value for value in (tenant, task_id, purpose)):
             raise ValueError("root capability issuance requires tenant, task_id and purpose")
         try:
-            authenticated = bool(self.identity_verifier(principal, str(tenant)))
+            authenticated = self.identity_verifier(principal, str(tenant))
         except Exception as exc:
             raise CapabilityAuthenticationError("trusted principal authentication failed") from exc
-        if not authenticated:
-            raise CapabilityAuthenticationError("principal is not authenticated for the requested tenant")
+        # Authentication callbacks are a security boundary: truthy values such
+        # as non-empty error strings, claim dictionaries or arbitrary objects
+        # must not be interpreted as a successful verification result.
+        if authenticated is not True:
+            raise CapabilityAuthenticationError(
+                "principal is not authenticated for the requested tenant"
+            )
         authority_id = secrets.token_urlsafe(18)
         record = AuthorityLineage.create(
             authority_id=authority_id,
