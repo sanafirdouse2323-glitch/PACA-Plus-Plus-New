@@ -111,7 +111,7 @@ class SQLiteAuthorityRegistry:
     global policy epoch invalidates all capabilities issued at earlier epochs.
     """
 
-    SCHEMA_VERSION = 5
+    SCHEMA_VERSION = 6
 
     def __init__(
         self,
@@ -283,6 +283,39 @@ class SQLiteAuthorityRegistry:
                     )
                     connection.execute(
                         "UPDATE paca_authority_meta SET value='5' WHERE key='schema_version'"
+                    )
+                if version < 6:
+                    connection.execute(
+                        "CREATE TABLE IF NOT EXISTS paca_resource_provenance ("
+                        "tenant TEXT NOT NULL,"
+                        "task_id TEXT NOT NULL,"
+                        "resource_key TEXT NOT NULL,"
+                        "resource_version INTEGER NOT NULL CHECK(resource_version>=1),"
+                        "metadata_json TEXT NOT NULL,"
+                        "PRIMARY KEY(tenant,task_id,resource_key,resource_version))"
+                    )
+                    connection.execute(
+                        "CREATE TABLE IF NOT EXISTS paca_resource_access_receipts ("
+                        "session_id TEXT NOT NULL,"
+                        "nonce_digest TEXT NOT NULL,"
+                        "operation_id TEXT NOT NULL UNIQUE,"
+                        "authority_id TEXT NOT NULL REFERENCES authority_records(authority_id) ON DELETE RESTRICT,"
+                        "tenant TEXT NOT NULL,"
+                        "task_id TEXT NOT NULL,"
+                        "action TEXT NOT NULL,"
+                        "resource_key TEXT NOT NULL,"
+                        "request_digest TEXT NOT NULL,"
+                        "payload_digest TEXT,"
+                        "outcome TEXT NOT NULL,"
+                        "created_at INTEGER NOT NULL,"
+                        "PRIMARY KEY(session_id,nonce_digest))"
+                    )
+                    connection.execute(
+                        "CREATE INDEX IF NOT EXISTS paca_resource_access_authority_idx "
+                        "ON paca_resource_access_receipts(authority_id,created_at)"
+                    )
+                    connection.execute(
+                        "UPDATE paca_authority_meta SET value='6' WHERE key='schema_version'"
                     )
                 connection.execute(
                     "INSERT OR IGNORE INTO paca_authority_meta(key,value) VALUES(?,?)",
@@ -637,6 +670,11 @@ class SQLiteAuthorityRegistry:
         self,
         permit: VerifiedResourceCommitPermit,
         payload: Mapping[str, object],
+        *,
+        access_receipt: Mapping[str, object] | None = None,
+        provenance_metadata: Mapping[str, object] | None = None,
+        protocol_payload_digest: bool = False,
+        expected_resource_version: int | None = None,
     ) -> dict[str, object]:
         """Commit one resource mutation under the same transaction as revocation.
 
@@ -699,11 +737,51 @@ class SQLiteAuthorityRegistry:
                 )
         if not isinstance(payload, Mapping):
             raise TypeError("fenced resource payload must be a JSON object")
+        if not isinstance(protocol_payload_digest, bool):
+            raise TypeError("protocol_payload_digest must be a boolean")
+        if expected_resource_version is not None and (
+            isinstance(expected_resource_version, bool)
+            or not isinstance(expected_resource_version, int)
+            or expected_resource_version < 0
+        ):
+            raise ValueError("expected_resource_version must be a non-negative integer")
+        if access_receipt is not None:
+            required_receipt_fields = {
+                "session_id", "nonce_digest", "operation_id", "request_digest",
+                "payload_digest",
+            }
+            if not isinstance(access_receipt, Mapping) or set(access_receipt) != required_receipt_fields:
+                raise ValueError("broker access receipt has an invalid field set")
+            for name in ("session_id", "nonce_digest", "operation_id"):
+                value = access_receipt.get(name)
+                if not isinstance(value, str) or not value or len(value) > 256:
+                    raise ValueError(f"broker access receipt {name} is invalid")
+            for name in ("nonce_digest", "request_digest", "payload_digest"):
+                value = access_receipt.get(name)
+                if not isinstance(value, str) or len(value) != 64 or any(
+                    character not in "0123456789abcdef" for character in value
+                ):
+                    raise ValueError(f"broker access receipt {name} must be SHA-256")
+            if not hmac.compare_digest(access_receipt["request_digest"], permit.request_digest):
+                raise AuthorityRegistryError("broker access receipt request binding mismatch")
+            if not hmac.compare_digest(access_receipt["payload_digest"], permit.payload_digest):
+                raise AuthorityRegistryError("broker access receipt payload binding mismatch")
+        if provenance_metadata is not None and not isinstance(provenance_metadata, Mapping):
+            raise TypeError("provenance_metadata must be a JSON object")
         try:
             encoded_payload = _canonical(payload)
+            if protocol_payload_digest:
+                from .contracts.canonical import digest_object
+                payload_digest = digest_object(dict(payload), purpose="payload")
+            else:
+                payload_digest = hashlib.sha256(encoded_payload).hexdigest()
+            encoded_provenance = (
+                _canonical(dict(provenance_metadata))
+                if provenance_metadata is not None
+                else None
+            )
         except (TypeError, ValueError) as exc:
-            raise ValueError("fenced resource payload must be canonical JSON") from exc
-        payload_digest = hashlib.sha256(encoded_payload).hexdigest()
+            raise ValueError("fenced resource payload or provenance must be canonical JSON") from exc
         if not hmac.compare_digest(payload_digest, permit.payload_digest):
             raise AuthorityRegistryError(
                 "resource payload does not match the signed commit permit"
@@ -815,7 +893,15 @@ class SQLiteAuthorityRegistry:
                     "WHERE tenant=? AND task_id=? AND resource_key=?",
                     (record.tenant, record.task_id, permit.resource),
                 ).fetchone()
-                version = int(existing["version"]) + 1 if existing is not None else 1
+                current_version = int(existing["version"]) if existing is not None else 0
+                if (
+                    expected_resource_version is not None
+                    and current_version != expected_resource_version
+                ):
+                    raise AuthorityRegistryError(
+                        "resource version precondition did not match at commit"
+                    )
+                version = current_version + 1
                 connection.execute(
                     "INSERT INTO paca_resource_values("
                     "tenant,task_id,resource_key,action,value_json,payload_digest,"
@@ -840,6 +926,46 @@ class SQLiteAuthorityRegistry:
                         now,
                     ),
                 )
+                if encoded_provenance is not None:
+                    connection.execute(
+                        "INSERT INTO paca_resource_provenance("
+                        "tenant,task_id,resource_key,resource_version,metadata_json"
+                        ") VALUES(?,?,?,?,?)",
+                        (
+                            record.tenant,
+                            record.task_id,
+                            permit.resource,
+                            version,
+                            encoded_provenance.decode("utf-8"),
+                        ),
+                    )
+                if access_receipt is not None:
+                    try:
+                        connection.execute(
+                            "INSERT INTO paca_resource_access_receipts("
+                            "session_id,nonce_digest,operation_id,authority_id,tenant,task_id,"
+                            "action,resource_key,request_digest,payload_digest,outcome,created_at"
+                            ") VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+                            (
+                                access_receipt["session_id"],
+                                access_receipt["nonce_digest"],
+                                access_receipt["operation_id"],
+                                permit.authority_id,
+                                permit.tenant,
+                                permit.task_id,
+                                permit.action,
+                                permit.resource,
+                                permit.request_digest,
+                                permit.payload_digest,
+                                "committed",
+                                now,
+                            ),
+                        )
+                    except sqlite3.IntegrityError as exc:
+                        raise AuthorityRegistryError(
+                            "broker operation replay or duplicate operation ID was rejected"
+                        ) from exc
+
                 connection.commit()
                 return {
                     "tenant": record.tenant,
@@ -854,6 +980,221 @@ class SQLiteAuthorityRegistry:
             except Exception:
                 connection.rollback()
                 raise
+
+    def read_fenced_resource(
+        self,
+        *,
+        authority_id: str,
+        tenant: str,
+        task_id: str,
+        purpose: str,
+        resource: str,
+        max_calls: int,
+        access_receipt: Mapping[str, object],
+        expected_resource_version: int | None = None,
+    ) -> dict[str, object]:
+        """Read one logical file under current authority and durable replay state.
+
+        Authority revalidation, quota consumption, request receipt and resource
+        snapshot occur in one registry transaction. Returned bytes are still
+        withheld by the broker until its trusted provenance guard approves them.
+        """
+        for name, value in (
+            ("authority_id", authority_id),
+            ("tenant", tenant),
+            ("task_id", task_id),
+            ("purpose", purpose),
+            ("resource", resource),
+        ):
+            if not isinstance(value, str) or not value:
+                raise ValueError(f"{name} must be a non-empty string")
+        if (
+            isinstance(max_calls, bool)
+            or not isinstance(max_calls, int)
+            or max_calls < 1
+        ):
+            raise ValueError("max_calls must be a positive integer")
+        if expected_resource_version is not None and (
+            isinstance(expected_resource_version, bool)
+            or not isinstance(expected_resource_version, int)
+            or expected_resource_version < 0
+        ):
+            raise ValueError("expected_resource_version must be a non-negative integer")
+        required_receipt_fields = {
+            "session_id", "nonce_digest", "operation_id", "request_digest",
+        }
+        if not isinstance(access_receipt, Mapping) or set(access_receipt) != required_receipt_fields:
+            raise ValueError("broker access receipt has an invalid field set")
+        for name in ("session_id", "nonce_digest", "operation_id"):
+            value = access_receipt.get(name)
+            if not isinstance(value, str) or not value or len(value) > 256:
+                raise ValueError(f"broker access receipt {name} is invalid")
+        for name in ("nonce_digest", "request_digest"):
+            value = access_receipt.get(name)
+            if not isinstance(value, str) or len(value) != 64 or any(
+                character not in "0123456789abcdef" for character in value
+            ):
+                raise ValueError(f"broker access receipt {name} must be SHA-256")
+
+        now = int(self.clock())
+        with closing(self._connect()) as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            try:
+                graph = self._load_graph(connection)
+                record = graph.get(authority_id)
+                if record is None or not self._is_active(connection, authority_id):
+                    raise AuthorityRegistryError(
+                        "resource read authority is expired, revoked, stale or unknown"
+                    )
+                if (
+                    record.tenant != tenant
+                    or record.task_id != task_id
+                    or record.purpose != purpose
+                ):
+                    raise AuthorityRegistryError(
+                        "resource read session does not match the active authority"
+                    )
+                patterns = dict(record.grants).get("read_file", ())
+                if not any(
+                    grant_pattern_is_subset(resource, pattern) for pattern in patterns
+                ):
+                    raise AuthorityRegistryError(
+                        "active authority does not grant the logical resource read"
+                    )
+                usage = connection.execute(
+                    "SELECT calls_used FROM authority_usage WHERE authority_id=?",
+                    (authority_id,),
+                ).fetchone()
+                if usage is None or int(usage["calls_used"]) >= max_calls:
+                    raise AuthorityRegistryError(
+                        "capability call budget is exhausted at resource read"
+                    )
+                task_usage = connection.execute(
+                    "SELECT calls_used,max_task_calls FROM task_usage WHERE tenant=? AND task_id=?",
+                    (tenant, task_id),
+                ).fetchone()
+                if (
+                    task_usage is None
+                    or int(task_usage["max_task_calls"]) != record.max_task_calls
+                    or int(task_usage["calls_used"]) >= record.max_task_calls
+                ):
+                    raise AuthorityRegistryError(
+                        "task-wide call budget is exhausted or inconsistent at resource read"
+                    )
+
+                row = connection.execute(
+                    "SELECT value_json,payload_digest,version,action "
+                    "FROM paca_resource_values WHERE tenant=? AND task_id=? AND resource_key=?",
+                    (tenant, task_id, resource),
+                ).fetchone()
+                if row is None:
+                    result = {
+                        "found": False,
+                        "resource": resource,
+                        "version": 0,
+                        "value": None,
+                        "payload_digest": None,
+                        "provenance_metadata": None,
+                    }
+                    outcome = "not_found"
+                    stored_digest = None
+                else:
+                    current_version = int(row["version"])
+                    if (
+                        expected_resource_version is not None
+                        and current_version != expected_resource_version
+                    ):
+                        raise AuthorityRegistryError(
+                            "resource version precondition did not match at read"
+                        )
+                    try:
+                        value = json.loads(row["value_json"])
+                        from .contracts.canonical import digest_object
+
+                        protocol_digest = digest_object(value, purpose="payload")
+                        legacy_digest = hashlib.sha256(_canonical(value)).hexdigest()
+                    except (TypeError, ValueError, json.JSONDecodeError) as exc:
+                        raise AuthorityRegistryError(
+                            "stored resource value or digest cannot be verified"
+                        ) from exc
+                    stored_digest = row["payload_digest"]
+                    if not (
+                        hmac.compare_digest(stored_digest, protocol_digest)
+                        or hmac.compare_digest(stored_digest, legacy_digest)
+                    ):
+                        raise AuthorityRegistryError(
+                            "stored resource payload digest verification failed"
+                        )
+                    metadata_row = connection.execute(
+                        "SELECT metadata_json FROM paca_resource_provenance "
+                        "WHERE tenant=? AND task_id=? AND resource_key=? AND resource_version=?",
+                        (tenant, task_id, resource, current_version),
+                    ).fetchone()
+                    metadata = (
+                        json.loads(metadata_row["metadata_json"])
+                        if metadata_row is not None
+                        else None
+                    )
+                    if not isinstance(value, dict):
+                        raise AuthorityRegistryError(
+                            "logical file resource must contain a JSON object"
+                        )
+                    result = {
+                        "found": True,
+                        "resource": resource,
+                        "version": current_version,
+                        "action": row["action"],
+                        "value": value,
+                        "payload_digest": stored_digest,
+                        "provenance_metadata": metadata,
+                    }
+                    outcome = "found"
+
+                try:
+                    connection.execute(
+                        "INSERT INTO paca_resource_access_receipts("
+                        "session_id,nonce_digest,operation_id,authority_id,tenant,task_id,"
+                        "action,resource_key,request_digest,payload_digest,outcome,created_at"
+                        ") VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+                        (
+                            access_receipt["session_id"],
+                            access_receipt["nonce_digest"],
+                            access_receipt["operation_id"],
+                            authority_id,
+                            tenant,
+                            task_id,
+                            "read_file",
+                            resource,
+                            access_receipt["request_digest"],
+                            stored_digest,
+                            outcome,
+                            now,
+                        ),
+                    )
+                except sqlite3.IntegrityError as exc:
+                    raise AuthorityRegistryError(
+                        "broker request replay or duplicate operation ID was rejected"
+                    ) from exc
+
+                connection.execute(
+                    "UPDATE authority_usage SET calls_used=calls_used+1 WHERE authority_id=?",
+                    (authority_id,),
+                )
+                updated = connection.execute(
+                    "UPDATE task_usage SET calls_used=calls_used+1 "
+                    "WHERE tenant=? AND task_id=? AND calls_used<max_task_calls",
+                    (tenant, task_id),
+                )
+                if updated.rowcount != 1:
+                    raise AuthorityRegistryError(
+                        "task-wide quota was exhausted during resource read"
+                    )
+                connection.commit()
+                return result
+            except Exception:
+                connection.rollback()
+                raise
+
 
     def has_message_receipt(
         self,
