@@ -239,6 +239,74 @@ def test_postgres_resource_commit_serializes_before_revoke_across_clients(monkey
     assert registry_b.usage(authority_id) == (1, 0)
 
 
+
+
+def test_postgres_filesystem_commit_callback_serializes_with_revocation(
+    tmp_path,
+):
+    env = _environment()
+    target = tmp_path / "resource.txt"
+    staged = tmp_path / "resource.staged"
+    staged.write_bytes(b"postgres transactional filesystem resource")
+    with staged.open("rb") as stream:
+        os.fsync(stream.fileno())
+
+    renamed = threading.Event()
+    allow_transaction_commit = threading.Event()
+    revoke_started = threading.Event()
+    revoke_finished = threading.Event()
+
+    def commit_callback():
+        os.replace(staged, target)
+        directory_fd = os.open(tmp_path, os.O_RDONLY | os.O_DIRECTORY)
+        try:
+            os.fsync(directory_fd)
+        finally:
+            os.close(directory_fd)
+        renamed.set()
+        if not allow_transaction_commit.wait(timeout=20):
+            raise RuntimeError("test did not release PostgreSQL filesystem commit")
+
+    def commit():
+        return env["registry_a"].commit_fenced_filesystem_write(
+            env["permit"],
+            env["resource_payload"],
+            commit_callback=commit_callback,
+        )
+
+    def revoke():
+        revoke_started.set()
+        try:
+            return env["registry_b"].revoke(
+                env["root"].capability.cap_id,
+                "PostgreSQL filesystem commit serializes before revocation",
+            )
+        finally:
+            revoke_finished.set()
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        commit_future = pool.submit(commit)
+        assert renamed.wait(timeout=20)
+        revoke_future = pool.submit(revoke)
+        assert revoke_started.wait(timeout=20)
+        # The filesystem rename has occurred, but the authority transaction is
+        # deliberately still open. A second registry client must not overtake it.
+        assert not revoke_finished.wait(timeout=0.5)
+        allow_transaction_commit.set()
+        committed = commit_future.result(timeout=30)
+        revoked = revoke_future.result(timeout=30)
+
+    assert target.read_bytes() == b"postgres transactional filesystem resource"
+    assert committed["version"] == 1
+    assert env["root"].capability.cap_id in revoked
+    assert not env["registry_a"].is_active(env["root"].capability.cap_id)
+    receipt = env["registry_b"].get_resource_commit_receipt(
+        committed["commit_nonce"]
+    )
+    assert receipt is not None
+    assert receipt["task_id"] == env["task_id"]
+
+
 def test_postgres_fenced_runtime_commits_through_shared_primary_registry(tmp_path):
     from paca.durable import SQLiteProvenanceRepository
     from paca.memory import (
