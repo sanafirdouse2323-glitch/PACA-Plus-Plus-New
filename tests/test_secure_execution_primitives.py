@@ -247,3 +247,57 @@ def test_network_host_normalization_canonicalizes_idna_and_fqdn():
     assert secure_network._normalise_host("Example.COM.") == "example.com"
     assert secure_network._normalise_host("bücher.example") == "xn--bcher-kva.example"
     assert secure_network._normalise_host("2606:4700:4700::1111") == "2606:4700:4700::1111"
+
+
+
+@pytest.mark.parametrize(
+    "address",
+    [
+        # RFC 6052 well-known NAT64 prefix: ipaddress.is_global can be True
+        # even when the embedded IPv4 address is private.
+        "64:ff9b::7f00:1",       # 127.0.0.1
+        "64:ff9b::a00:1",        # 10.0.0.1
+        "64:ff9b::a9fe:a9fe",    # 169.254.169.254
+        "64:ff9b::c0a8:101",      # 192.168.1.1
+    ],
+)
+def test_network_resolver_rejects_well_known_nat64_translation_addresses(address):
+    def resolver(host, port, type):
+        return [(
+            socket.AF_INET6,
+            socket.SOCK_STREAM,
+            socket.IPPROTO_TCP,
+            "",
+            (address, port, 0, 0),
+        )]
+
+    with pytest.raises(UnsafeNetworkDestination, match="NAT64"):
+        resolve_public_endpoints("example.com", 443, resolver=resolver)
+
+
+def test_network_resolver_rejects_mismatched_family_and_socket_tuple():
+    def wrong_family(host, port, type):
+        return [(
+            socket.AF_INET6,
+            socket.SOCK_STREAM,
+            socket.IPPROTO_TCP,
+            "",
+            ("93.184.216.34", port, 0, 0),
+        )]
+
+    with pytest.raises(UnsafeNetworkDestination, match="family"):
+        resolve_public_endpoints("example.com", 443, resolver=wrong_family)
+
+
+def test_network_resolver_rejects_unexpected_resolved_port():
+    def wrong_port(host, port, type):
+        return [(
+            socket.AF_INET,
+            socket.SOCK_STREAM,
+            socket.IPPROTO_TCP,
+            "",
+            ("93.184.216.34", port + 1),
+        )]
+
+    with pytest.raises(UnsafeNetworkDestination, match="port or shape"):
+        resolve_public_endpoints("example.com", 443, resolver=wrong_port)
