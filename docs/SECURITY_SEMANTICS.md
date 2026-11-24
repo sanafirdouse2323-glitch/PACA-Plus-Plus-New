@@ -88,3 +88,16 @@ The transport proof is adapter-specific; the semantic requirement is common. An 
 The initial broker TLA+ model is intended to exercise permit/request binding, one-use permit consumption, revocation and policy-epoch invalidation, single-operation quota, pre-disclosure authorisation, and serialised commit/revocation interleavings.
 
 It does not yet model cryptographic algorithms, real clocks, distributed consensus, all resource predicate languages, multi-provider transactions or refinement of Python implementations. Those remain separate proof and test obligations.
+## 8. Executable finite-state model suite
+
+The formal workflow now runs four existing/new finite-state models:
+
+| Model | Properties under test | Explicit exclusions |
+|---|---|---|
+| PACAAuth | Request-bound token use, approval binding, tenant isolation, tool pinning and action-count budget | Broker process authentication and real resource effects |
+| PACALifecycle | Memory lineage, authority ancestry, lifecycle visibility, quotas and modeled commit authorization | Actual storage/provider atomicity and implementation refinement |
+| PACABroker | Caller identity from authenticated session rather than worker claim, pre-disclosure checks, exact commit-permit binding, single-use, quota, policy-epoch and revocation invalidation | Cryptographic algorithms, OS IPC, external provider semantics and distributed consensus |
+| PACAGrant | Semantic finite-set scope attenuation across action/resource/purpose/task/destination/data/approval dimensions, expiry, reserved quota and transitive revocation | General path/URL/SQL predicate containment; the model uses finite enumerated resource sets |
+| PACAInfoFlow | Conservative integrity join, maximum sensitivity join, explicit audited sensitivity declassification and no integrity promotion | Semantic truth of content, dynamic information-flow labels and source authenticity |
+
+These are bounded abstractions. TLC passing establishes that the specified invariants hold over the configured finite state space and transitions. It does not prove that Python code refines the models, that real resource operations are atomic, or that an execution platform is isolated.
