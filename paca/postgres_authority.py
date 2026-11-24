@@ -31,7 +31,8 @@ class _PostgresConnection:
     _WRITE_LOCK = (
         "LOCK TABLE authority_state, policy_epoch_events, authority_records, "
         "authority_revocations, authority_usage, authority_message_receipts, "
-        "task_usage, paca_resource_commit_receipts, paca_resource_values "
+        "task_usage, paca_resource_commit_receipts, paca_resource_values, "
+        "paca_resource_provenance, paca_resource_access_receipts "
         "IN SHARE ROW EXCLUSIVE MODE"
     )
 
@@ -306,8 +307,52 @@ class PostgresAuthorityRegistry(SQLiteAuthorityRegistry):
                             "PostgreSQL resource-commit schema is incomplete; refusing to recreate lost state"
                         )
 
+                if version < 6:
+                    connection.execute(
+                        "CREATE TABLE IF NOT EXISTS paca_resource_provenance ("
+                        "tenant TEXT NOT NULL,"
+                        "task_id TEXT NOT NULL,"
+                        "resource_key TEXT NOT NULL,"
+                        "resource_version BIGINT NOT NULL CHECK(resource_version>=1),"
+                        "metadata_json TEXT NOT NULL,"
+                        "PRIMARY KEY(tenant,task_id,resource_key,resource_version))"
+                    )
+                    connection.execute(
+                        "CREATE TABLE IF NOT EXISTS paca_resource_access_receipts ("
+                        "session_id TEXT NOT NULL,"
+                        "nonce_digest TEXT NOT NULL,"
+                        "operation_id TEXT NOT NULL UNIQUE,"
+                        "authority_id TEXT NOT NULL REFERENCES authority_records(authority_id) ON DELETE RESTRICT,"
+                        "tenant TEXT NOT NULL,"
+                        "task_id TEXT NOT NULL,"
+                        "action TEXT NOT NULL,"
+                        "resource_key TEXT NOT NULL,"
+                        "request_digest TEXT NOT NULL,"
+                        "payload_digest TEXT,"
+                        "outcome TEXT NOT NULL,"
+                        "created_at BIGINT NOT NULL,"
+                        "PRIMARY KEY(session_id,nonce_digest))"
+                    )
+                    connection.execute(
+                        "CREATE INDEX IF NOT EXISTS paca_resource_access_authority_idx "
+                        "ON paca_resource_access_receipts(authority_id,created_at)"
+                    )
+                else:
+                    access_tables = connection.execute(
+                        "SELECT to_regclass('paca_resource_provenance') AS provenance,"
+                        "to_regclass('paca_resource_access_receipts') AS access_receipts"
+                    ).fetchone()
+                    if (
+                        access_tables is None
+                        or not access_tables["provenance"]
+                        or not access_tables["access_receipts"]
+                    ):
+                        raise AuthorityRegistryError(
+                            "PostgreSQL broker-resource schema is incomplete; refusing to recreate lost state"
+                        )
+
                 connection.execute(
-                    "INSERT INTO paca_authority_meta(key,value) VALUES('schema_version','5') "
+                    "INSERT INTO paca_authority_meta(key,value) VALUES('schema_version','6') "
                     "ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value"
                 )
                 connection.execute(
