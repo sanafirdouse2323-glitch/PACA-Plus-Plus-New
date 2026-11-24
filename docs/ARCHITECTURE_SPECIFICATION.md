@@ -1,7 +1,7 @@
 # PACA++ — Open, Platform-Independent Reference Architecture
 
 **Document:** PACA++ Architecture Specification  
-**Version:** 0.1.0-draft  
+**Version:** 0.2.0-draft  
 **Status:** Proposed architecture; not a conformance standard or implementation claim  
 **Repository:** PACA-Plus-Plus-New (research repository only)  
 **Baseline inspected:** 24 November 2026, main commit a81bbffe3cf081830e7b87bba90f5342a327dfa0
@@ -459,6 +459,8 @@ Conformance is a statement about tested scope, not a general security certificat
 | Profile 3 — Brokered resource | Protected reads and mutations are mediated by an authenticated broker or destination PEP, with tested read disclosure and commit-boundary enforcement. | No untested provider, operation, failover or multi-host guarantee. |
 | Profile 4 — Lifecycle assurance | All declared memory, tool, communication, planning and execution transitions are covered; bypass, race, revocation, recovery and cross-adapter conformance tests pass for the declared deployment profile. | No universal protection outside the tested scope or against components explicitly trusted by the threat model. |
 
+The profiles are cumulative for the same declared deployment scope: Profile 1 includes Profile 0; Profile 2 includes Profiles 0–1; Profile 3 includes Profiles 0–2; and Profile 4 includes Profiles 0–3. A deployment may implement stronger controls for one resource than another, but it must report per-resource/per-operation coverage rather than assign a higher profile to the entire deployment based on one strong adapter.
+
 A profile claim must identify the exact implementation version, deployment profile, supported actions/resources, excluded paths, test environment, skipped tests and residual trusted components. An optional feature does not satisfy a profile unless it is enabled and verified in the target deployment.
 
 ## 14. Required conformance and adversarial testing
@@ -553,3 +555,81 @@ The following are deliberate architectural choices for subsequent implementation
 ---
 
 **Status reminder:** Version 0.1.0-draft is the proposed target architecture. The current PACA++ research repository remains a security research prototype with selected mediated-path controls, known bypasses and unimplemented architecture components. Passing repository CI does not constitute conformance or security certification.
+
+## 18. Stabilising definitions and security semantics (v0.2.0 review decisions)
+
+This section resolves terms whose ambiguity could otherwise produce incompatible or unsafe implementations.
+
+### 18.1 Normative vocabulary
+
+The words MUST, MUST NOT, REQUIRED, SHOULD, SHOULD NOT and MAY are normative. MUST/MUST NOT denote requirements for conformance to the relevant profile. SHOULD/SHOULD NOT permit a documented, risk-reviewed exception; they do not permit silent downgrade.
+
+A **principal** is an authenticated human, service, agent or workload identity. A model name, tool-provided user ID, tenant string or caller-supplied subject is only an untrusted claim until an identity authority or authenticated channel establishes it.
+
+A **task** is an orchestrator-created execution scope with an unambiguous owner, tenant and lifecycle. A child task is not inferred from a model plan; it is explicitly created and bound by the trusted orchestrator.
+
+A **policy decision point (PDP)** evaluates policy. A **policy enforcement point (PEP)** blocks or permits the protected operation. A **resource broker** is a PEP that performs a narrow resource operation using protected handles/credentials unavailable to the worker. A PDP response is not a capability and is never sufficient by itself to commit an effect.
+
+An **authorisation grant** permits a bounded operation request under stated conditions. A **commit permit** is a short-lived, one-use artefact for one exact mutation attempt. A **commit receipt** is evidence of the destination's result, not a new grant.
+
+### 18.2 Identity binding at the broker
+
+The broker MUST derive caller identity from an authenticated session or channel whose peer binding it verifies. A worker-supplied principal, tenant, task, UID, role or workload label MUST NOT be accepted as proof of identity. The session must be established by a trusted launcher, identity authority or authenticated workload mechanism; each request is bound to the session, nonce and intended broker audience. The transport adapter can use platform-specific peer authentication, but its externally visible contract remains platform-neutral. Session identifiers are references, not secrets or proof by themselves.
+
+The broker MUST reject an expired session, a mismatched channel binding, replayed request nonce, wrong audience, unrecognised operation, or caller/task/resource combination not authorised by the current grant. A broker adapter must not turn a caller-provided identity field into an authenticated identity.
+
+### 18.3 Delegation attenuation is semantic containment
+
+Represent a grant as a tuple:
+
+    G = (subject, tenant, task, purpose, audience, actions, resources, data_constraints, destinations, not_before, expires_at, budgets, approvals, delegation_rights, parent)
+
+A child grant C is attenuated from parent P only when every dimension is contained by the parent's authority. At minimum:
+- tenant and purpose remain equal unless the parent explicitly carries a bounded set of allowed child purposes;
+- the receiving subject is named by the parent's delegation authority or separately authenticated approval;
+- the child task is created by the trusted orchestrator under the parent task and is within its delegated subtask scope;
+- actions and destinations are semantic subsets;
+- resource predicates are subsets under the registered predicate semantics, not by textual prefix, glob comparison or string equality alone;
+- data constraints are at least as restrictive, including sensitivity, integrity, tenant and lineage conditions;
+- child not-before is no earlier than the parent; child expiry is no later than parent expiry;
+- operation, byte, cost and rate budgets do not exceed the parent's remaining budget after atomic reservation; and
+- approvals/delegation obligations are preserved or strengthened, never removed.
+
+If the predicate implementation cannot prove resource-scope containment, delegation MUST be denied. Wildcard, path, URL, SQL and provider-resource predicates need typed, versioned semantics and dedicated containment tests. A signed string pattern is not proof that one resource scope is a subset of another.
+
+### 18.4 Provenance lattice and declassification
+
+Integrity and confidentiality/sensitivity are separate dimensions. For the current integrity ordering, untrusted is less trusted than trusted; conservative derivation takes the least-trusted input. Sensitivity is ordered from public (0) through restricted (3); conservative derivation takes the maximum input sensitivity and preserves all tenant/source dependencies, including mixed or unknown ownership.
+
+Declassification is not trust promotion. An authorised declassification MAY lower a sensitivity label only through an explicit transformation with a named policy, authorised principal, exact input/output digests, destination/purpose constraints and durable audit evidence. It MUST produce a new object/version. It MUST NOT turn untrusted content into trusted content, erase lineage, or resolve unknown tenant ownership without independent evidence. Redaction and release approval are distinct operations and both must be recorded when both occur.
+
+### 18.5 Revocation closure and freshness
+
+Revocation of grant G MUST make G and every descendant grant unusable for new protected operations. It also invalidates outstanding authorisation/commit permits derived from those grants. Derived information depending on revoked or quarantined sources must be marked affected and denied or re-evaluated under an explicit recovery policy; deleting a source record alone is not proof that derived copies have been removed.
+
+A cache may accelerate status checks but MUST NOT override a newer revocation or policy epoch. A deployment claiming immediate revocation must provide a linearizable status/commit check at the effect boundary. A deployment using bounded-staleness replication must publish its maximum revocation delay and cannot claim immediate revocation; high-consequence operations must fail closed when freshness cannot be established.
+
+### 18.6 Concurrent commit and recovery semantics
+
+The commit boundary is the linearization point for a protected mutation. The system MUST define whether the resource update and one-use permit consumption are in one transaction, a destination-native conditional operation, or a weaker multi-step protocol.
+
+When permit consumption and the resource mutation share an atomic transaction, a concurrent revocation/commit race is serializable: either the commit linearizes first under then-current authority, or revocation linearizes first and the commit is rejected. The system must not claim that revocation cancels an effect that already linearized.
+
+When the destination cannot atomically check the permit or resource version, the adapter must classify the result as weaker/uncertain, use provider idempotency and reconciliation where available, and avoid claiming exactly-once execution or atomic revocation. A timeout after request submission is an **unknown outcome**, not evidence of failure; blind retry is prohibited until reconciliation determines whether the effect occurred.
+
+### 18.7 Trust-boundary and profile reporting
+
+Conformance profiles are cumulative for a declared resource/operation scope, not blanket certifications. Every profile report must enumerate protected resources, operations, entry points, direct-access paths tested, excluded paths, platform adapter and version, TCB, evidence type, skipped tests, residual risks and revocation consistency. A profile achieved for filesystem writes does not imply coverage of filesystem reads, memory, messaging or remote providers.
+
+An adapter's claimed capabilities are untrusted metadata until verified by the deployment's approved conformance evidence or trusted attestation mechanism. An adapter cannot self-certify merely by returning a capability list.
+
+### 18.8 Architecture review exit criteria
+
+Architecture stabilisation is complete only when:
+1. the deployment threat model and TCB are explicit;
+2. broker caller identity is derived from authenticated session evidence, not worker-supplied claims;
+3. resource-scope and delegation containment are defined semantically;
+4. provenance declassification cannot promote integrity or erase lineage;
+5. revocation consistency and commit linearization are explicit;
+6. conformance is cumulative and scoped to named resources/operations; and
+7. every normative invariant maps to at least one formal property and one adversarial conformance test, or is clearly marked as not yet modelled/tested.
