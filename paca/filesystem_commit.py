@@ -20,6 +20,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
+from .authority_runtime import HMACCapabilityAuthority
 from .resource_commit import FencedResourceExecutor, ResourceCommitDenied
 from .secure_io import SecurePathError, SecurePathUnavailable, SecureRoot
 
