@@ -362,6 +362,13 @@ def test_agentdojo_adapter_rejects_monitor_with_effect_token_check_disabled():
         PacaToolsExecutor(monitor, lambda *args: None)
 
 
+def test_agentdojo_adapter_rejects_other_security_policy_ablations():
+    monitor = Monitor(disable={"C6"})
+
+    with pytest.raises(ValueError, match="disabled checks: C6"):
+        PacaToolsExecutor(monitor, lambda *args: None)
+
+
 def test_agentdojo_adapter_fails_closed_when_request_builder_mutates_arguments():
     cap = Capability(
         "cap-mutation", "user@example.test", "tenant-a", "task-mutation", "assistant",
