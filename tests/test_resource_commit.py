@@ -149,6 +149,7 @@ def _environment(tmp_path, *, max_calls=40, asymmetric=False):
         AllowMonitor(),
         messages,
         require_resource_commit_fence=True,
+        resource_commit_verifier=resource_authority,
     )
     request = Request(
         "write_file",
