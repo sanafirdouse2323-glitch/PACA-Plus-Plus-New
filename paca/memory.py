@@ -998,6 +998,9 @@ class PACAAgentRuntime:
             raise ValueError(
                 "runtime, memory and message adapters must share the same trusted issuer and memory store"
             )
+        monitor_validator = getattr(monitor, "assert_consequential_safe", None)
+        if callable(monitor_validator):
+            monitor_validator()
         # C13 is the single-use effect-token binding. It may be disabled in
         # isolated benchmark ablations, but never in a runtime that can invoke
         # consequential executors.
@@ -1106,6 +1109,14 @@ class PACAAgentRuntime:
         """Authenticate and snapshot an effect before authorizing any consequence."""
         if not isinstance(request, Request):
             raise MemoryAccessDenied("effect request must be a typed PACA Request")
+        monitor_validator = getattr(self.monitor, "assert_consequential_safe", None)
+        if callable(monitor_validator):
+            try:
+                monitor_validator()
+            except ValueError as exc:
+                raise MemoryAccessDenied(
+                    "consequential runtime monitor configuration is unsafe"
+                ) from exc
         if self.require_resource_commit_fence and request.action not in {"write_file", "mem_write"}:
             raise MemoryAccessDenied(
                 "resource commit fence mode currently supports only write_file and mem_write"
