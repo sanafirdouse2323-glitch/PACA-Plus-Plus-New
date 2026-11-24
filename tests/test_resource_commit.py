@@ -557,10 +557,7 @@ def test_filesystem_resource_commit_writes_real_file_under_authority_fence(tmp_p
     assert result["version"] == 1
     assert result["recovery_pending"] is False
     assert env["registry"].usage(env["signed"].capability.cap_id)[0] == 5
-    assert (
-        env["registry"].get_resource_commit_receipt(result["commit_nonce"])
-        is not None
-    )
+    assert env["registry"].get_resource_commit_receipt(result["commit_nonce"]) is not None
     assert sorted(path.name for path in state_dir.iterdir()) == ["broker.lock"]
     executor.close()
 
@@ -740,7 +737,9 @@ def test_filesystem_executor_rejects_traversal_or_cross_tenant_targets(
 @pytest.mark.skipif(
     sys.platform != "linux", reason="filesystem commit fence requires Linux openat2"
 )
-def test_filesystem_executor_rejects_symlink_target_without_touching_outside_file(tmp_path):
+def test_filesystem_executor_rejects_symlink_target_without_touching_outside_file(
+    tmp_path,
+):
     resource_path = "/acme/reports/escape.txt"
     env = _environment(tmp_path, resource_path=resource_path)
     root = tmp_path / "filesystem-root"
@@ -814,7 +813,9 @@ def test_filesystem_executor_rejects_hard_link_target(tmp_path):
 @pytest.mark.skipif(
     sys.platform != "linux", reason="filesystem commit fence requires Linux openat2"
 )
-def test_filesystem_commit_permit_replay_cannot_replace_file_twice(tmp_path, monkeypatch):
+def test_filesystem_commit_permit_replay_cannot_replace_file_twice(
+    tmp_path, monkeypatch
+):
     env = _environment(tmp_path)
     root, _, executor = _filesystem_executor(env, tmp_path)
     issued = []
