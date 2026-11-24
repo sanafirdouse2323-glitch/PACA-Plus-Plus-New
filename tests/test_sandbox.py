@@ -5,6 +5,8 @@ import json
 
 import pytest
 
+from paca.agent_runtime import PACAAgentRuntime
+from paca.memory import MemoryAccessDenied
 from paca.provenance import Arg, Label
 from paca.runtime import Capability, Request, Tool
 from paca.sandbox import (
@@ -77,7 +79,23 @@ def test_docker_artifact_digest_binds_image_command_and_isolation_profile():
     command = ("/usr/local/bin/paca-worker", "--stdio")
     baseline = _sandbox()
     digest = baseline.implementation_digest(command)
+    descriptor = baseline._implementation_descriptor(command)
+    expected_invocation = list(
+        baseline._build_command(command, "<PACA_CIDFILE>")
+    )
 
+    assert descriptor["docker_invocation"] == expected_invocation
+    assert "--workdir=/tmp" in expected_invocation
+    assert "--env=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" in expected_invocation
+    assert digest == hashlib.sha256(
+        json.dumps(
+            descriptor,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=False,
+            allow_nan=False,
+        ).encode("utf-8")
+    ).hexdigest()
     assert len(digest) == 64
     assert digest == baseline.implementation_digest(command)
     assert digest != baseline.implementation_digest(
@@ -92,6 +110,52 @@ def test_docker_artifact_digest_binds_image_command_and_isolation_profile():
         IMAGE,
         docker_env={"DOCKER_HOST": "unix:///run/alternate-docker.sock"},
     ).implementation_digest(command)
+
+
+def test_agent_runtime_tool_pin_includes_implementation_digest():
+    pinned_tool = Tool(
+        "read_file",
+        "1.0",
+        "Read a file",
+        ("path",),
+        implementation_digest="a" * 64,
+    )
+    changed_tool = Tool(
+        "read_file",
+        "1.0",
+        "Read a file",
+        ("path",),
+        implementation_digest="b" * 64,
+    )
+    capability = Capability(
+        cap_id="cap",
+        principal="agent-a",
+        tenant="acme",
+        task_id="task-1",
+        role="assistant",
+        grants={"read_file": ("/workspace/*",)},
+        expires=9999999999,
+        tool_pins={pinned_tool.name: pinned_tool.hash},
+    )
+    args = {"path": Arg("/workspace/report.txt")}
+    allowed = Request(
+        "read_file",
+        args,
+        cap=capability,
+        step=1,
+        tool=pinned_tool,
+    )
+    denied = Request(
+        "read_file",
+        args,
+        cap=capability,
+        step=1,
+        tool=changed_tool,
+    )
+
+    PACAAgentRuntime._assert_tool_binding(capability, allowed)
+    with pytest.raises(MemoryAccessDenied, match="not pinned"):
+        PACAAgentRuntime._assert_tool_binding(capability, denied)
 
 
 def test_docker_sandbox_rejects_ambiguous_platform_values():
