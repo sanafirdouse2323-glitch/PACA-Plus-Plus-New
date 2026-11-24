@@ -99,6 +99,8 @@ class OAuth2RefreshTokenProvider:
             raise ValueError("OAuth client_secret must be non-empty when supplied")
         if not isinstance(refresh_token, str) or not refresh_token:
             raise ValueError("OAuth refresh_token must be non-empty")
+        if isinstance(granted_scopes, (str, bytes)):
+            raise TypeError("granted_scopes must be an iterable of complete scope strings")
         scopes = frozenset(granted_scopes)
         if not scopes or any(not isinstance(scope, str) or not scope.strip() for scope in scopes):
             raise ValueError("granted_scopes must contain non-empty scope names")
@@ -581,7 +583,10 @@ class MicrosoftGraphMailConnector:
             or parsed.username is not None
             or parsed.password is not None
             or parsed.fragment
-            or not parsed.path.startswith("/v1.0/me/messages")
+            or not (
+                parsed.path == "/v1.0/me/messages"
+                or parsed.path.startswith("/v1.0/me/messages/")
+            )
         ):
             raise ProviderProtocolError("Microsoft Graph returned an unsafe @odata.nextLink")
         return next_link
