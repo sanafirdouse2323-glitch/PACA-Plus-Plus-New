@@ -155,6 +155,93 @@ def test_ed25519_wrong_key_id_audience_public_key_and_tampering_fail_closed(tmp_
         _ed_verifier(registry, public_key).verify(tampered)
 
 
+def test_ed25519_issuer_can_derive_verification_key_from_private_seed(tmp_path):
+    registry = SQLiteAuthorityRegistry(tmp_path / "authority.sqlite3", clock=lambda: 1_000)
+    private_key, public_key = _keypair()
+    issuer = Ed25519CapabilityAuthority(
+        registry,
+        issuer_id="ed-issuer",
+        key_id="ed-key-1",
+        audience="paca-test",
+        private_key=private_key,
+        **_callbacks(),
+    )
+    signed = _capability(issuer)
+
+    assert _ed_verifier(registry, public_key).verify(signed.token).capability.principal == "agent-a"
+
+
+def test_ed25519_rejects_validly_signed_algorithm_downgrade(tmp_path):
+    registry = SQLiteAuthorityRegistry(tmp_path / "authority.sqlite3", clock=lambda: 1_000)
+    private_key, public_key = _keypair()
+    issuer = _ed_issuer(registry, private_key, public_key)
+    verifier = _ed_verifier(registry, public_key)
+    signed = _capability(issuer)
+
+    key_id, body, _signature = signed.token.split(".")
+    payload = json.loads(
+        base64.urlsafe_b64decode(body + "=" * (-len(body) % 4))
+    )
+    payload["signature_algorithm"] = "HS256"
+    downgraded_body_bytes = json.dumps(
+        payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False,
+        allow_nan=False,
+    ).encode("utf-8")
+    downgraded_body = base64.urlsafe_b64encode(
+        downgraded_body_bytes,
+    ).rstrip(b"=").decode("ascii")
+    signing_input = key_id + "." + downgraded_body
+    downgrade_signature = Ed25519PrivateKey.from_private_bytes(
+        private_key,
+    ).sign(signing_input.encode("ascii"))
+    downgrade_token = (
+        signing_input + "."
+        + base64.urlsafe_b64encode(downgrade_signature).rstrip(b"=").decode("ascii")
+    )
+
+    with pytest.raises(CapabilityAuthenticationError, match="signature algorithm mismatch"):
+        verifier.verify(downgrade_token)
+
+
+def test_ed25519_rejects_validly_signed_resource_permit_algorithm_downgrade(tmp_path):
+    registry = SQLiteAuthorityRegistry(tmp_path / "authority.sqlite3", clock=lambda: 1_000)
+    private_key, public_key = _keypair()
+    issuer = _ed_issuer(registry, private_key, public_key)
+    verifier = _ed_verifier(registry, public_key)
+    signed = _capability(issuer)
+    permit = issuer.issue_resource_commit_permit(
+        signed.token,
+        request_digest="a" * 64,
+        action="write_file",
+        resource="/acme/report.txt",
+        payload_digest="b" * 64,
+    )
+
+    version, key_id, body, _signature = permit.split(".")
+    payload = json.loads(
+        base64.urlsafe_b64decode(body + "=" * (-len(body) % 4))
+    )
+    payload["signature_algorithm"] = "HS256"
+    downgraded_body_bytes = json.dumps(
+        payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False,
+        allow_nan=False,
+    ).encode("utf-8")
+    downgraded_body = base64.urlsafe_b64encode(
+        downgraded_body_bytes,
+    ).rstrip(b"=").decode("ascii")
+    signing_input = version + "." + key_id + "." + downgraded_body
+    downgrade_signature = Ed25519PrivateKey.from_private_bytes(
+        private_key,
+    ).sign(signing_input.encode("ascii"))
+    downgrade_permit = (
+        signing_input + "."
+        + base64.urlsafe_b64encode(downgrade_signature).rstrip(b"=").decode("ascii")
+    )
+
+    with pytest.raises(CapabilityAuthenticationError, match="signature algorithm mismatch"):
+        verifier.verify_resource_commit_permit(downgrade_permit)
+
+
 def test_hmac_v2_tokens_with_legacy_payload_without_algorithm_remain_verifiable(tmp_path):
     registry = SQLiteAuthorityRegistry(tmp_path / "authority.sqlite3", clock=lambda: 1_000)
     issuer = HMACCapabilityAuthority(
