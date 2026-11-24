@@ -73,10 +73,18 @@ _CONTAINER_ID = re.compile(r"^[0-9a-f]{64}$")
 class DockerSandbox:
     """Run a fixed command in a digest-pinned, network-isolated Docker container.
 
+    Configuration becomes immutable after initialization so the worker identity
+    checked by the executor cannot be changed before the container is launched.
+
     No host volumes, devices, credentials, Docker socket, or environment variables
     are passed into the container. The command and image are trusted deployment
     configuration; model-provided strings are arguments only and never a shell.
     """
+
+    def __setattr__(self, name: str, value: Any) -> None:
+        if getattr(self, "_sealed", False):
+            raise AttributeError("DockerSandbox configuration is immutable")
+        object.__setattr__(self, name, value)
 
     def __init__(
         self,
@@ -92,6 +100,7 @@ class DockerSandbox:
         tmpfs_bytes: int = 33_554_432,
         docker_env: Mapping[str, str] | None = None,
     ) -> None:
+        object.__setattr__(self, "_sealed", False)
         if not isinstance(image, str) or _IMAGE_DIGEST.fullmatch(image) is None:
             raise ValueError(
                 "sandbox image must be pinned by an immutable sha256 digest"
@@ -155,7 +164,8 @@ class DockerSandbox:
         self.max_input_bytes = max_input_bytes
         self.max_output_bytes = max_output_bytes
         self.tmpfs_bytes = tmpfs_bytes
-        self.docker_env = supplied_env
+        self.docker_env = MappingProxyType(supplied_env)
+        object.__setattr__(self, "_sealed", True)
 
     @staticmethod
     def _validate_argv(argv: Sequence[str]) -> tuple[str, ...]:
