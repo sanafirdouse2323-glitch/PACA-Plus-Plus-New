@@ -31,8 +31,12 @@ class SQLiteFencedResourceExecutor:
     SUPPORTED_ACTIONS = frozenset({"write_file", "mem_write"})
 
     def __init__(self, authority: HMACCapabilityAuthority) -> None:
+        # Ed25519CapabilityAuthority deliberately subclasses the common
+        # authority contract: it can verify permits with a public key, while
+        # issuance remains confined to a separately configured private-key
+        # authority instance.
         if not isinstance(authority, HMACCapabilityAuthority):
-            raise TypeError("authority must be the runtime's HMACCapabilityAuthority")
+            raise TypeError("authority must implement the PACA capability verification contract")
         self.authority = authority
         self.registry = authority.registry
 
