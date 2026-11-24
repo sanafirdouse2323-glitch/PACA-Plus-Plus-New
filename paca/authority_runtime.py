@@ -725,23 +725,28 @@ class SQLiteAuthorityRegistry:
 
                 # The unique nonce prevents a captured commit permit from being
                 # replayed to produce a second mutation or quota charge.
-                connection.execute(
-                    "INSERT INTO paca_resource_commit_receipts("
-                    "nonce,authority_id,tenant,task_id,action,resource_key,"
-                    "request_digest,payload_digest,committed_at) "
-                    "VALUES(?,?,?,?,?,?,?,?,?)",
-                    (
-                        permit.nonce,
-                        permit.authority_id,
-                        permit.tenant,
-                        permit.task_id,
-                        permit.action,
-                        permit.resource,
-                        permit.request_digest,
-                        permit.payload_digest,
-                        now,
-                    ),
-                )
+                try:
+                    connection.execute(
+                        "INSERT INTO paca_resource_commit_receipts("
+                        "nonce,authority_id,tenant,task_id,action,resource_key,"
+                        "request_digest,payload_digest,committed_at) "
+                        "VALUES(?,?,?,?,?,?,?,?,?)",
+                        (
+                            permit.nonce,
+                            permit.authority_id,
+                            permit.tenant,
+                            permit.task_id,
+                            permit.action,
+                            permit.resource,
+                            permit.request_digest,
+                            permit.payload_digest,
+                            now,
+                        ),
+                    )
+                except sqlite3.IntegrityError as exc:
+                    raise AuthorityRegistryError(
+                        "resource commit permit replay was rejected"
+                    ) from exc
 
                 connection.execute(
                     "UPDATE authority_usage SET calls_used=calls_used+1 WHERE authority_id=?",
