@@ -37,6 +37,32 @@ def test_tool_implementation_digest_is_validated_and_legacy_hashes_are_stable():
         implementation_digest="b" * 64,
     )
     assert pinned.hash != legacy.hash
+
+    capability = Capability(
+        cap_id="cap",
+        principal="agent-a",
+        tenant="acme",
+        task_id="task-1",
+        role="assistant",
+        grants={"read_file": ("/workspace/*",)},
+        expires=9999999999,
+    )
+    legacy_request = Request(
+        "read_file",
+        {"path": Arg("/workspace/report.txt")},
+        cap=capability,
+        step=1,
+        tool=legacy,
+    )
+    pinned_request = Request(
+        "read_file",
+        {"path": Arg("/workspace/report.txt")},
+        cap=capability,
+        step=1,
+        tool=pinned,
+    )
+    assert pinned_request.digest != legacy_request.digest
+
     with pytest.raises(ValueError, match="lowercase SHA-256"):
         Tool(
             "read_file",
@@ -58,6 +84,10 @@ def test_docker_artifact_digest_binds_image_command_and_isolation_profile():
         ("/usr/local/bin/paca-worker", "--different-mode")
     )
     assert digest != _sandbox(memory_bytes=268_435_456).implementation_digest(command)
+    assert digest != DockerSandbox(
+        IMAGE,
+        docker_env={"DOCKER_HOST": "unix:///run/alternate-docker.sock"},
+    ).implementation_digest(command)
 
 
 def test_docker_sandbox_requires_an_immutable_image_digest():
@@ -169,7 +199,6 @@ def test_docker_sandbox_executor_passes_only_tool_input_not_authority_material()
             "version": "1.0",
             "description": "Read a file",
             "schema": ["path"],
-            "implementation_digest": tool.implementation_digest,
             "hash": tool.hash,
         },
     }
