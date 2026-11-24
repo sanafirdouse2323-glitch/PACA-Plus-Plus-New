@@ -605,6 +605,11 @@ class FilesystemFencedResourceExecutor(FencedResourceExecutor):
     def _recover_pending_locked(self) -> dict[str, int]:
         recovered = {"committed": 0, "rolled_back": 0}
         for name in sorted(os.listdir(self._state_fd)):
+            if name.startswith(".") and name.endswith(".journal.tmp"):
+                with contextlib.suppress(FileNotFoundError):
+                    os.unlink(name, dir_fd=self._state_fd)
+                    os.fsync(self._state_fd)
+                continue
             if not name.endswith(".json"):
                 continue
             outcome = self._recover_one_locked(name)
