@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import urllib.parse
 
@@ -18,12 +19,13 @@ from paca.integrations.providers import (
     QdrantVectorConnector,
     SlackHistoryConnector,
 )
+from paca.authority_runtime import HMACCapabilityAuthority, SQLiteAuthorityRegistry
+from paca.durable import SQLiteProvenanceRepository
 from paca.memory import (
-    HMACAgentMessageCodec,
-    MemoryAccessDenied,
     SQLiteMemoryValueStore,
     TrustedConnectorAdapter,
     TrustedMemoryAdapter,
+    canonical_value_bytes,
 )
 from paca.authority_runtime import HMACCapabilityAuthority, SQLiteAuthorityRegistry
 from paca.durable import SQLiteProvenanceRepository
@@ -506,8 +508,8 @@ def test_provider_capture_persists_only_through_matching_untrusted_ingress(tmp_p
     assert node is not None
     assert node.source == "gmail:account-1"
     assert node.label.integrity == "untrusted"
-    assert node.content_digest == __import__("hashlib").sha256(
-        __import__("paca.memory", fromlist=["canonical_value_bytes"]).canonical_value_bytes(
+    assert node.content_digest == hashlib.sha256(
+        canonical_value_bytes(
             {
                 "provider": "gmail",
                 "provider_version": "history-77",
