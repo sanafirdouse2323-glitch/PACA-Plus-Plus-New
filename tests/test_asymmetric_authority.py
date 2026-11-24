@@ -199,8 +199,9 @@ def test_ed25519_rejects_validly_signed_algorithm_downgrade(tmp_path):
         + base64.urlsafe_b64encode(downgrade_signature).rstrip(b"=").decode("ascii")
     )
 
-    with pytest.raises(CapabilityAuthenticationError, match="signature algorithm mismatch"):
+    with pytest.raises(CapabilityAuthenticationError) as error:
         verifier.verify(downgrade_token)
+    assert "token signature algorithm mismatch" in str(error.value.__cause__)
 
 
 def test_ed25519_rejects_validly_signed_resource_permit_algorithm_downgrade(tmp_path):
@@ -238,8 +239,9 @@ def test_ed25519_rejects_validly_signed_resource_permit_algorithm_downgrade(tmp_
         + base64.urlsafe_b64encode(downgrade_signature).rstrip(b"=").decode("ascii")
     )
 
-    with pytest.raises(CapabilityAuthenticationError, match="signature algorithm mismatch"):
+    with pytest.raises(CapabilityAuthenticationError) as error:
         verifier.verify_resource_commit_permit(downgrade_permit)
+    assert "resource commit permit signature algorithm mismatch" in str(error.value.__cause__)
 
 
 def test_hmac_v2_tokens_with_legacy_payload_without_algorithm_remain_verifiable(tmp_path):
