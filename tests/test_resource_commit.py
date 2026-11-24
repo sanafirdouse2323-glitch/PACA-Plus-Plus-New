@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import sqlite3
@@ -301,18 +302,42 @@ def test_revocation_waits_for_inflight_commit_and_linearizes_after_it(tmp_path, 
 
 
 def test_task_quota_exhaustion_prevents_resource_write_and_rolls_back_receipt(tmp_path):
-    env = _environment(tmp_path, max_calls=2)
-    # The two lineage reads consume the complete capability budget. The
-    # resource transaction must reject the write and must not leave a receipt.
+    env = _environment(tmp_path, max_calls=3)
+    # Pre-consume one unit. The two lineage reads can then complete, but
+    # the commit transaction sees an exhausted quota and cannot write.
+    env["registry"].consume_effect(
+        env["signed"].capability.cap_id,
+        max_calls=3,
+    )
     with pytest.raises(ResourceCommitDenied, match="atomic authority fence"):
         env["runtime"].execute_effect(
             env["signed"].token,
             env["request"],
             env["executor"],
         )
+    assert env["registry"].usage(env["signed"].capability.cap_id)[0] == 3
     assert _stored_resource(env["registry"]) is None
     with sqlite3.connect(env["registry"].database) as connection:
         count = connection.execute(
             "SELECT COUNT(*) FROM paca_resource_commit_receipts"
         ).fetchone()[0]
     assert count == 0
+
+
+def test_async_runtime_uses_the_same_resource_commit_fence(tmp_path):
+    env = _environment(tmp_path)
+
+    async def exercise():
+        decision, result = await env["runtime"].aexecute_effect(
+            env["signed"].token,
+            env["request"],
+            env["executor"],
+        )
+        assert decision.verdict == "allow"
+        assert result["version"] == 1
+
+    asyncio.run(exercise())
+    stored = _stored_resource(env["registry"])
+    assert stored is not None
+    assert json.loads(stored[0]) == {"content": "approved report body"}
+    assert env["registry"].usage(env["signed"].capability.cap_id)[0] == 3
