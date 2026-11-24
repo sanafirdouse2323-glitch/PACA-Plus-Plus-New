@@ -31,6 +31,10 @@ def _environment(tmp_path):
         key=b"P" * 32,
         audience="postgres-checkpoint-runtime",
         identity_verifier=lambda principal, tenant: bool(principal and tenant == "acme"),
+        task_context_verifier=lambda principal, tenant, task_id, purpose: bool(
+            principal and tenant == "acme" and task_id == "task-postgres"
+            and purpose == "resume-agent"
+        ),
         clock=clock,
     )
     root = issuer.issue(
