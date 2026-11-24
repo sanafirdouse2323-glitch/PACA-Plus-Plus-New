@@ -44,7 +44,7 @@ class FilesystemFencedResourceExecutor(FencedResourceExecutor):
 
     def __init__(
         self,
-        authority,
+        authority: HMACCapabilityAuthority,
         *,
         root: str | os.PathLike[str],
         state_dir: str | os.PathLike[str],
