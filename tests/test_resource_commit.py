@@ -23,7 +23,6 @@ from paca.memory import (
     TrustedMemoryAdapter,
     canonical_value_bytes,
 )
-from paca.provenance import Arg, Label
 from paca.resource_commit import ResourceCommitDenied, SQLiteFencedResourceExecutor
 from paca.runtime import Decision, Request, Tool
 
@@ -242,7 +241,10 @@ def test_resource_commit_rejects_modified_signed_permit(tmp_path):
             canonical_value_bytes({"content": "approved report body"})
         ).hexdigest(),
     )
-    tampered = permit[:-1] + ("A" if permit[-1] != "A" else "B")
+    parts = permit.split(".")
+    signature = parts[-1]
+    parts[-1] = ("A" if signature[0] != "A" else "B") + signature[1:]
+    tampered = ".".join(parts)
     with pytest.raises(ResourceCommitDenied, match="permit authentication"):
         env["executor"].execute_authorized(env["request"], tampered)
     assert _stored_resource(env["registry"]) is None
