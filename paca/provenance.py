@@ -5,13 +5,14 @@ preserves the least-trusted integrity, greatest sensitivity, all contributing or
 and every contributing tenant. The optional lineage graph records stable object/version
 identifiers and parent transformations without storing the underlying content.
 """
+
 from __future__ import annotations
 
 import hashlib
 import json
 import re
 from dataclasses import dataclass, field, replace
-from typing import Any, Dict, FrozenSet, List, Optional, Tuple
+from typing import Any
 
 from .ast import ProvenanceRecord
 
@@ -23,42 +24,58 @@ _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 class Label:
     integrity: str = "trusted"
     sensitivity: int = 0
-    tenant: Optional[str] = None
-    origins: FrozenSet[str] = frozenset()
-    tenants: FrozenSet[str] = frozenset()
+    tenant: str | None = None
+    origins: frozenset[str] = frozenset()
+    tenants: frozenset[str] = frozenset()
     tenant_unknown: bool = False
 
     def __post_init__(self) -> None:
         if self.integrity not in {"trusted", "untrusted"}:
             raise ValueError("integrity must be 'trusted' or 'untrusted'")
-        if isinstance(self.sensitivity, bool) or not isinstance(self.sensitivity, int) or not 0 <= self.sensitivity <= 3:
+        if (
+            isinstance(self.sensitivity, bool)
+            or not isinstance(self.sensitivity, int)
+            or not 0 <= self.sensitivity <= 3
+        ):
             raise ValueError("sensitivity must be an integer from 0 to 3")
         tenant_set = set(self.tenants)
-        if any(not isinstance(value, str) or not value for value in tenant_set):
-            raise ValueError("tenant identifiers must be non-empty strings")
+        if any(not isinstance(value, str) for value in tenant_set):
+            raise TypeError("tenant identifiers must be strings")
+        if any(not value for value in tenant_set):
+            raise ValueError("tenant identifiers must be non-empty")
         if self.tenant is not None:
-            if not isinstance(self.tenant, str) or not self.tenant:
-                raise ValueError("tenant must be a non-empty string or None")
+            if not isinstance(self.tenant, str):
+                raise TypeError("tenant must be a string or None")
+            if not self.tenant:
+                raise ValueError("tenant must be non-empty")
             tenant_set.add(self.tenant)
         normalized = frozenset(tenant_set)
         object.__setattr__(self, "tenants", normalized)
         if not isinstance(self.tenant_unknown, bool):
-            raise ValueError("tenant_unknown must be a boolean")
+            raise TypeError("tenant_unknown must be a boolean")
         if self.sensitivity > 0 and not normalized:
             object.__setattr__(self, "tenant_unknown", True)
-        object.__setattr__(self, "tenant", next(iter(normalized)) if len(normalized) == 1 and not self.tenant_unknown else None)
+        object.__setattr__(
+            self,
+            "tenant",
+            next(iter(normalized))
+            if len(normalized) == 1 and not self.tenant_unknown
+            else None,
+        )
         origins = frozenset(self.origins)
         if any(not isinstance(origin, str) or not origin for origin in origins):
             raise ValueError("provenance origins must be non-empty strings")
         object.__setattr__(self, "origins", origins)
 
     @staticmethod
-    def join(*labels: "Label") -> "Label":
+    def join(*labels: Label) -> Label:
         ls = [label for label in labels if label is not None]
         if not ls:
             return Label(integrity="untrusted")
         return Label(
-            integrity="untrusted" if any(label.integrity == "untrusted" for label in ls) else "trusted",
+            integrity="untrusted"
+            if any(label.integrity == "untrusted" for label in ls)
+            else "trusted",
             sensitivity=max(label.sensitivity for label in ls),
             origins=frozenset().union(*(label.origins for label in ls)),
             tenants=frozenset().union(*(label.tenants for label in ls)),
@@ -83,7 +100,7 @@ class Arg:
     value: Any
     # Unknown values are tainted by default; trusted adapters must explicitly label them.
     label: Label = field(default_factory=lambda: Label(integrity="untrusted"))
-    lineage_refs: FrozenSet[str] = frozenset()
+    lineage_refs: frozenset[str] = frozenset()
     # True when an unrecorded dependency entered a derived value.
     lineage_incomplete: bool = False
 
@@ -96,7 +113,7 @@ class Arg:
         if any(not isinstance(ref, str) or not ref for ref in refs):
             raise ValueError("lineage references must be non-empty strings")
         if not isinstance(self.lineage_incomplete, bool):
-            raise ValueError("lineage_incomplete must be a boolean")
+            raise TypeError("lineage_incomplete must be a boolean")
         object.__setattr__(self, "lineage_refs", refs)
 
 
@@ -107,10 +124,18 @@ def derive(value: Any, *inputs: Arg) -> Arg:
     when the transformation itself must become an explicit, versioned lineage node.
     """
     if any(not isinstance(arg, Arg) for arg in inputs):
-        raise TypeError("derive() accepts only Arg inputs; label every source before deriving")
+        raise TypeError(
+            "derive() accepts only Arg inputs; label every source before deriving"
+        )
     joined = Label.join(*(arg.label for arg in inputs))
-    refs = frozenset().union(*(arg.lineage_refs for arg in inputs)) if inputs else frozenset()
-    incomplete = not inputs or any(not arg.lineage_refs or arg.lineage_incomplete for arg in inputs)
+    refs = (
+        frozenset().union(*(arg.lineage_refs for arg in inputs))
+        if inputs
+        else frozenset()
+    )
+    incomplete = not inputs or any(
+        not arg.lineage_refs or arg.lineage_incomplete for arg in inputs
+    )
     return Arg(value, joined, refs, incomplete)
 
 
@@ -128,16 +153,24 @@ class LineageNode:
     source_class: str
     content_digest: str
     label: Label
-    parent_ids: Tuple[str, ...] = ()
+    parent_ids: tuple[str, ...] = ()
     transformation: str = "source"
-    purpose: Optional[str] = None
+    purpose: str | None = None
 
     def __post_init__(self) -> None:
-        for field_name in ("object_id", "version_id", "source", "source_class", "transformation"):
+        for field_name in (
+            "object_id",
+            "version_id",
+            "source",
+            "source_class",
+            "transformation",
+        ):
             value = getattr(self, field_name)
             if not isinstance(value, str) or not value:
                 raise ValueError(f"{field_name} must be a non-empty string")
-        if not isinstance(self.content_digest, str) or not _SHA256_RE.fullmatch(self.content_digest):
+        if not isinstance(self.content_digest, str) or not _SHA256_RE.fullmatch(
+            self.content_digest
+        ):
             raise ValueError("content_digest must be a lowercase SHA-256 hex digest")
         if not isinstance(self.label, Label):
             raise TypeError("lineage label must be a Label from a trusted adapter")
@@ -153,7 +186,7 @@ class LineageNode:
         parents = tuple(sorted(set(raw_parents)))
         object.__setattr__(self, "parent_ids", parents)
 
-    def as_dict(self) -> Dict[str, object]:
+    def as_dict(self) -> dict[str, object]:
         return {
             "object_id": self.object_id,
             "version_id": self.version_id,
@@ -174,7 +207,9 @@ class LineageNode:
 
     @property
     def node_id(self) -> str:
-        blob = json.dumps(self.as_dict(), sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+        blob = json.dumps(
+            self.as_dict(), sort_keys=True, separators=(",", ":"), ensure_ascii=False
+        )
         return hashlib.sha256(blob.encode("utf-8")).hexdigest()
 
 
@@ -189,23 +224,27 @@ class ProvenanceGraph:
     integration work and are not provided by this class.
     """
 
-    records: List[ProvenanceRecord] = field(default_factory=list)
-    _lineage_nodes: Dict[str, LineageNode] = field(default_factory=dict, init=False, repr=False)
-    _version_index: Dict[Tuple[str, str], str] = field(default_factory=dict, init=False, repr=False)
+    records: list[ProvenanceRecord] = field(default_factory=list)
+    _lineage_nodes: dict[str, LineageNode] = field(
+        default_factory=dict, init=False, repr=False
+    )
+    _version_index: dict[tuple[str, str], str] = field(
+        default_factory=dict, init=False, repr=False
+    )
 
     @property
-    def lineage_nodes(self) -> Dict[str, LineageNode]:
+    def lineage_nodes(self) -> dict[str, LineageNode]:
         """Return a snapshot so callers cannot mutate the graph's internal index."""
         return dict(self._lineage_nodes)
 
-    def get_node(self, node_id: str) -> Optional[LineageNode]:
+    def get_node(self, node_id: str) -> LineageNode | None:
         return self._lineage_nodes.get(node_id)
 
-    def ancestors(self, node_id: str) -> Tuple[LineageNode, ...]:
+    def ancestors(self, node_id: str) -> tuple[LineageNode, ...]:
         """Return the root-to-node lineage chain, deduplicating shared parents."""
         if node_id not in self._lineage_nodes:
             raise KeyError(node_id)
-        ordered: List[LineageNode] = []
+        ordered: list[LineageNode] = []
         visited = set()
         visiting = set()
 
@@ -233,21 +272,28 @@ class ProvenanceGraph:
         if not node.parent_ids and node.transformation != "source":
             raise ValueError("a parentless lineage node must be an explicit source")
         if not node.parent_ids and node.source not in node.label.origins:
-            raise ValueError("a source node must retain its source identifier in label origins")
+            raise ValueError(
+                "a source node must retain its source identifier in label origins"
+            )
         if node.parent_ids and node.transformation == "source":
             raise ValueError("a derived lineage node must name its transformation")
 
-        parents: List[LineageNode] = []
+        parents: list[LineageNode] = []
         for parent_id in node.parent_ids:
             parent = self._lineage_nodes.get(parent_id)
             if parent is None:
-                raise ValueError("all lineage parents must exist before the child is added")
+                raise ValueError(
+                    "all lineage parents must exist before the child is added"
+                )
             parents.append(parent)
 
         # Transformations may become more restrictive, but may never erase a
         # parent's untrusted status, sensitivity, origins, tenant or unknown-tenant flag.
         for parent in parents:
-            if parent.label.integrity == "untrusted" and node.label.integrity != "untrusted":
+            if (
+                parent.label.integrity == "untrusted"
+                and node.label.integrity != "untrusted"
+            ):
                 raise ValueError("a transformation cannot upgrade untrusted integrity")
             if node.label.sensitivity < parent.label.sensitivity:
                 raise ValueError("a transformation cannot lower sensitivity")
@@ -256,21 +302,27 @@ class ProvenanceGraph:
             if not parent.label.tenants.issubset(node.label.tenants):
                 raise ValueError("a transformation cannot erase tenant lineage")
             if parent.label.tenant_unknown and not node.label.tenant_unknown:
-                raise ValueError("a transformation cannot erase unknown-tenant provenance")
+                raise ValueError(
+                    "a transformation cannot erase unknown-tenant provenance"
+                )
 
         version_key = (node.object_id, node.version_id)
         existing_id = self._version_index.get(version_key)
         if existing_id is not None:
             existing = self._lineage_nodes[existing_id]
             if existing != node:
-                raise ValueError("object/version identifiers are immutable and already have different lineage")
+                raise ValueError(
+                    "object/version identifiers are immutable and already have different lineage"
+                )
             return existing
 
         node_id = node.node_id
         existing_node = self._lineage_nodes.get(node_id)
         if existing_node is not None:
             if existing_node != node:
-                raise ValueError("lineage node digest collision with different contents")
+                raise ValueError(
+                    "lineage node digest collision with different contents"
+                )
             return existing_node
         self._lineage_nodes[node_id] = node
         self._version_index[version_key] = node_id
@@ -286,7 +338,7 @@ class ProvenanceGraph:
         source_class: str,
         content_digest: str,
         label: Label,
-        purpose: Optional[str] = None,
+        purpose: str | None = None,
     ) -> Arg:
         """Record a trusted-adapter source version and return a lineage-bound Arg."""
         if not isinstance(label, Label):
@@ -315,17 +367,21 @@ class ProvenanceGraph:
         version_id: str,
         content_digest: str,
         transformation: str,
-        purpose: Optional[str] = None,
+        purpose: str | None = None,
         source: str = "model_generated",
     ) -> Arg:
         """Record a transformed object with explicit, existing parent lineage."""
         if not inputs or any(not isinstance(arg, Arg) for arg in inputs):
             raise TypeError("lineage derive requires one or more Arg inputs")
         if any(not arg.lineage_refs or arg.lineage_incomplete for arg in inputs):
-            raise ValueError("every derived input requires complete explicit source lineage references")
+            raise ValueError(
+                "every derived input requires complete explicit source lineage references"
+            )
         parent_ids = frozenset().union(*(arg.lineage_refs for arg in inputs))
         if any(ref not in self._lineage_nodes for ref in parent_ids):
-            raise ValueError("derived value references lineage not present in this graph")
+            raise ValueError(
+                "derived value references lineage not present in this graph"
+            )
         label = Label.join(*(arg.label for arg in inputs))
         node = LineageNode(
             object_id=object_id,
@@ -341,16 +397,29 @@ class ProvenanceGraph:
         stored = self.add_lineage_node(node)
         return Arg(value, stored.label, frozenset({stored.node_id}))
 
-    def add(self, source: str, entity: str, attribute: str, value: Any, explanation: str = "") -> ProvenanceRecord:
+    def add(
+        self,
+        source: str,
+        entity: str,
+        attribute: str,
+        value: Any,
+        explanation: str = "",
+    ) -> ProvenanceRecord:
         rec = ProvenanceRecord(source, entity, attribute, value, explanation)
         self.records.append(rec)
         return rec
 
-    def from_context(self, context: Dict[str, Any], source: str = "context") -> None:
+    def from_context(self, context: dict[str, Any], source: str = "context") -> None:
         for key, value in (context or {}).items():
             if isinstance(value, dict):
                 for attribute, item in value.items():
-                    self.add(source, str(key), str(attribute), item, f"context value for {key}.{attribute}")
+                    self.add(
+                        source,
+                        str(key),
+                        str(attribute),
+                        item,
+                        f"context value for {key}.{attribute}",
+                    )
             else:
                 self.add(source, str(key), "value", value, f"context value for {key}")
 
@@ -359,10 +428,10 @@ class ProvenanceGraph:
 
 
 __all__ = [
+    "SENSITIVITY",
     "Arg",
     "Label",
     "LineageNode",
     "ProvenanceGraph",
-    "SENSITIVITY",
     "derive",
 ]

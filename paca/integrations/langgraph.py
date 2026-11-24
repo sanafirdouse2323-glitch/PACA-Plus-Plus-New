@@ -6,6 +6,7 @@ Application callbacks are mandatory trust boundaries: a capability provider must
 return the authenticated run credential, and a provenance provider must return the
 complete trusted dependencies of a stored value.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -15,13 +16,22 @@ import hashlib
 import hmac
 import json
 import uuid
+from collections.abc import Callable, Iterable, Mapping
 from datetime import datetime, timezone
-from typing import Any, Callable, Dict, Iterable, Mapping, Optional, Tuple
+from typing import Any
 
 try:
     from langgraph.store.base import (
-        BaseStore, GetOp, Item, ListNamespacesOp, MatchCondition,
-        NOT_PROVIDED, PutOp, SearchItem, SearchOp, validate_op_namespace,
+        NOT_PROVIDED,
+        BaseStore,
+        GetOp,
+        Item,
+        ListNamespacesOp,
+        MatchCondition,
+        PutOp,
+        SearchItem,
+        SearchOp,
+        validate_op_namespace,
     )
 except ImportError as exc:  # pragma: no cover - covered by optional-dependency test
     raise ImportError(
@@ -44,8 +54,9 @@ from ..runtime import Request, Tool
 
 
 def _snapshot_async_inputs(
-    *args: Any, **kwargs: Any,
-) -> Tuple[Tuple[Any, ...], Dict[str, Any]]:
+    *args: Any,
+    **kwargs: Any,
+) -> tuple[tuple[Any, ...], dict[str, Any]]:
     """Detach LangGraph async-call inputs before handing blocking work to a thread."""
     try:
         # NOT_PROVIDED is an identity sentinel in the LangGraph BaseStore
@@ -72,18 +83,22 @@ def _object_prefix(tenant: str) -> str:
     return "mem/langgraph/" + _tenant_digest(tenant) + "/"
 
 
-def _object_id(namespace: Tuple[str, ...], key: str, tenant: str) -> str:
+def _object_id(namespace: tuple[str, ...], key: str, tenant: str) -> str:
     encoded = json.dumps(
-        [list(namespace), key], separators=(",", ":"), ensure_ascii=False,
+        [list(namespace), key],
+        separators=(",", ":"),
+        ensure_ascii=False,
     ).encode("utf-8")
-    return _object_prefix(tenant) + base64.urlsafe_b64encode(encoded).rstrip(b"=").decode("ascii")
+    return _object_prefix(tenant) + base64.urlsafe_b64encode(encoded).rstrip(
+        b"="
+    ).decode("ascii")
 
 
-def _decode_object_id(value: str) -> Tuple[str, Tuple[str, ...], str]:
+def _decode_object_id(value: str) -> tuple[str, tuple[str, ...], str]:
     prefix = "mem/langgraph/"
     if not value.startswith(prefix):
         raise ValueError("not a PACA LangGraph memory object")
-    remainder = value[len(prefix):]
+    remainder = value[len(prefix) :]
     tenant_digest, separator, token = remainder.partition("/")
     if (
         not separator
@@ -115,7 +130,9 @@ def _snapshot_tool_call_request(
     try:
         copied_call = copy.deepcopy(dict(tool_call))
         if _tool_call_digest(copied_call) != expected_digest:
-            raise MemoryAccessDenied("LangChain tool call changed while being snapshotted")
+            raise MemoryAccessDenied(
+                "LangChain tool call changed while being snapshotted"
+            )
         copied_state = copy.deepcopy(getattr(request, "state", None))
         original_tool = getattr(request, "tool", None)
         if original_tool is None:
@@ -130,18 +147,21 @@ def _snapshot_tool_call_request(
             )
         else:
             snapshot = copy.copy(request)
-            setattr(snapshot, "tool_call", copied_call)
-            setattr(snapshot, "tool", copied_tool)
-            setattr(snapshot, "state", copied_state)
+            snapshot.tool_call = copied_call
+            snapshot.tool = copied_tool
+            snapshot.state = copied_state
         if (
             _tool_call_digest(getattr(snapshot, "tool_call", {})) != expected_digest
             or getattr(getattr(snapshot, "tool", None), "name", None)
             != getattr(original_tool, "name", None)
             or not _same_state_snapshot(
-                getattr(snapshot, "state", None), copied_state,
+                getattr(snapshot, "state", None),
+                copied_state,
             )
         ):
-            raise MemoryAccessDenied("LangChain request snapshot does not preserve the authorized call")
+            raise MemoryAccessDenied(
+                "LangChain request snapshot does not preserve the authorized call"
+            )
         return snapshot
     except MemoryAccessDenied:
         raise
@@ -156,7 +176,7 @@ def _same_state_snapshot(current: Any, expected: Any) -> bool:
     try:
         result = current == expected
         return result if isinstance(result, bool) else False
-    except Exception:
+    except Exception:  # noqa: BLE001 - arbitrary equality failures make the snapshot unverifiable.
         return False
 
 
@@ -177,7 +197,9 @@ def _tool_call_digest(tool_call: Mapping[str, Any]) -> str:
     return hashlib.sha256(encoded).hexdigest()
 
 
-def _matches_filter(value: Mapping[str, Any], filters: Optional[Mapping[str, Any]]) -> bool:
+def _matches_filter(
+    value: Mapping[str, Any], filters: Mapping[str, Any] | None
+) -> bool:
     if not filters:
         return True
     operators = {"$eq", "$ne", "$gt", "$gte", "$lt", "$lte"}
@@ -190,8 +212,10 @@ def _matches_filter(value: Mapping[str, Any], filters: Optional[Mapping[str, Any
                 current = None
                 break
             current = current[part]
-        if isinstance(expected, Mapping) and expected and any(
-            key in operators for key in expected
+        if (
+            isinstance(expected, Mapping)
+            and expected
+            and any(key in operators for key in expected)
         ):
             if not set(expected).issubset(operators):
                 return False
@@ -215,6 +239,7 @@ def _matches_filter(value: Mapping[str, Any], filters: Optional[Mapping[str, Any
             return False
     return True
 
+
 class PACAProvenanceLangGraphStore(BaseStore):
     """LangGraph BaseStore backed by PACA's mediated, lineage-aware memory API.
 
@@ -232,7 +257,7 @@ class PACAProvenanceLangGraphStore(BaseStore):
         *,
         capability_token_provider: Callable[[], str],
         provenance_provider: Callable[
-            [Tuple[str, ...], str, Mapping[str, Any]], Iterable[Arg]
+            [tuple[str, ...], str, Mapping[str, Any]], Iterable[Arg]
         ],
         purpose: str,
     ) -> None:
@@ -252,46 +277,54 @@ class PACAProvenanceLangGraphStore(BaseStore):
             signed = self.memory.authority.verify(token)
             authority = signed.capability.authority_lineage
             if authority is None:
-                raise MemoryAccessDenied("LangGraph store capability has no authority lineage")
+                raise MemoryAccessDenied(
+                    "LangGraph store capability has no authority lineage"
+                )
             return authority.tenant
         except MemoryAccessDenied:
             raise
         except Exception as exc:
-            raise MemoryAccessDenied("LangGraph store capability authentication failed") from exc
+            raise MemoryAccessDenied(
+                "LangGraph store capability authentication failed"
+            ) from exc
 
     def _authorize_object(
         self,
-        namespace: Tuple[str, ...],
+        namespace: tuple[str, ...],
         key: str,
         action: str,
-    ) -> Tuple[str, str, str, Any]:
+    ) -> tuple[str, str, str, Any]:
         token = self._token_provider()
         tenant = self._tenant_for_token(token)
         object_id = _object_id(namespace, key, tenant)
         context = self.memory._verified_context(
-            token, action, object_id, self.purpose,
+            token,
+            action,
+            object_id,
+            self.purpose,
         )
         return token, tenant, object_id, context
 
     @staticmethod
-    def _validate_namespace(namespace: Tuple[str, ...], key: str) -> Tuple[str, ...]:
+    def _validate_namespace(namespace: tuple[str, ...], key: str) -> tuple[str, ...]:
         if (
             not isinstance(namespace, tuple)
             or not namespace
             or namespace[0] == "langgraph"
             or not all(
-                isinstance(part, str) and part and "." not in part
-                for part in namespace
+                isinstance(part, str) and part and "." not in part for part in namespace
             )
             or not isinstance(key, str)
             or not key
         ):
-            raise ValueError("namespace must be a non-empty tuple of strings and key must be non-empty")
+            raise ValueError(
+                "namespace must be a non-empty tuple of strings and key must be non-empty"
+            )
         return namespace
 
     def put(
         self,
-        namespace: Tuple[str, ...],
+        namespace: tuple[str, ...],
         key: str,
         value: Mapping[str, Any],
         index: Any = None,
@@ -308,22 +341,32 @@ class PACAProvenanceLangGraphStore(BaseStore):
         if not isinstance(value, Mapping) or any(not isinstance(k, str) for k in value):
             raise TypeError("LangGraph memory values must be string-keyed mappings")
         token, _tenant, object_id, _context = self._authorize_object(
-            namespace, key, "mem_write",
+            namespace,
+            key,
+            "mem_write",
         )
         dependencies = tuple(self._provenance_provider(namespace, key, value))
         previous = self.repository.latest_node(object_id)
-        dependency_refs = set().union(
-            *(item.lineage_refs for item in dependencies if isinstance(item, Arg))
-        ) if dependencies else set()
+        dependency_refs = (
+            set().union(
+                *(item.lineage_refs for item in dependencies if isinstance(item, Arg))
+            )
+            if dependencies
+            else set()
+        )
         if previous is not None:
             if self.repository.is_revoked(previous.node_id):
-                raise MemoryAccessDenied("a logically deleted or revoked LangGraph item cannot be overwritten")
+                raise MemoryAccessDenied(
+                    "a logically deleted or revoked LangGraph item cannot be overwritten"
+                )
             if previous.node_id not in dependency_refs:
                 raise MemoryAccessDenied(
                     "LangGraph memory updates must include the previous version as a provenance dependency"
                 )
         if not dependencies or any(
-            not isinstance(item, Arg) or not item.lineage_refs or item.lineage_incomplete
+            not isinstance(item, Arg)
+            or not item.lineage_refs
+            or item.lineage_incomplete
             for item in dependencies
         ):
             raise MemoryAccessDenied(
@@ -351,28 +394,37 @@ class PACAProvenanceLangGraphStore(BaseStore):
             # batch calls must apply the same checks explicitly.
             validate_op_namespace(op)
             if isinstance(op, GetOp):
-                results.append(self.get(
-                    op.namespace, op.key, refresh_ttl=op.refresh_ttl,
-                ))
+                results.append(
+                    self.get(
+                        op.namespace,
+                        op.key,
+                        refresh_ttl=op.refresh_ttl,
+                    )
+                )
             elif isinstance(op, PutOp):
                 if op.value is None:
                     self.delete(op.namespace, op.key)
                     results.append(None)
                 else:
                     self.put(
-                        op.namespace, op.key, op.value, index=op.index,
+                        op.namespace,
+                        op.key,
+                        op.value,
+                        index=op.index,
                         ttl=op.ttl,
                     )
                     results.append(None)
             elif isinstance(op, SearchOp):
-                results.append(self.search(
-                    op.namespace_prefix,
-                    query=op.query,
-                    filter=op.filter,
-                    limit=op.limit,
-                    offset=op.offset,
-                    refresh_ttl=op.refresh_ttl,
-                ))
+                results.append(
+                    self.search(
+                        op.namespace_prefix,
+                        query=op.query,
+                        filter=op.filter,
+                        limit=op.limit,
+                        offset=op.offset,
+                        refresh_ttl=op.refresh_ttl,
+                    )
+                )
             elif isinstance(op, ListNamespacesOp):
                 # Apply framework match conditions before asking PACA to disclose
                 # namespace metadata. An unrelated restricted namespace must not
@@ -383,9 +435,11 @@ class PACAProvenanceLangGraphStore(BaseStore):
                     max_depth=op.max_depth,
                     _match_conditions=tuple(op.match_conditions or ()),
                 )
-                results.append(namespaces[op.offset:op.offset + op.limit])
+                results.append(namespaces[op.offset : op.offset + op.limit])
             else:
-                raise TypeError("unsupported LangGraph store operation: " + type(op).__name__)
+                raise TypeError(
+                    "unsupported LangGraph store operation: " + type(op).__name__
+                )
         return results
 
     async def abatch(self, ops: Iterable[Any]) -> list[Any]:
@@ -395,14 +449,16 @@ class PACAProvenanceLangGraphStore(BaseStore):
 
     def get(
         self,
-        namespace: Tuple[str, ...],
+        namespace: tuple[str, ...],
         key: str,
         *,
-        refresh_ttl: Optional[bool] = None,
-    ) -> Optional[Item]:
+        refresh_ttl: bool | None = None,
+    ) -> Item | None:
         namespace = self._validate_namespace(namespace, key)
         token, _tenant, object_id, _context = self._authorize_object(
-            namespace, key, "mem_read",
+            namespace,
+            key,
+            "mem_read",
         )
         node = self.repository.latest_node(object_id)
         if node is None or self.repository.is_revoked(node.node_id):
@@ -414,7 +470,8 @@ class PACAProvenanceLangGraphStore(BaseStore):
             capability_token=token,
         )
         created_at = datetime.fromtimestamp(
-            self.repository.node_created_at(node.node_id), tz=timezone.utc,
+            self.repository.node_created_at(node.node_id),
+            tz=timezone.utc,
         )
         return Item(
             value=dict(arg.value),
@@ -424,12 +481,14 @@ class PACAProvenanceLangGraphStore(BaseStore):
             updated_at=created_at,
         )
 
-    def delete(self, namespace: Tuple[str, ...], key: str) -> None:
+    def delete(self, namespace: tuple[str, ...], key: str) -> None:
         namespace = self._validate_namespace(namespace, key)
         # Resolve tenant identity before looking up object metadata. Identical
         # LangGraph namespace/key pairs in different tenants have distinct IDs.
         _token, _tenant, object_id, context = self._authorize_object(
-            namespace, key, "mem_delete",
+            namespace,
+            key,
+            "mem_delete",
         )
         # Logical delete is an irreversible lineage revocation, not physical erasure.
         self.memory._consume_budget(context)
@@ -440,27 +499,27 @@ class PACAProvenanceLangGraphStore(BaseStore):
         for node in matched:
             if not self.repository.is_revoked(node.node_id):
                 self.repository.revoke_lineage(
-                    node.node_id, "LangGraph memory item logically deleted",
+                    node.node_id,
+                    "LangGraph memory item logically deleted",
                 )
 
     def search(
         self,
-        namespace_prefix: Tuple[str, ...],
+        namespace_prefix: tuple[str, ...],
         *,
-        query: Optional[str] = None,
-        filter: Optional[Dict[str, Any]] = None,
+        query: str | None = None,
+        filter: dict[str, Any] | None = None,
         limit: int = 10,
         offset: int = 0,
-        refresh_ttl: Optional[bool] = None,
+        refresh_ttl: bool | None = None,
     ) -> list[SearchItem]:
         if query is not None:
-            raise NotImplementedError("semantic/vector search is not configured for PACA LangGraph memory")
-        if (
-            not isinstance(namespace_prefix, tuple)
-            or not all(
-                isinstance(part, str) and part and "." not in part
-                for part in namespace_prefix
+            raise NotImplementedError(
+                "semantic/vector search is not configured for PACA LangGraph memory"
             )
+        if not isinstance(namespace_prefix, tuple) or not all(
+            isinstance(part, str) and part and "." not in part
+            for part in namespace_prefix
         ):
             raise ValueError("namespace_prefix must be a tuple of non-empty strings")
         if limit < 0 or offset < 0:
@@ -469,7 +528,7 @@ class PACAProvenanceLangGraphStore(BaseStore):
         token = self._token_provider()
         tenant = self._tenant_for_token(token)
         tenant_prefix = _object_prefix(tenant)
-        latest: Dict[str, Any] = {}
+        latest: dict[str, Any] = {}
         for node in self.repository.list_nodes(object_id_prefix=tenant_prefix):
             latest[node.object_id] = node
         selected = []
@@ -482,7 +541,7 @@ class PACAProvenanceLangGraphStore(BaseStore):
                 continue
             if decoded_tenant != _tenant_digest(tenant):
                 continue
-            if namespace[:len(namespace_prefix)] != namespace_prefix:
+            if namespace[: len(namespace_prefix)] != namespace_prefix:
                 continue
             arg = self.memory.read(
                 object_id,
@@ -494,29 +553,32 @@ class PACAProvenanceLangGraphStore(BaseStore):
             if not _matches_filter(value, filter):
                 continue
             created_at = datetime.fromtimestamp(
-                self.repository.node_created_at(node.node_id), tz=timezone.utc,
+                self.repository.node_created_at(node.node_id),
+                tz=timezone.utc,
             )
-            selected.append(SearchItem(
-                namespace=namespace,
-                key=key,
-                value=value,
-                created_at=created_at,
-                updated_at=created_at,
-                score=None,
-            ))
+            selected.append(
+                SearchItem(
+                    namespace=namespace,
+                    key=key,
+                    value=value,
+                    created_at=created_at,
+                    updated_at=created_at,
+                    score=None,
+                )
+            )
         selected.sort(key=lambda item: (item.namespace, item.key))
-        return selected[offset:offset + limit]
+        return selected[offset : offset + limit]
 
     def list_namespaces(
         self,
         *,
-        prefix: Optional[Tuple[str, ...]] = None,
-        suffix: Optional[Tuple[str, ...]] = None,
-        max_depth: Optional[int] = None,
+        prefix: tuple[str, ...] | None = None,
+        suffix: tuple[str, ...] | None = None,
+        max_depth: int | None = None,
         limit: int = 100,
         offset: int = 0,
-        _match_conditions: Tuple[MatchCondition, ...] = (),
-    ) -> list[Tuple[str, ...]]:
+        _match_conditions: tuple[MatchCondition, ...] = (),
+    ) -> list[tuple[str, ...]]:
         if limit < 0 or offset < 0 or (max_depth is not None and max_depth < 0):
             raise ValueError("invalid namespace pagination or depth")
         if prefix is not None and (
@@ -534,11 +596,12 @@ class PACAProvenanceLangGraphStore(BaseStore):
             if not isinstance(condition, MatchCondition):
                 raise TypeError("namespace match condition has an unsupported type")
             path = condition.path
-            if (
-                not isinstance(path, tuple)
-                or not all(isinstance(part, str) and part for part in path)
+            if not isinstance(path, tuple) or not all(
+                isinstance(part, str) and part for part in path
             ):
-                raise ValueError("namespace match condition path must be a tuple of non-empty strings")
+                raise ValueError(
+                    "namespace match condition path must be a tuple of non-empty strings"
+                )
             if condition.match_type not in {"prefix", "suffix"}:
                 raise ValueError("unsupported namespace match type")
 
@@ -546,7 +609,7 @@ class PACAProvenanceLangGraphStore(BaseStore):
         token = self._token_provider()
         tenant = self._tenant_for_token(token)
         tenant_prefix = _object_prefix(tenant)
-        latest: Dict[str, Any] = {}
+        latest: dict[str, Any] = {}
         for node in self.repository.list_nodes(object_id_prefix=tenant_prefix):
             latest[node.object_id] = node
         for object_id, node in latest.items():
@@ -560,14 +623,19 @@ class PACAProvenanceLangGraphStore(BaseStore):
                 continue
             if prefix is not None and (
                 len(prefix) > len(namespace)
-                or any(expected != "*" and namespace[index] != expected
-                       for index, expected in enumerate(prefix))
+                or any(
+                    expected != "*" and namespace[index] != expected
+                    for index, expected in enumerate(prefix)
+                )
             ):
                 continue
             if suffix is not None and (
                 len(suffix) > len(namespace)
-                or any(expected != "*" and namespace[len(namespace) - len(suffix) + index] != expected
-                       for index, expected in enumerate(suffix))
+                or any(
+                    expected != "*"
+                    and namespace[len(namespace) - len(suffix) + index] != expected
+                    for index, expected in enumerate(suffix)
+                )
             ):
                 continue
             condition_match = True
@@ -580,7 +648,8 @@ class PACAProvenanceLangGraphStore(BaseStore):
                     )
                 else:
                     matched = len(namespace) >= len(path) and all(
-                        expected == "*" or namespace[len(namespace) - len(path) + index] == expected
+                        expected == "*"
+                        or namespace[len(namespace) - len(path) + index] == expected
                         for index, expected in enumerate(path)
                     )
                 if not matched:
@@ -600,11 +669,11 @@ class PACAProvenanceLangGraphStore(BaseStore):
                 capability_token=token,
             )
             namespaces.add(namespace)
-        return sorted(namespaces)[offset:offset + limit]
+        return sorted(namespaces)[offset : offset + limit]
 
     async def aput(
         self,
-        namespace: Tuple[str, ...],
+        namespace: tuple[str, ...],
         key: str,
         value: Mapping[str, Any],
         index: Any = None,
@@ -612,35 +681,41 @@ class PACAProvenanceLangGraphStore(BaseStore):
         ttl: Any = NOT_PROVIDED,
     ) -> None:
         snapshot_args, snapshot_kwargs = _snapshot_async_inputs(
-            namespace, key, value, index, ttl=ttl,
+            namespace,
+            key,
+            value,
+            index,
+            ttl=ttl,
         )
         await asyncio.to_thread(self.put, *snapshot_args, **snapshot_kwargs)
 
     async def aget(
         self,
-        namespace: Tuple[str, ...],
+        namespace: tuple[str, ...],
         key: str,
         *,
-        refresh_ttl: Optional[bool] = None,
-    ) -> Optional[Item]:
+        refresh_ttl: bool | None = None,
+    ) -> Item | None:
         snapshot_args, snapshot_kwargs = _snapshot_async_inputs(
-            namespace, key, refresh_ttl=refresh_ttl,
+            namespace,
+            key,
+            refresh_ttl=refresh_ttl,
         )
         return await asyncio.to_thread(self.get, *snapshot_args, **snapshot_kwargs)
 
-    async def adelete(self, namespace: Tuple[str, ...], key: str) -> None:
+    async def adelete(self, namespace: tuple[str, ...], key: str) -> None:
         snapshot_args, snapshot_kwargs = _snapshot_async_inputs(namespace, key)
         await asyncio.to_thread(self.delete, *snapshot_args, **snapshot_kwargs)
 
     async def asearch(
         self,
-        namespace_prefix: Tuple[str, ...],
+        namespace_prefix: tuple[str, ...],
         *,
-        query: Optional[str] = None,
-        filter: Optional[Dict[str, Any]] = None,
+        query: str | None = None,
+        filter: dict[str, Any] | None = None,
         limit: int = 10,
         offset: int = 0,
-        refresh_ttl: Optional[bool] = None,
+        refresh_ttl: bool | None = None,
     ) -> list[SearchItem]:
         snapshot_args, snapshot_kwargs = _snapshot_async_inputs(
             namespace_prefix,
@@ -651,18 +726,20 @@ class PACAProvenanceLangGraphStore(BaseStore):
             refresh_ttl=refresh_ttl,
         )
         return await asyncio.to_thread(
-            self.search, *snapshot_args, **snapshot_kwargs,
+            self.search,
+            *snapshot_args,
+            **snapshot_kwargs,
         )
 
     async def alist_namespaces(
         self,
         *,
-        prefix: Optional[Tuple[str, ...]] = None,
-        suffix: Optional[Tuple[str, ...]] = None,
-        max_depth: Optional[int] = None,
+        prefix: tuple[str, ...] | None = None,
+        suffix: tuple[str, ...] | None = None,
+        max_depth: int | None = None,
         limit: int = 100,
         offset: int = 0,
-    ) -> list[Tuple[str, ...]]:
+    ) -> list[tuple[str, ...]]:
         snapshot_args, snapshot_kwargs = _snapshot_async_inputs(
             prefix=prefix,
             suffix=suffix,
@@ -671,7 +748,9 @@ class PACAProvenanceLangGraphStore(BaseStore):
             offset=offset,
         )
         return await asyncio.to_thread(
-            self.list_namespaces, *snapshot_args, **snapshot_kwargs,
+            self.list_namespaces,
+            *snapshot_args,
+            **snapshot_kwargs,
         )
 
 
@@ -716,11 +795,15 @@ class PACALangChainToolMiddleware(AgentMiddleware):
             or tool is None
             or getattr(tool, "name", None) != tool_call.get("name")
         ):
-            raise MemoryAccessDenied("LangChain tool identity is missing or does not match the registered tool")
+            raise MemoryAccessDenied(
+                "LangChain tool identity is missing or does not match the registered tool"
+            )
         tool_call_digest = _tool_call_digest(tool_call)
         original_state = copy.deepcopy(getattr(request, "state", None))
         factory_request = _snapshot_tool_call_request(
-            request, tool_call, tool_call_digest,
+            request,
+            tool_call,
+            tool_call_digest,
         )
         factory_state = copy.deepcopy(getattr(factory_request, "state", None))
         actual_manifest = self._tool_manifest_provider(tool)
@@ -728,41 +811,54 @@ class PACALangChainToolMiddleware(AgentMiddleware):
             not isinstance(actual_manifest, Tool)
             or actual_manifest.name != tool_call["name"]
         ):
-            raise MemoryAccessDenied("registered tool has no trusted PACA manifest or its identity differs")
+            raise MemoryAccessDenied(
+                "registered tool has no trusted PACA manifest or its identity differs"
+            )
         paca_request = self._request_factory(factory_request)
-        if (
-            not _same_state_snapshot(
-                getattr(factory_request, "state", None), factory_state,
-            )
-            or not _same_state_snapshot(
-                getattr(request, "state", None), original_state,
-            )
+        if not _same_state_snapshot(
+            getattr(factory_request, "state", None),
+            factory_state,
+        ) or not _same_state_snapshot(
+            getattr(request, "state", None),
+            original_state,
         ):
-            raise MemoryAccessDenied("LangChain graph state changed while its PACA request was being constructed")
+            raise MemoryAccessDenied(
+                "LangChain graph state changed while its PACA request was being constructed"
+            )
         if not isinstance(paca_request, Request):
             raise TypeError("request_factory must return a PACA Request")
         if paca_request.tool != actual_manifest:
-            raise MemoryAccessDenied("PACA action mapping does not match the registered tool manifest")
+            raise MemoryAccessDenied(
+                "PACA action mapping does not match the registered tool manifest"
+            )
         if (
             _tool_call_digest(getattr(request, "tool_call", {})) != tool_call_digest
-            or _tool_call_digest(getattr(factory_request, "tool_call", {})) != tool_call_digest
+            or _tool_call_digest(getattr(factory_request, "tool_call", {}))
+            != tool_call_digest
             or not _same_state_snapshot(
-                getattr(request, "state", None), original_state,
+                getattr(request, "state", None),
+                original_state,
             )
         ):
             raise MemoryAccessDenied(
                 "LangChain tool call or graph state changed while its PACA request was being constructed"
             )
         frozen_request = _snapshot_tool_call_request(
-            request, tool_call, tool_call_digest,
+            request,
+            tool_call,
+            tool_call_digest,
         )
         if self._tool_manifest_provider(frozen_request.tool) != actual_manifest:
-            raise MemoryAccessDenied("snapshotted tool implementation differs from the registered manifest")
+            raise MemoryAccessDenied(
+                "snapshotted tool implementation differs from the registered manifest"
+            )
         token = self._token_provider(request)
         signed = self.runtime.authority.verify(token)
         pin = signed.capability.tool_pins.get(tool_call["name"])
         if pin is None or not hmac.compare_digest(pin, actual_manifest.hash):
-            raise MemoryAccessDenied("LangChain tool manifest is not pinned by the authenticated capability")
+            raise MemoryAccessDenied(
+                "LangChain tool manifest is not pinned by the authenticated capability"
+            )
 
         def checked_handler(_validated: Any) -> Any:
             current_call = getattr(request, "tool_call", None)
@@ -773,20 +869,30 @@ class PACALangChainToolMiddleware(AgentMiddleware):
                 or current_tool is None
                 or getattr(current_tool, "name", None) != actual_manifest.name
                 or not _same_state_snapshot(
-                    getattr(request, "state", None), original_state,
+                    getattr(request, "state", None),
+                    original_state,
                 )
                 or not _same_state_snapshot(
-                    getattr(frozen_request, "state", None), original_state,
+                    getattr(frozen_request, "state", None),
+                    original_state,
                 )
             ):
-                raise MemoryAccessDenied("LangChain tool call or identity changed after PACA authorization")
+                raise MemoryAccessDenied(
+                    "LangChain tool call or identity changed after PACA authorization"
+                )
             current_manifest = self._tool_manifest_provider(current_tool)
             if current_manifest != actual_manifest:
-                raise MemoryAccessDenied("registered tool manifest changed after PACA authorization")
+                raise MemoryAccessDenied(
+                    "registered tool manifest changed after PACA authorization"
+                )
             if _tool_call_digest(frozen_request.tool_call) != tool_call_digest:
-                raise MemoryAccessDenied("frozen LangChain tool call changed before handler invocation")
+                raise MemoryAccessDenied(
+                    "frozen LangChain tool call changed before handler invocation"
+                )
             if self._tool_manifest_provider(frozen_request.tool) != actual_manifest:
-                raise MemoryAccessDenied("snapshotted tool manifest changed before handler invocation")
+                raise MemoryAccessDenied(
+                    "snapshotted tool manifest changed before handler invocation"
+                )
             return handler(frozen_request)
 
         decision, result = self.runtime.execute_effect(
@@ -808,11 +914,15 @@ class PACALangChainToolMiddleware(AgentMiddleware):
             or tool is None
             or getattr(tool, "name", None) != tool_call.get("name")
         ):
-            raise MemoryAccessDenied("LangChain tool identity is missing or does not match the registered tool")
+            raise MemoryAccessDenied(
+                "LangChain tool identity is missing or does not match the registered tool"
+            )
         tool_call_digest = _tool_call_digest(tool_call)
         original_state = copy.deepcopy(getattr(request, "state", None))
         factory_request = _snapshot_tool_call_request(
-            request, tool_call, tool_call_digest,
+            request,
+            tool_call,
+            tool_call_digest,
         )
         factory_state = copy.deepcopy(getattr(factory_request, "state", None))
         actual_manifest = self._tool_manifest_provider(tool)
@@ -820,41 +930,54 @@ class PACALangChainToolMiddleware(AgentMiddleware):
             not isinstance(actual_manifest, Tool)
             or actual_manifest.name != tool_call["name"]
         ):
-            raise MemoryAccessDenied("registered tool has no trusted PACA manifest or its identity differs")
+            raise MemoryAccessDenied(
+                "registered tool has no trusted PACA manifest or its identity differs"
+            )
         paca_request = self._request_factory(factory_request)
-        if (
-            not _same_state_snapshot(
-                getattr(factory_request, "state", None), factory_state,
-            )
-            or not _same_state_snapshot(
-                getattr(request, "state", None), original_state,
-            )
+        if not _same_state_snapshot(
+            getattr(factory_request, "state", None),
+            factory_state,
+        ) or not _same_state_snapshot(
+            getattr(request, "state", None),
+            original_state,
         ):
-            raise MemoryAccessDenied("LangChain graph state changed while its PACA request was being constructed")
+            raise MemoryAccessDenied(
+                "LangChain graph state changed while its PACA request was being constructed"
+            )
         if not isinstance(paca_request, Request):
             raise TypeError("request_factory must return a PACA Request")
         if paca_request.tool != actual_manifest:
-            raise MemoryAccessDenied("PACA action mapping does not match the registered tool manifest")
+            raise MemoryAccessDenied(
+                "PACA action mapping does not match the registered tool manifest"
+            )
         if (
             _tool_call_digest(getattr(request, "tool_call", {})) != tool_call_digest
-            or _tool_call_digest(getattr(factory_request, "tool_call", {})) != tool_call_digest
+            or _tool_call_digest(getattr(factory_request, "tool_call", {}))
+            != tool_call_digest
             or not _same_state_snapshot(
-                getattr(request, "state", None), original_state,
+                getattr(request, "state", None),
+                original_state,
             )
         ):
             raise MemoryAccessDenied(
                 "LangChain tool call or graph state changed while its PACA request was being constructed"
             )
         frozen_request = _snapshot_tool_call_request(
-            request, tool_call, tool_call_digest,
+            request,
+            tool_call,
+            tool_call_digest,
         )
         if self._tool_manifest_provider(frozen_request.tool) != actual_manifest:
-            raise MemoryAccessDenied("snapshotted tool implementation differs from the registered manifest")
+            raise MemoryAccessDenied(
+                "snapshotted tool implementation differs from the registered manifest"
+            )
         token = self._token_provider(request)
         signed = self.runtime.authority.verify(token)
         pin = signed.capability.tool_pins.get(tool_call["name"])
         if pin is None or not hmac.compare_digest(pin, actual_manifest.hash):
-            raise MemoryAccessDenied("LangChain tool manifest is not pinned by the authenticated capability")
+            raise MemoryAccessDenied(
+                "LangChain tool manifest is not pinned by the authenticated capability"
+            )
 
         async def checked_handler(_validated: Any) -> Any:
             current_call = getattr(request, "tool_call", None)
@@ -865,20 +988,30 @@ class PACALangChainToolMiddleware(AgentMiddleware):
                 or current_tool is None
                 or getattr(current_tool, "name", None) != actual_manifest.name
                 or not _same_state_snapshot(
-                    getattr(request, "state", None), original_state,
+                    getattr(request, "state", None),
+                    original_state,
                 )
                 or not _same_state_snapshot(
-                    getattr(frozen_request, "state", None), original_state,
+                    getattr(frozen_request, "state", None),
+                    original_state,
                 )
             ):
-                raise MemoryAccessDenied("LangChain tool call or identity changed after PACA authorization")
+                raise MemoryAccessDenied(
+                    "LangChain tool call or identity changed after PACA authorization"
+                )
             current_manifest = self._tool_manifest_provider(current_tool)
             if current_manifest != actual_manifest:
-                raise MemoryAccessDenied("registered tool manifest changed after PACA authorization")
+                raise MemoryAccessDenied(
+                    "registered tool manifest changed after PACA authorization"
+                )
             if _tool_call_digest(frozen_request.tool_call) != tool_call_digest:
-                raise MemoryAccessDenied("frozen LangChain tool call changed before handler invocation")
+                raise MemoryAccessDenied(
+                    "frozen LangChain tool call changed before handler invocation"
+                )
             if self._tool_manifest_provider(frozen_request.tool) != actual_manifest:
-                raise MemoryAccessDenied("snapshotted tool manifest changed before handler invocation")
+                raise MemoryAccessDenied(
+                    "snapshotted tool manifest changed before handler invocation"
+                )
             result = handler(frozen_request)
             if hasattr(result, "__await__"):
                 return await result

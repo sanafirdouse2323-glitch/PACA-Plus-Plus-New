@@ -4,15 +4,17 @@ This module stores lineage metadata and edges only. It deliberately does not sto
 memory values; value storage and read authorization live in paca.memory. SQLite is
 intended for a local file shared by processes on one host, not multi-host consensus.
 """
+
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import sqlite3
 import time
+from collections.abc import Iterable
 from contextlib import closing
 from pathlib import Path
-from typing import Dict, Iterable, Optional, Tuple
 
 from .provenance import Label, LineageNode, ProvenanceGraph
 
@@ -31,7 +33,10 @@ class LineageIntegrityError(ProvenanceStoreError):
 
 def _canonical_json(value: object) -> str:
     return json.dumps(
-        value, sort_keys=True, separators=(",", ":"), ensure_ascii=False,
+        value,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
         allow_nan=False,
     )
 
@@ -62,7 +67,9 @@ def _node_from_record(record: str, expected_id: str) -> LineageNode:
     except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
         raise LineageIntegrityError("stored lineage record is malformed") from exc
     if _canonical_json(node.as_dict()) != record or node.node_id != expected_id:
-        raise LineageIntegrityError("stored lineage record failed canonical digest verification")
+        raise LineageIntegrityError(
+            "stored lineage record failed canonical digest verification"
+        )
     return node
 
 
@@ -77,10 +84,14 @@ class SQLiteProvenanceRepository:
 
     SCHEMA_VERSION = 1
 
-    def __init__(self, database: str | os.PathLike[str], *, timeout: float = 10.0) -> None:
+    def __init__(
+        self, database: str | os.PathLike[str], *, timeout: float = 10.0
+    ) -> None:
         raw = os.fspath(database)
         if raw == ":memory:" or not raw:
-            raise ValueError("durable provenance requires a file-backed SQLite database")
+            raise ValueError(
+                "durable provenance requires a file-backed SQLite database"
+            )
         if timeout <= 0:
             raise ValueError("timeout must be positive")
         self.database = Path(raw).expanduser().resolve()
@@ -90,11 +101,13 @@ class SQLiteProvenanceRepository:
 
     def _connect(self) -> sqlite3.Connection:
         connection = sqlite3.connect(
-            str(self.database), timeout=self.timeout, isolation_level=None,
+            str(self.database),
+            timeout=self.timeout,
+            isolation_level=None,
         )
         connection.row_factory = sqlite3.Row
         connection.execute("PRAGMA foreign_keys=ON")
-        connection.execute("PRAGMA busy_timeout=%d" % int(self.timeout * 1000))
+        connection.execute(f"PRAGMA busy_timeout={int(self.timeout * 1000)}")
         connection.execute("PRAGMA synchronous=FULL")
         return connection
 
@@ -112,7 +125,9 @@ class SQLiteProvenanceRepository:
                 ).fetchone()
                 version = int(row["value"]) if row else 0
                 if version > self.SCHEMA_VERSION:
-                    raise ProvenanceStoreError("database schema is newer than this package")
+                    raise ProvenanceStoreError(
+                        "database schema is newer than this package"
+                    )
                 if version < 1:
                     connection.execute(
                         "CREATE TABLE lineage_nodes ("
@@ -155,12 +170,10 @@ class SQLiteProvenanceRepository:
             except Exception:
                 connection.rollback()
                 raise
-        try:
+        # Existing filesystems may not support POSIX permissions. Deployment
+        # must still provide a private directory and database ACLs.
+        with contextlib.suppress(OSError):
             os.chmod(self.database, 0o600)
-        except OSError:
-            # Existing filesystems may not support POSIX permissions. Deployment
-            # must still provide a private directory and database ACLs.
-            pass
 
     @staticmethod
     def _load_graph(connection: sqlite3.Connection) -> ProvenanceGraph:
@@ -182,7 +195,9 @@ class SQLiteProvenanceRepository:
             try:
                 graph.add_lineage_node(node)
             except (TypeError, ValueError) as exc:
-                raise LineageIntegrityError("stored lineage graph failed invariant validation") from exc
+                raise LineageIntegrityError(
+                    "stored lineage graph failed invariant validation"
+                ) from exc
             for position, parent_id in enumerate(node.parent_ids):
                 expected_edges.add((node.node_id, parent_id, position))
         edge_rows = connection.execute(
@@ -212,7 +227,9 @@ class SQLiteProvenanceRepository:
                     (node.object_id, node.version_id),
                 ).fetchone()
                 if existing is not None:
-                    stored = _node_from_record(existing["record_json"], existing["node_id"])
+                    stored = _node_from_record(
+                        existing["record_json"], existing["node_id"]
+                    )
                     if stored != node:
                         raise ImmutableLineageConflict(
                             "object/version identifiers are immutable and already have different lineage"
@@ -243,7 +260,7 @@ class SQLiteProvenanceRepository:
                 connection.rollback()
                 raise
 
-    def get_node(self, node_id: str) -> Optional[LineageNode]:
+    def get_node(self, node_id: str) -> LineageNode | None:
         with closing(self._connect()) as connection:
             row = connection.execute(
                 "SELECT node_id,object_id,version_id,record_json "
@@ -262,7 +279,7 @@ class SQLiteProvenanceRepository:
                 )
             return node
 
-    def get_version(self, object_id: str, version_id: str) -> Optional[LineageNode]:
+    def get_version(self, object_id: str, version_id: str) -> LineageNode | None:
         with closing(self._connect()) as connection:
             row = connection.execute(
                 "SELECT node_id,object_id,version_id,record_json "
@@ -281,7 +298,7 @@ class SQLiteProvenanceRepository:
                 )
             return node
 
-    def latest_node(self, object_id: str) -> Optional[LineageNode]:
+    def latest_node(self, object_id: str) -> LineageNode | None:
         """Return the latest immutable version of an object, or None when absent."""
         if not isinstance(object_id, str) or not object_id:
             raise ValueError("object_id must be a non-empty string")
@@ -300,10 +317,14 @@ class SQLiteProvenanceRepository:
             or node.version_id != row["version_id"]
             or graph.get_node(node.node_id) != node
         ):
-            raise LineageIntegrityError("latest object version is inconsistent with the validated graph")
+            raise LineageIntegrityError(
+                "latest object version is inconsistent with the validated graph"
+            )
         return node
 
-    def list_nodes(self, *, object_id_prefix: Optional[str] = None) -> Tuple[LineageNode, ...]:
+    def list_nodes(
+        self, *, object_id_prefix: str | None = None
+    ) -> tuple[LineageNode, ...]:
         """Return a snapshot of immutable node records after validating the DAG and edges."""
         with closing(self._connect()) as connection:
             graph = self._load_graph(connection)
@@ -312,7 +333,8 @@ class SQLiteProvenanceRepository:
             if not isinstance(object_id_prefix, str):
                 raise TypeError("object_id_prefix must be a string or None")
             return tuple(
-                node for node in nodes.values()
+                node
+                for node in nodes.values()
                 if node.object_id.startswith(object_id_prefix)
             )
         return tuple(nodes.values())
@@ -330,10 +352,12 @@ class SQLiteProvenanceRepository:
                 (node_id,),
             ).fetchone()
         if row is None:
-            raise LineageIntegrityError("validated node has no durable creation timestamp")
+            raise LineageIntegrityError(
+                "validated node has no durable creation timestamp"
+            )
         return int(row["created_at"])
 
-    def ancestors(self, node_id: str) -> Tuple[LineageNode, ...]:
+    def ancestors(self, node_id: str) -> tuple[LineageNode, ...]:
         with closing(self._connect()) as connection:
             graph = self._load_graph(connection)
         try:
@@ -341,9 +365,11 @@ class SQLiteProvenanceRepository:
         except KeyError:
             raise
         except (TypeError, ValueError, RuntimeError) as exc:
-            raise LineageIntegrityError("could not reconstruct lineage ancestry") from exc
+            raise LineageIntegrityError(
+                "could not reconstruct lineage ancestry"
+            ) from exc
 
-    def snapshot(self) -> Dict[str, LineageNode]:
+    def snapshot(self) -> dict[str, LineageNode]:
         with closing(self._connect()) as connection:
             graph = self._load_graph(connection)
         return graph.lineage_nodes
@@ -354,9 +380,12 @@ class SQLiteProvenanceRepository:
         with closing(self._connect()) as connection:
             connection.execute("BEGIN IMMEDIATE")
             try:
-                if connection.execute(
-                    "SELECT 1 FROM lineage_nodes WHERE node_id=?", (node_id,)
-                ).fetchone() is None:
+                if (
+                    connection.execute(
+                        "SELECT 1 FROM lineage_nodes WHERE node_id=?", (node_id,)
+                    ).fetchone()
+                    is None
+                ):
                     raise KeyError(node_id)
                 connection.execute(
                     "INSERT OR IGNORE INTO lineage_authority_bindings(node_id,authority_id) "
@@ -368,7 +397,7 @@ class SQLiteProvenanceRepository:
                 connection.rollback()
                 raise
 
-    def authority_ids_for_node(self, node_id: str) -> Tuple[str, ...]:
+    def authority_ids_for_node(self, node_id: str) -> tuple[str, ...]:
         ancestors = self.ancestors(node_id)
         ids = tuple(node.node_id for node in ancestors)
         placeholders = ",".join("?" for _ in ids)
@@ -380,32 +409,43 @@ class SQLiteProvenanceRepository:
             ).fetchall()
         return tuple(row["authority_id"] for row in rows)
 
-    def revoke_lineage(self, root_node_id: str, reason: str, *, revoked_at: Optional[int] = None) -> None:
+    def revoke_lineage(
+        self, root_node_id: str, reason: str, *, revoked_at: int | None = None
+    ) -> None:
         if not reason:
             raise ValueError("revocation reason must be non-empty")
         with closing(self._connect()) as connection:
             connection.execute("BEGIN IMMEDIATE")
             try:
-                if connection.execute(
-                    "SELECT 1 FROM lineage_nodes WHERE node_id=?", (root_node_id,)
-                ).fetchone() is None:
+                if (
+                    connection.execute(
+                        "SELECT 1 FROM lineage_nodes WHERE node_id=?", (root_node_id,)
+                    ).fetchone()
+                    is None
+                ):
                     raise KeyError(root_node_id)
                 connection.execute(
                     "INSERT OR IGNORE INTO lineage_revocations(root_node_id,revoked_at,reason) "
                     "VALUES(?,?,?)",
-                    (root_node_id, int(revoked_at if revoked_at is not None else time.time()), reason),
+                    (
+                        root_node_id,
+                        int(revoked_at if revoked_at is not None else time.time()),
+                        reason,
+                    ),
                 )
                 connection.commit()
             except Exception:
                 connection.rollback()
                 raise
 
-    def revoked_nodes(self, node_ids: Optional[Iterable[str]] = None) -> frozenset[str]:
+    def revoked_nodes(self, node_ids: Iterable[str] | None = None) -> frozenset[str]:
         """Return requested nodes whose own or ancestor lineage has been revoked."""
         requested = None
         if node_ids is not None:
             requested = tuple(node_ids)
-            if any(not isinstance(node_id, str) or not node_id for node_id in requested):
+            if any(
+                not isinstance(node_id, str) or not node_id for node_id in requested
+            ):
                 raise ValueError("node identifiers must be non-empty strings")
             if not requested:
                 return frozenset()
@@ -420,14 +460,18 @@ class SQLiteProvenanceRepository:
                 ") SELECT node_id FROM blocked"
             ).fetchall()
         blocked = {row["node_id"] for row in rows}
-        return frozenset(blocked if requested is None else blocked.intersection(requested))
+        return frozenset(
+            blocked if requested is None else blocked.intersection(requested)
+        )
 
     def is_revoked(self, node_id: str) -> bool:
         return node_id in self.revoked_nodes((node_id,))
 
     def __len__(self) -> int:
         with closing(self._connect()) as connection:
-            row = connection.execute("SELECT COUNT(*) AS count FROM lineage_nodes").fetchone()
+            row = connection.execute(
+                "SELECT COUNT(*) AS count FROM lineage_nodes"
+            ).fetchone()
         return int(row["count"])
 
 

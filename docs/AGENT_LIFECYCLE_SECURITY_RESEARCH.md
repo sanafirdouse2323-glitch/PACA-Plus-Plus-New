@@ -3,7 +3,7 @@
 **Research scope:** security of LLM-based agents across their lifecycle.  
 **Repository boundary:** this document applies only to `PACA-Plus-Plus-New`. It does not define or implement the enterprise gateway project in the separate `PACA-Plus-Plus` repository.  
 **Research status:** proposed research architecture and work programme, not a completed implementation or validated security guarantee.  
-**Evidence cut-off:** 23 November 2026.
+**Implementation snapshot:** 24 November 2026. Research claims and hypotheses below remain unvalidated until independently evaluated.
 
 ## 1. Research objective
 
@@ -22,27 +22,27 @@ The research goal is to define, implement and evaluate a reference-monitor archi
 
 This is a systems-security problem. Model alignment, prompt wording and injection classifiers may be useful defence-in-depth, but they are not the authority boundary.
 
-## 2. What the existing PAC++ New repository actually contains
+## 2. What the current repository actually contains
 
-The current codebase is a research prototype, not a complete agent runtime.
+The code on `main` is a substantial but partial research prototype. The table describes implementation scope, not independently verified security guarantees.
 
-| Existing component | Current role | Boundary that must not be overstated |
+| Component | Present implementation | Boundary |
 |---|---|---|
-| `paca/provenance.py` | `Label`, `Arg`, and explicit `derive()` propagation for integrity, sensitivity, tenant and origin metadata | Propagation is explicit and adapter-dependent; it is not automatic tracking of every LLM context dependency |
-| `paca/runtime.py` | Action catalogue, request digest, capability and decision data structures | A declared action contract does not prove every real tool effect is represented |
-| `paca/monitor.py` | Policy checks for selected memory, tool, delegation, file and egress requests | The simulator/reference monitor does not mediate all stages of an arbitrary agent framework |
-| `paca/harness.py` | Deterministic scenario/session simulator; selected memory reads/writes and effects are modelled | `receive()` is a simulated input path, not a production inbound-message enforcement point; planning is not independently mediated |
-| `paca/integrations/agentdojo.py` | Adapter before AgentDojo function dispatch | It is an AgentDojo integration, not a universal executor or lifecycle hook |
-| `paca/integrations/agentdojo_workspace.py` | Task-scoped mapping for 14 workspace read/search operations | Mutating operations remain unsupported and fail closed |
-| `paca/integrations/agentdojo_benchmark.py` | Paired benchmark runner | Current scope is limited to compatible workspace tasks and configured model runs |
-| `paca/ledger.py` on the phase-1 branch | Optional SQLite persistence for capability and token state | Single-host shared-file coordination; not a multi-host service and not an agent memory-provenance store |
-| `paca/secure_io.py`, `paca/secure_network.py` on the phase-1 branch | Filesystem and connection-time network primitives | Not yet wired into every real connector or executor |
-| `models/PACAAuth.tla` on the phase-1 branch | Bounded abstract authorization protocol | Does not model the full lifecycle, memory poisoning, communication provenance, revocation propagation or implementation refinement |
+| Provenance | `Label`, `Arg`, explicit `derive()`, typed `LineageNode`/`ProvenanceGraph`, and `SQLiteProvenanceRepository` for durable lineage metadata | Source identity and labels are supplied by trusted adapters. The system does not infer every hidden model-context dependency or prove that a source is truthful. |
+| Memory | Separate `SQLiteMemoryValueStore` and `TrustedMemoryAdapter`; checks authority, tenant, purpose, lineage and digests before returning values | Raw database/store access bypasses the adapter. Provenance metadata and values are local SQLite stores, not one distributed transaction. |
+| Authority | `SQLiteAuthorityRegistry`, HMAC and Ed25519 capability envelopes, policy epochs, revocation, delegation checks, per-capability counters, message receipts and tenant/task aggregate quotas | Identity and task callbacks are trusted host integrations. Ed25519 is a key-separation primitive, not KMS/HSM custody, rotation or OIDC. |
+| Shared authority | Optional `PostgresAuthorityRegistry` shares authority, revocation, counters, aggregate quota, message receipts and local resource-commit state across clients on one primary | Not multi-primary, rollback-safe failover or replication of provenance, memory values and the Monitor operation ledger. |
+| Runtime and monitor | Selected action/target policies, strict consequential-monitor validation, effect tokens, protected runtime checks and an opt-in local resource-commit fence for `write_file`/`mem_write` | Only actions routed through the configured runtime are mediated. The local commit fence does not cover remote providers or every executor. |
+| Framework adapters | AgentDojo ToolsExecutor and limited workspace mapper; LangGraph BaseStore; LangChain middleware; PostgreSQL checkpoint wrapper | Adapters do not intercept direct calls to raw tools, stores, checkpointers, databases or alternate execution paths. |
+| Provider ingress | Read-only Gmail, Microsoft Graph mail, Slack history and Qdrant search adapters with bounded HTTP handling and provenance capture | CI uses mocked HTTP. Production identity binding, live account validation, provider writes, deletion sync and remote commit fencing remain open. |
+| Execution helpers | Optional Docker worker; Linux `openat2` filesystem and DNS/IP-pinned network primitives | Docker isolation is opt-in. Filesystem/network helpers are not wired into every connector or executor. |
+| Formal models | Bounded `PACAAuth.tla` and `PACALifecycle.tla` models with TLC configurations | TLC checks finite specifications; it does not prove Python refinement, host isolation or deployed-system security. |
+| Evaluation | Author-written deterministic simulator, regression tests, protocol fixtures and a limited AgentDojo runner | Not an independent benchmark or completed live-agent effectiveness evaluation. |
+| Reference API | `paca_executor.py` exposes `/health` and `/decide` for local demonstration | It accepts demonstration capability data and never executes external effects. It is not a production enforcement service. |
 
-The current provenance model is a useful foundation: unlabelled `Arg` values default to untrusted, and `derive()` joins explicitly supplied labels. However, the label does not yet represent a full provenance graph, purpose, freshness, retention, revocation epoch or transformation record. The current capability contains task/action/target grants, expiry, budgets, tool pins and a parent identifier, but the complete lifecycle semantics for capability renewal, revocation, memory reuse and cross-agent handoff are not implemented.
+The separate `SQLiteOperationLedger` in `paca/ledger.py` persists selected Monitor operation/token state. It is distinct from the authority registry and from the provenance/value stores. These stores have different transaction boundaries and must not be described as one unified distributed database.
 
-The phase-1 PR's SQLite ledger is not the same thing as the enterprise gateway's operation journal in the sibling repository. Here it is an optional persistence mechanism for the New monitor's capability and token state. It must remain subordinate to the agent-lifecycle research objective, not become the product's central research contribution.
-
+These components support the research question, but their presence does not establish complete lifecycle mediation. See [the current implementation roadmap](security-roadmap.md), [the durable implementation record](DURABLE_LIFECYCLE_SECURITY.md) and [the direct-bypass evaluation](DIRECT_BYPASS_EVALUATION.md) for the specific interfaces and residual paths.
 ## 3. Research landscape and positioning
 
 The literature rules out several overly broad novelty claims.
@@ -107,14 +107,14 @@ This hypothesis must be tested. It is not an established result.
 
 Do not conflate the two. Data being trusted does not grant authority; having authority does not make data trusted.
 
-**Phase-B reference semantics now implemented on the research branch:**
+**Typed reference semantics merged on `main` (these are building blocks, not universal mediation):**
 
 - `paca.provenance.LineageNode` represents one immutable object/version record. It carries a trusted-adapter source identifier and source class, SHA-256 content digest, conservative `Label`, parent node IDs, transformation name and optional purpose. `ProvenanceGraph` records nodes in memory, requires parents to exist before children, rejects object/version reuse with different metadata, and rejects transformations that upgrade integrity or erase sensitivity, origins, tenant lineage or unknown-tenant state.
 - `Arg.lineage_refs` carries optional references to those nodes, and `lineage_incomplete` marks a derived value when any dependency lacked an explicit lineage reference. The global `derive()` helper preserves the union of references and propagates incompleteness; `ProvenanceGraph.derive()` rejects incomplete inputs and records an explicit transformation node. Values without lineage references remain supported for backward compatibility and are not silently claimed to have complete provenance.
 - `paca.authority.AuthorityLineage` is a separate immutable capability-grant snapshot. Delegated records carry the digest of their parent's complete authority chain. `AuthorityLineageGraph` requires parent-first insertion and verifies that digest before checking tenant/task continuity, exact purpose continuity, non-decreasing policy epoch, non-extending expiry and conservative grant-scope attenuation.
 - `Capability` validates that its principal, tenant, task, grant scope, expiry and parent-presence agree with its attached authority record. `Request.digest` now binds argument lineage references, resource lineage references and the complete authority record as well as the existing argument labels and capability fields.
 
-**Deliberate limits:** both graphs are currently in-memory reference structures. The trusted adapter must calculate and supply content digests and assign labels/lineage references. There is no authenticated or signed authority issuer, durable graph store, active-policy-epoch registry, revocation propagation, automatic LLM-context instrumentation or production memory connector in this tranche. A digest binds the supplied metadata; it does not prove that the metadata was truthful.
+**Persistence and enforcement limits:** `ProvenanceGraph` and `AuthorityLineageGraph` are in-memory semantic helpers. Related lineage metadata and authority records are persisted by separate SQLite repositories/registries, with optional PostgreSQL support for authority state on one primary. Memory values, provenance metadata and the Monitor operation ledger remain separate SQLite stores; there is no cross-store atomic transaction. Trusted connectors and application callbacks still supply source identity, labels and task context. The adapters do not automatically instrument all model context, arbitrary framework state, direct resource access or remote effects. A digest binds the supplied bytes and metadata; it does not prove the source was truthful. Production OIDC/workload identity, protected key custody and rotation, mandatory process isolation, destination-side commit authorization and independent security evaluation remain open.
 
 ### 4.2 Lifecycle state and transition checks
 
@@ -187,7 +187,7 @@ At minimum compare:
 - an explicitly identified OpenAI-hosted Agents API environment or a documented self-hosted environment, not an ambiguous "OpenAI sandbox" label;
 - PAC++ New ablations: provenance only, authority only, lifecycle checks without revocation, and the complete proposed model.
 
-**Baseline status:** the repository's `SandboxScoped` is a hand-authored toy comparator, not OpenShell, Sentry or an OpenAI environment. PR #13 adds deterministic shared-artifact and cross-tenant protocol fixtures, not vendor integrations. The real external baselines require pinned runtime versions, configurations and executor adapters. See [Sandbox and External-Containment Evaluation Protocol](CONTAINMENT_EVALUATION.md). Do not label a simplified local approximation as the original system.
+**Baseline status:** `SandboxScoped` remains a hand-authored toy comparator, not OpenShell, Sentry or an OpenAI environment. PAC++ New includes deterministic cross-session-artifact and cross-tenant protocol fixtures, but no vendor sandbox integration. Real external baselines require pinned runtime versions, configurations and executor adapters. See [Sandbox and External-Containment Evaluation Protocol](CONTAINMENT_EVALUATION.md). Do not label a simplified local approximation as the original system.
 
 ### 6.2 Benchmark coverage
 
@@ -265,7 +265,7 @@ PAC++ New is not the enterprise authorization gateway. It must not absorb the si
 
 PAC++ New may use authenticated identity or an external protected resource as an assumption or integration boundary in experiments, but its research contribution is the agent's lifecycle state, provenance, authority, memory, communication, planning and effect transitions.
 
-The optional SQLite ledger, secure filesystem/network primitives and bounded authorization model on the phase-1 branch are supporting components only. They do not redefine the research objective. Avoid building a second enterprise gateway or a second generic transaction service here.
+The SQLite ledgers, secure filesystem/network primitives and bounded authorization models are supporting components, not the research contribution by themselves. Keep the scope on lifecycle continuity and do not duplicate the separate enterprise gateway or build a generic transaction platform here.
 
 ## 9. Decision gates and claim discipline
 

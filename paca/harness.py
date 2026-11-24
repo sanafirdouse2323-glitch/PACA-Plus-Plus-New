@@ -5,18 +5,27 @@ the simulated model, and a defence succeeds only when it blocks the terminal eff
 Defences never see the `evil` flag; it is ground truth used only for scoring and the
 simulated human decision.
 """
+
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, List, Optional
+from collections.abc import Callable
+from dataclasses import dataclass
+from typing import Any
 
 from .provenance import Arg, Label, derive
-from .runtime import ACTIONS, Capability, Decision, Effect, Request, Tool, Violation, World
+from .runtime import Capability, Decision, Effect, Request, Tool, Violation, World
 
 SOURCES = {  # source -> integrity of the *content* (trusted = authored by the user/org, curated)
-    "user_files": "trusted", "wiki_trusted": "trusted",
-    "email_external": "untrusted", "email_internal": "untrusted", "web": "untrusted", "rag": "untrusted",
-    "repo": "untrusted", "ticket": "untrusted", "tool_output": "untrusted", "tool_def": "untrusted",
+    "user_files": "trusted",
+    "wiki_trusted": "trusted",
+    "email_external": "untrusted",
+    "email_internal": "untrusted",
+    "web": "untrusted",
+    "rag": "untrusted",
+    "repo": "untrusted",
+    "ticket": "untrusted",
+    "tool_output": "untrusted",
+    "tool_def": "untrusted",
     "agent_msg": "untrusted",
 }
 
@@ -25,22 +34,25 @@ SOURCES = {  # source -> integrity of the *content* (trusted = authored by the u
 class Scenario:
     id: str
     title: str
-    kind: str                 # attack | benign
-    section: str              # author-defined grouping letter
-    klass: str                # author-defined risk category
-    ref: str                  # provisional source key; not a verified citation
+    kind: str  # attack | benign
+    section: str  # author-defined grouping letter
+    klass: str  # author-defined risk category
+    ref: str  # provisional source key; not a verified citation
     summary: str
-    fn: Callable[["Session"], None]
+    fn: Callable[[Session], None]
     residual: bool = False
 
 
-REGISTRY: List[Scenario] = []
+REGISTRY: list[Scenario] = []
 
 
 def scenario(id, title, section, klass, ref, summary, kind="attack", residual=False):
     def deco(fn):
-        REGISTRY.append(Scenario(id, title, kind, section, klass, ref, summary, fn, residual))
+        REGISTRY.append(
+            Scenario(id, title, kind, section, klass, ref, summary, fn, residual)
+        )
         return fn
+
     return deco
 
 
@@ -53,8 +65,8 @@ class Outcome:
     evil_executed: int
     completed: bool
     prompts: int
-    trace: List[Dict[str, Any]]
-    fired: List[str]          # check ids that stopped/escalated an attacker action
+    trace: list[dict[str, Any]]
+    fired: list[str]  # check ids that stopped/escalated an attacker action
     audit_ok: bool = True
 
 
@@ -71,25 +83,46 @@ class Session:
         self.trace.append({"i": len(self.trace) + 1, "kind": kind, **kw})
 
     @staticmethod
-    def _show(args: Dict[str, Arg]) -> Dict[str, List[str]]:
+    def _show(args: dict[str, Arg]) -> dict[str, list[str]]:
         return {k: [str(v.value)[:70], v.label.short()] for k, v in args.items()}
 
     # ---------------------------------------------------------------- inputs
-    def start_task(self, text, grants, role="assistant", ttl=30, max_calls=40, max_fanout=5, pins=(),
-                   tenant="acme", principal="sana@acme") -> Capability:
+    def start_task(
+        self,
+        text,
+        grants,
+        role="assistant",
+        ttl=30,
+        max_calls=40,
+        max_fanout=5,
+        pins=(),
+        tenant="acme",
+        principal="sana@acme",
+    ) -> Capability:
         self._n += 1
-        cap = Capability(f"cap{self._n}", principal, tenant, f"task{self._n}", role,
-                         {k: tuple(v) for k, v in grants.items()}, self.step + ttl, max_calls, max_fanout,
-                         {t.name: t.hash for t in pins})
+        cap = Capability(
+            f"cap{self._n}",
+            principal,
+            tenant,
+            f"task{self._n}",
+            role,
+            {k: tuple(v) for k, v in grants.items()},
+            self.step + ttl,
+            max_calls,
+            max_fanout,
+            {t.name: t.hash for t in pins},
+        )
         self.cap = self.d.issue(cap)
-        self._log("task", text=text, grants={k: list(v) for k, v in grants.items()}, role=role)
+        self._log(
+            "task", text=text, grants={k: list(v) for k, v in grants.items()}, role=role
+        )
         return self.cap
 
     def advance(self, n: int) -> None:
         self.step += n
         self._log("time", text=f"{n} steps pass")
 
-    def lit(self, v: Any) -> Arg:                    # an explicitly user-typed / configured value
+    def lit(self, v: Any) -> Arg:  # an explicitly user-typed / configured value
         return Arg(v, Label("trusted", origins=frozenset({"user"})))
 
     @staticmethod
@@ -97,10 +130,10 @@ class Session:
         """Keep explicit labels; treat unlabelled runtime/model values as untrusted."""
         return value if isinstance(value, Arg) else Arg(value)
 
-    def lift(self, src: Arg, v: Any) -> Arg:         # value the model extracted from `src`
+    def lift(self, src: Arg, v: Any) -> Arg:  # value the model extracted from `src`
         return Arg(v, src.label)
 
-    def derive(self, v: Any, *srcs: Optional[Arg]) -> Arg:
+    def derive(self, v: Any, *srcs: Arg | None) -> Arg:
         # A scripted agent step may still emit a guess after a denied read. Preserve any
         # available labels and mark the missing source as untrusted; never substitute the
         # denied content into the simulated run.
@@ -110,42 +143,82 @@ class Session:
             return Arg(v, Label.join(*labels))
         return derive(v, *srcs)
 
-    def say(self, text: str, style: Optional[str] = None) -> Arg:
+    def say(self, text: str, style: str | None = None) -> Arg:
         blocked = self.d.scan("user", text, style)
         self._log("say", text=text, blocked=blocked)
         self.halted = self.halted or blocked
         return self.lit(text)
 
     def _label(self, source, sens, tenant) -> Label:
-        return Label(SOURCES.get(source, "untrusted"), sens, tenant, frozenset({source}))
+        return Label(
+            SOURCES.get(source, "untrusted"), sens, tenant, frozenset({source})
+        )
 
-    def receive(self, source: str, name: str, content: str, style: Optional[str] = None, sens: int = 0,
-                tenant: Optional[str] = None) -> Arg:
+    def receive(
+        self,
+        source: str,
+        name: str,
+        content: str,
+        style: str | None = None,
+        sens: int = 0,
+        tenant: str | None = None,
+    ) -> Arg:
         blocked = self.d.scan(source, content, style)
-        self._log("data", source=source, name=name, text=content, label=self._label(source, sens, tenant).short(),
-                  blocked=blocked)
+        self._log(
+            "data",
+            source=source,
+            name=name,
+            text=content,
+            label=self._label(source, sens, tenant).short(),
+            blocked=blocked,
+        )
         self.halted = self.halted or blocked
         return Arg(content, self._label(source, sens, tenant))
 
-    def ingest(self, via: str, target: str, content: str, source: str, sens: int = 0, tenant: Optional[str] = None,
-               style: Optional[str] = None, evil: bool = False, required: bool = False) -> Optional[Arg]:
+    def ingest(
+        self,
+        via: str,
+        target: str,
+        content: str,
+        source: str,
+        sens: int = 0,
+        tenant: str | None = None,
+        style: str | None = None,
+        evil: bool = False,
+        required: bool = False,
+    ) -> Arg | None:
         """Read through an authorised read action; the returned data carries the connector's label."""
         lab = self._label(source, sens, tenant)
         if self.d.scan(source, content, style):
             self.halted = True
         arg = Arg(content, lab)
         key = {"read_mail": "folder", "read_file": "path", "fetch_url": "url"}[via]
-        executed = self._exec(via, {key: self._as_arg(target)}, evil, required, None,
-                              resource=lab, shown_content=(content, lab.short()))
+        executed = self._exec(
+            via,
+            {key: self._as_arg(target)},
+            evil,
+            required,
+            None,
+            resource=lab,
+            shown_content=(content, lab.short()),
+        )
         return arg if executed else None
 
-    def mem_read(self, key: Any) -> Optional[Arg]:
+    def mem_read(self, key: Any) -> Arg | None:
         """Authorize using label metadata before touching the stored value."""
         key_arg = self._as_arg(key)
         key_value = key_arg.value
-        label = self.world.memory_labels.get(key_value) if isinstance(key_value, str) else None
+        label = (
+            self.world.memory_labels.get(key_value)
+            if isinstance(key_value, str)
+            else None
+        )
         executed = self._exec(
-            "mem_read", {"key": key_arg}, False, False, None,
+            "mem_read",
+            {"key": key_arg},
+            False,
+            False,
+            None,
             resource=label,
         )
         if not executed:
@@ -164,27 +237,60 @@ class Session:
         return value
 
     # ---------------------------------------------------------------- actions
-    def act(self, action: str, *, tool: Optional[Tool] = None, evil: bool = False, required: bool = False,
-            blind: bool = False, cap: Optional[Capability] = None, **args: Any) -> bool:
+    def act(
+        self,
+        action: str,
+        *,
+        tool: Tool | None = None,
+        evil: bool = False,
+        required: bool = False,
+        blind: bool = False,
+        cap: Capability | None = None,
+        **args: Any,
+    ) -> bool:
         wrapped = {k: self._as_arg(v) for k, v in args.items()}
         if tool is not None and action == "call_tool" and "tool" not in wrapped:
             wrapped["tool"] = self._as_arg(tool.name)
         return self._exec(action, wrapped, evil, required, tool, blind=blind, cap=cap)
 
-    def act_swapped(self, action: str, approved: Dict[str, Any], actual: Dict[str, Any], evil: bool = True) -> bool:
+    def act_swapped(
+        self,
+        action: str,
+        approved: dict[str, Any],
+        actual: dict[str, Any],
+        evil: bool = True,
+    ) -> bool:
         """Planner/critic scenario: the effect is authorised for `approved` args but executed with `actual`."""
-        w = lambda d: {k: self._as_arg(v) for k, v in d.items()}
-        return self._exec(action, w(approved), evil, False, None, swap=w(actual))
 
-    def _exec(self, action, args, evil, required, tool, blind=False, cap=None, resource=None, swap=None,
-              shown_content=None) -> bool:
+        def wrap(values: dict[str, Any]) -> dict[str, Arg]:
+            return {key: self._as_arg(value) for key, value in values.items()}
+
+        return self._exec(action, wrap(approved), evil, False, None, swap=wrap(actual))
+
+    def _exec(
+        self,
+        action,
+        args,
+        evil,
+        required,
+        tool,
+        blind=False,
+        cap=None,
+        resource=None,
+        swap=None,
+        shown_content=None,
+    ) -> bool:
         if required:
             self.required += 1
         if self.halted:
-            self._log("skip", action=action, text="request blocked earlier by input filter")
+            self._log(
+                "skip", action=action, text="request blocked earlier by input filter"
+            )
             return False
         self.step += 1
-        req = Request(action, args, cap or self.cap, self.step, tool, resource, None, evil)
+        req = Request(
+            action, args, cap or self.cap, self.step, tool, resource, None, evil
+        )
         d: Decision = self.d.decide(req)
         human = None
         if d.verdict == "needs_approval":
@@ -196,14 +302,32 @@ class Session:
             if ok:
                 req.approval = d.digest
                 d2 = self.d.decide(req)
-                d = Decision(d2.verdict, d.violations, d2.digest, d2.token, d2.obligations)
+                d = Decision(
+                    d2.verdict, d.violations, d2.digest, d2.token, d2.obligations
+                )
         elif d.verdict == "deny" and evil:
             self.fired.update(d.checks)
-        final = swap and Request(action, swap, req.cap, self.step, tool, resource, None, evil) or req
+        final = (
+            swap
+            and Request(action, swap, req.cap, self.step, tool, resource, None, evil)
+            or req
+        )
         executed = d.verdict == "allow" and self.d.verify(final, d)
         if swap and d.verdict == "allow" and not executed:
-            d = Decision("deny", d.violations + [Violation("C13", "deny", "effect token mismatch: executed arguments differ from the authorised ones")],
-                         d.digest, None, d.obligations)
+            d = Decision(
+                "deny",
+                d.violations
+                + [
+                    Violation(
+                        "C13",
+                        "deny",
+                        "effect token mismatch: executed arguments differ from the authorised ones",
+                    )
+                ],
+                d.digest,
+                None,
+                d.obligations,
+            )
             if evil:
                 self.fired.add("C13")
         if executed:
@@ -215,10 +339,21 @@ class Session:
                 self.world.memory_labels[key] = value.label
             if required:
                 self.required_done += 1
-        self._log("act", action=action, args=self._show(final.args), verdict=d.verdict, executed=executed,
-                  evil=evil, human=human, checks=[{"id": v.check, "sev": v.severity, "msg": v.msg} for v in d.violations],
-                  swapped=bool(swap), content=shown_content[0][:90] if shown_content and executed else None,
-                  label=shown_content[1] if shown_content and executed else None)
+        self._log(
+            "act",
+            action=action,
+            args=self._show(final.args),
+            verdict=d.verdict,
+            executed=executed,
+            evil=evil,
+            human=human,
+            checks=[
+                {"id": v.check, "sev": v.severity, "msg": v.msg} for v in d.violations
+            ],
+            swapped=bool(swap),
+            content=shown_content[0][:90] if shown_content and executed else None,
+            label=shown_content[1] if shown_content and executed else None,
+        )
         return executed
 
 
@@ -228,7 +363,18 @@ def run(scn: Scenario, defence_factory, human: str = "vigilant") -> Outcome:
     scn.fn(s)
     evil = sum(1 for e in s.world.effects if e.evil)
     audit_ok = d.audit.verify() if hasattr(d, "audit") else True
-    return Outcome(scn.id, d.name, human, evil > 0, evil, s.required_done == s.required and not s.halted, s.prompts, s.trace, sorted(s.fired), audit_ok)
+    return Outcome(
+        scn.id,
+        d.name,
+        human,
+        evil > 0,
+        evil,
+        s.required_done == s.required and not s.halted,
+        s.prompts,
+        s.trace,
+        sorted(s.fired),
+        audit_ok,
+    )
 
 
-__all__ = ["Scenario", "scenario", "REGISTRY", "Session", "Outcome", "run"]
+__all__ = ["REGISTRY", "Outcome", "Scenario", "Session", "run", "scenario"]

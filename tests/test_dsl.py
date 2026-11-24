@@ -4,14 +4,22 @@ CTX = {"user": {"role": "admin", "department": "engineering"}}
 
 
 def test_readme_example_parses_and_permits():
-    p = parse_policy("permit readFile when user.role == admin and user.department == engineering with obligation audit_log(user.id)")
+    p = parse_policy(
+        "permit readFile when user.role == admin and user.department == engineering with obligation audit_log(user.id)"
+    )
     r = evaluate_policy(p, CTX)
     assert r.decision == "permit" and r.obligations == ["audit_log"]
 
 
 def test_unmatched_deny_is_not_applicable_not_permit():
-    assert evaluate_policy("deny deleteFile when user.role != admin", CTX).decision == "not_applicable"
-    assert evaluate_policy("deny deleteFile when user.role == admin", CTX).decision == "deny"
+    assert (
+        evaluate_policy("deny deleteFile when user.role != admin", CTX).decision
+        == "not_applicable"
+    )
+    assert (
+        evaluate_policy("deny deleteFile when user.role == admin", CTX).decision
+        == "deny"
+    )
 
 
 def test_and_binds_tighter_than_or():
@@ -43,42 +51,76 @@ def test_policy_set_deny_overrides_and_obligation_map():
 
 def test_bad_line_reports_line_number():
     import pytest
+
     with pytest.raises(ValueError, match="line 2"):
         parse_policy_set("permit a\nthis is nonsense")
 
 
-
 def test_missing_attribute_does_not_satisfy_not_equal():
-    assert evaluate_policy("permit read_file when user.role != banned", {"user": {}}).decision == "not_applicable"
-    assert evaluate_policy("deny read_file when user.role != banned", {"user": {}}).decision == "not_applicable"
+    assert (
+        evaluate_policy(
+            "permit read_file when user.role != banned", {"user": {}}
+        ).decision
+        == "not_applicable"
+    )
+    assert (
+        evaluate_policy(
+            "deny read_file when user.role != banned", {"user": {}}
+        ).decision
+        == "not_applicable"
+    )
 
 
 def test_logical_words_inside_quoted_values_are_not_connectors():
-    p = parse_policy('permit read_file when user.department == "sales or engineering" and user.active == true')
+    p = parse_policy(
+        'permit read_file when user.department == "sales or engineering" and user.active == true'
+    )
     assert len(p.expressions) == 2
     assert p.connectors == ["and"]
-    assert evaluate_policy(p, {"user": {"department": "sales or engineering", "active": True}}).decision == "permit"
-    assert evaluate_policy(p, {"user": {"department": "sales", "active": True}}).decision == "not_applicable"
+    assert (
+        evaluate_policy(
+            p, {"user": {"department": "sales or engineering", "active": True}}
+        ).decision
+        == "permit"
+    )
+    assert (
+        evaluate_policy(p, {"user": {"department": "sales", "active": True}}).decision
+        == "not_applicable"
+    )
 
 
 def test_compiler_preserves_connectors_and_all_obligations():
     from paca.compiler import compile_policy
-    p = parse_policy("permit read_file when user.a == 1 or user.b == 2 with obligations audit_log, require_approval")
+
+    p = parse_policy(
+        "permit read_file when user.a == 1 or user.b == 2 with obligations audit_log, require_approval"
+    )
     compiled = compile_policy(p)
     assert compiled["connectors"] == ["or"]
-    assert [item["name"] for item in compiled["obligations"]] == ["audit_log", "require_approval"]
+    assert [item["name"] for item in compiled["obligations"]] == [
+        "audit_log",
+        "require_approval",
+    ]
 
 
 def test_policy_set_strategy_and_default_are_honoured():
     from paca.ast import PolicySet
     from paca.engine import PolicyEngine
-    ps = PolicySet(name="override", policies=[], strategy="permit_overrides", default_decision="permit")
-    assert PolicyEngine(default_decision="deny").evaluate_set(ps, {}).decision == "permit"
+
+    ps = PolicySet(
+        name="override",
+        policies=[],
+        strategy="permit_overrides",
+        default_decision="permit",
+    )
+    assert (
+        PolicyEngine(default_decision="deny").evaluate_set(ps, {}).decision == "permit"
+    )
     ps.strategy = "unknown"
     import pytest
+
     with pytest.raises(ValueError, match="Unsupported policy strategy"):
         PolicyEngine().evaluate_set(ps, {})
-
 
 
 def test_policy_conflict_strategies_only_fire_effective_rules_and_obligations():
@@ -88,7 +130,9 @@ def test_policy_conflict_strategies_only_fire_effective_rules_and_obligations():
         "D: deny any with obligation audit_log\n"
         "P: permit any with obligation require_approval"
     )
-    permit_wins = parse_policy_set(source, strategy="permit_overrides", default_decision="deny")
+    permit_wins = parse_policy_set(
+        source, strategy="permit_overrides", default_decision="deny"
+    )
     result = PolicyEngine().evaluate_set(permit_wins, {})
     assert result.decision == "permit"
     assert result.fired == [("permit", "P")]
@@ -96,13 +140,17 @@ def test_policy_conflict_strategies_only_fire_effective_rules_and_obligations():
     assert result.obligations == ["require_approval"]
     assert result.matched_policies == ["D", "P"]
 
-    deny_wins = parse_policy_set(source, strategy="deny_overrides", default_decision="permit")
+    deny_wins = parse_policy_set(
+        source, strategy="deny_overrides", default_decision="permit"
+    )
     result = PolicyEngine().evaluate_set(deny_wins, {})
     assert result.decision == "deny"
     assert result.fired == [("deny", "D")]
     assert result.obligation_map == {"D": ["audit_log"]}
 
-    first = parse_policy_set(source, strategy="first_applicable", default_decision="permit")
+    first = parse_policy_set(
+        source, strategy="first_applicable", default_decision="permit"
+    )
     result = PolicyEngine().evaluate_set(first, {})
     assert result.decision == "deny"
     assert result.fired == [("deny", "D")]

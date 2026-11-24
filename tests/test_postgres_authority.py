@@ -1,17 +1,18 @@
 from __future__ import annotations
 
 import hashlib
-from contextlib import closing
 import os
 import threading
 import uuid
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import closing
 
 import pytest
 
 DSN = os.environ.get("PACA_TEST_POSTGRES_DSN")
 pytestmark = pytest.mark.skipif(
-    not DSN, reason="PACA_TEST_POSTGRES_DSN is not configured",
+    not DSN,
+    reason="PACA_TEST_POSTGRES_DSN is not configured",
 )
 
 
@@ -24,7 +25,10 @@ def _environment(*, max_task_calls=20):
     tenant = "tenant-" + suffix
     task_id = "task-" + suffix
     now = [1_000]
-    clock = lambda: now[0]
+
+    def clock():
+        return now[0]
+
     registry_a = PostgresAuthorityRegistry(DSN, clock=clock, timeout=20)
     registry_b = PostgresAuthorityRegistry(DSN, clock=clock, timeout=20)
 
@@ -68,7 +72,9 @@ def _environment(*, max_task_calls=20):
         max_task_calls=max_task_calls,
     )
     resource_payload = {"content": "shared-primary resource"}
-    resource_digest = hashlib.sha256(canonical_value_bytes(resource_payload)).hexdigest()
+    resource_digest = hashlib.sha256(
+        canonical_value_bytes(resource_payload)
+    ).hexdigest()
     permit = issuer_a.issue_resource_commit_permit(
         root.token,
         request_digest="a" * 64,
@@ -188,7 +194,9 @@ def test_postgres_resource_commit_serializes_before_revoke_across_clients(monkey
         if checked_authority_id == authority_id:
             checked.set()
             if not release_commit.wait(timeout=15):
-                raise RuntimeError("test did not release the PostgreSQL commit transaction")
+                raise RuntimeError(
+                    "test did not release the PostgreSQL commit transaction"
+                )
         return active
 
     monkeypatch.setattr(registry_a, "_is_active", pause_after_active_check)

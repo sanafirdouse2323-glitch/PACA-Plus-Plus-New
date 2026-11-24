@@ -31,29 +31,43 @@ class RuntimeStub:
 
 def _run(executor, runtime, function_name, args, extra_args=None):
     call = FunctionCall(function=function_name, args=args, id="call-1")
-    messages = [{
-        "role": "assistant",
-        "content": None,
-        "tool_calls": [call],
-    }]
+    messages = [
+        {
+            "role": "assistant",
+            "content": None,
+            "tool_calls": [call],
+        }
+    ]
     return executor.query("task", runtime, object(), messages, extra_args or {})
 
 
 def test_agentdojo_adapter_authorizes_before_dispatch_and_retains_read_label():
     cap = Capability(
-        "cap-1", "user@example.test", "tenant-a", "task-1", "assistant",
-        {"read_file": ("/tenant-a/report.txt",)}, expires=100,
+        "cap-1",
+        "user@example.test",
+        "tenant-a",
+        "task-1",
+        "assistant",
+        {"read_file": ("/tenant-a/report.txt",)},
+        expires=100,
     )
 
     def request_builder(function_name, arguments, env, extra_args):
         assert function_name == "read_report"
         return Request(
             "read_file",
-            {"path": Arg(arguments["path"], Label("untrusted", origins=frozenset({"tool_call"})))},
+            {
+                "path": Arg(
+                    arguments["path"],
+                    Label("untrusted", origins=frozenset({"tool_call"})),
+                )
+            },
             cap,
             step=1,
             resource=Label(
-                "untrusted", sensitivity=2, tenant="tenant-a",
+                "untrusted",
+                sensitivity=2,
+                tenant="tenant-a",
                 origins=frozenset({"tenant_file_store"}),
             ),
         )
@@ -76,8 +90,13 @@ def test_agentdojo_adapter_authorizes_before_dispatch_and_retains_read_label():
 
 def test_agentdojo_adapter_denies_sensitive_egress_before_function_runs():
     cap = Capability(
-        "cap-2", "user@example.test", "tenant-a", "task-2", "assistant",
-        {"send_email": ("*@evil.example",)}, expires=100,
+        "cap-2",
+        "user@example.test",
+        "tenant-a",
+        "task-2",
+        "assistant",
+        {"send_email": ("*@evil.example",)},
+        expires=100,
     )
 
     def request_builder(function_name, arguments, env, extra_args):
@@ -85,7 +104,10 @@ def test_agentdojo_adapter_denies_sensitive_egress_before_function_runs():
         return Request(
             "send_email",
             {
-                "to": Arg(arguments["recipient"], Label("untrusted", origins=frozenset({"external_mail"}))),
+                "to": Arg(
+                    arguments["recipient"],
+                    Label("untrusted", origins=frozenset({"external_mail"})),
+                ),
                 "body": Arg("sensitive report", Label("trusted", 3, "tenant-a")),
             },
             cap,
@@ -108,15 +130,23 @@ def test_agentdojo_adapter_denies_sensitive_egress_before_function_runs():
 
 def test_agentdojo_adapter_fails_closed_when_approval_is_required():
     cap = Capability(
-        "cap-3", "user@example.test", "tenant-a", "task-3", "assistant",
-        {"send_email": ("*@partner.example",)}, expires=100,
+        "cap-3",
+        "user@example.test",
+        "tenant-a",
+        "task-3",
+        "assistant",
+        {"send_email": ("*@partner.example",)},
+        expires=100,
     )
 
     def request_builder(function_name, arguments, env, extra_args):
         return Request(
             "send_email",
             {
-                "to": Arg(arguments["recipient"], Label("untrusted", origins=frozenset({"model_argument"}))),
+                "to": Arg(
+                    arguments["recipient"],
+                    Label("untrusted", origins=frozenset({"model_argument"})),
+                ),
                 "body": Arg("public update", Label("trusted", 0, "tenant-a")),
             },
             cap,
@@ -152,8 +182,13 @@ def test_agentdojo_adapter_does_not_execute_when_request_builder_fails():
 
 def test_agentdojo_adapter_binds_all_executed_arguments():
     cap = Capability(
-        "cap-4", "user@example.test", "tenant-a", "task-4", "assistant",
-        {"read_file": ("/tenant-a/report.txt",)}, expires=100,
+        "cap-4",
+        "user@example.test",
+        "tenant-a",
+        "task-4",
+        "assistant",
+        {"read_file": ("/tenant-a/report.txt",)},
+        expires=100,
     )
     observed = {}
 
@@ -176,17 +211,24 @@ def test_agentdojo_adapter_binds_all_executed_arguments():
         {"path": "/tenant-a/report.txt", "selectors": "['name', 'summary']"},
     )
 
-    assert runtime.calls == [(
-        "read_report",
-        {"path": "/tenant-a/report.txt", "selectors": ["name", "summary"]},
-    )]
+    assert runtime.calls == [
+        (
+            "read_report",
+            {"path": "/tenant-a/report.txt", "selectors": ["name", "summary"]},
+        )
+    ]
     assert observed["selectors"] == ["name", "summary"]
 
 
 def test_agentdojo_adapter_advances_step_for_repeated_calls_under_one_capability():
     cap = Capability(
-        "cap-step", "user@example.test", "tenant-a", "task-step", "assistant",
-        {"read_file": ("/tenant-a/report.txt",)}, expires=100,
+        "cap-step",
+        "user@example.test",
+        "tenant-a",
+        "task-step",
+        "assistant",
+        {"read_file": ("/tenant-a/report.txt",)},
+        expires=100,
     )
     observed_steps: list[int] = []
 
@@ -210,13 +252,21 @@ def test_agentdojo_adapter_advances_step_for_repeated_calls_under_one_capability
     assert observed_steps == [1, 1]  # builder may reuse an initial step
     assert len(runtime.calls) == 2
     assert executor._last_steps[cap.cap_id] == 2
-    assert [entry["step"] for entry in monitor.audit.entries if "step" in entry] == [1, 2]
+    assert [entry["step"] for entry in monitor.audit.entries if "step" in entry] == [
+        1,
+        2,
+    ]
 
 
 def test_agentdojo_adapter_does_not_claim_tool_was_not_executed_after_runtime_error():
     cap = Capability(
-        "cap-runtime-error", "user@example.test", "tenant-a", "task-runtime-error", "assistant",
-        {"read_file": ("/tenant-a/report.txt",)}, expires=100,
+        "cap-runtime-error",
+        "user@example.test",
+        "tenant-a",
+        "task-runtime-error",
+        "assistant",
+        {"read_file": ("/tenant-a/report.txt",)},
+        expires=100,
     )
 
     def request_builder(function_name, arguments, env, extra_args):
@@ -244,7 +294,9 @@ def test_agentdojo_adapter_does_not_claim_tool_was_not_executed_after_runtime_er
 
 def test_aggregate_prior_output_labels_fails_closed_on_any_unlabelled_entry():
     valid = Label("trusted", sensitivity=0, tenant="tenant-a")
-    result = aggregate_prior_output_labels({"paca_output_labels": {"first": valid, "second": "missing-label"}})
+    result = aggregate_prior_output_labels(
+        {"paca_output_labels": {"first": valid, "second": "missing-label"}}
+    )
 
     assert result.integrity == "untrusted"
     assert "unknown_agentdojo_lineage" in result.origins
@@ -252,15 +304,23 @@ def test_aggregate_prior_output_labels_fails_closed_on_any_unlabelled_entry():
 
 def test_agentdojo_adapter_accepts_only_verifier_accepted_approval_evidence():
     cap = Capability(
-        "cap-approved", "user@example.test", "tenant-a", "task-approved", "assistant",
-        {"send_email": ("*@partner.example",)}, expires=100,
+        "cap-approved",
+        "user@example.test",
+        "tenant-a",
+        "task-approved",
+        "assistant",
+        {"send_email": ("*@partner.example",)},
+        expires=100,
     )
 
     def request_builder(function_name, arguments, env, extra_args):
         return Request(
             "send_email",
             {
-                "to": Arg(arguments["recipient"], Label("untrusted", origins=frozenset({"model_argument"}))),
+                "to": Arg(
+                    arguments["recipient"],
+                    Label("untrusted", origins=frozenset({"model_argument"})),
+                ),
                 "body": Arg("public update", Label("trusted", 0, "tenant-a")),
             },
             cap,
@@ -268,31 +328,50 @@ def test_agentdojo_adapter_accepts_only_verifier_accepted_approval_evidence():
         )
 
     runtime = RuntimeStub(["send_update"])
-    monitor = Monitor(approval_verifier=lambda request, evidence: evidence == "signed-approval-evidence")
+    monitor = Monitor(
+        approval_verifier=lambda request, evidence: (
+            evidence == "signed-approval-evidence"
+        )
+    )
     executor = PacaToolsExecutor(
         monitor,
         request_builder,
-        approval_provider=lambda request, decision, env, state: "signed-approval-evidence",
+        approval_provider=lambda request, decision, env, state: (
+            "signed-approval-evidence"
+        ),
     )
-    _run(executor, runtime, "send_update", {
-        "recipient": "person@partner.example",
-        "body": "public update",
-    })
+    _run(
+        executor,
+        runtime,
+        "send_update",
+        {
+            "recipient": "person@partner.example",
+            "body": "public update",
+        },
+    )
 
     assert len(runtime.calls) == 1
 
 
 def test_agentdojo_adapter_rejects_boolean_approval_callback():
     cap = Capability(
-        "cap-bool-approval", "user@example.test", "tenant-a", "task-bool-approval", "assistant",
-        {"send_email": ("*@partner.example",)}, expires=100,
+        "cap-bool-approval",
+        "user@example.test",
+        "tenant-a",
+        "task-bool-approval",
+        "assistant",
+        {"send_email": ("*@partner.example",)},
+        expires=100,
     )
 
     def request_builder(function_name, arguments, env, extra_args):
         return Request(
             "send_email",
             {
-                "to": Arg(arguments["recipient"], Label("untrusted", origins=frozenset({"model_argument"}))),
+                "to": Arg(
+                    arguments["recipient"],
+                    Label("untrusted", origins=frozenset({"model_argument"})),
+                ),
                 "body": Arg("public update", Label("trusted", 0, "tenant-a")),
             },
             cap,
@@ -306,10 +385,15 @@ def test_agentdojo_adapter_rejects_boolean_approval_callback():
         request_builder,
         approval_provider=lambda request, decision, env, state: True,  # type: ignore[return-value]
     )
-    _, _, _, messages, _ = _run(executor, runtime, "send_update", {
-        "recipient": "person@partner.example",
-        "body": "public update",
-    })
+    _, _, _, messages, _ = _run(
+        executor,
+        runtime,
+        "send_update",
+        {
+            "recipient": "person@partner.example",
+            "body": "public update",
+        },
+    )
 
     assert runtime.calls == []
     assert "integration error" in messages[-1]["error"]
@@ -317,8 +401,13 @@ def test_agentdojo_adapter_rejects_boolean_approval_callback():
 
 def test_agentdojo_adapter_does_not_overwrite_output_labels_when_call_id_repeats():
     cap = Capability(
-        "cap-reused-call-id", "user@example.test", "tenant-a", "task-reused-call-id", "assistant",
-        {"read_file": ("/tenant-a/report.txt",)}, expires=100,
+        "cap-reused-call-id",
+        "user@example.test",
+        "tenant-a",
+        "task-reused-call-id",
+        "assistant",
+        {"read_file": ("/tenant-a/report.txt",)},
+        expires=100,
     )
 
     def request_builder(function_name, arguments, env, extra_args):
@@ -328,7 +417,9 @@ def test_agentdojo_adapter_does_not_overwrite_output_labels_when_call_id_repeats
             cap,
             step=1,
             resource=Label(
-                "untrusted", sensitivity=3, tenant="tenant-a",
+                "untrusted",
+                sensitivity=3,
+                tenant="tenant-a",
                 origins=frozenset({"sensitive_report_store"}),
             ),
         )
@@ -338,7 +429,9 @@ def test_agentdojo_adapter_does_not_overwrite_output_labels_when_call_id_repeats
     state = {
         "paca_output_labels": {
             "call-1:prior": Label(
-                "untrusted", sensitivity=1, tenant="tenant-a",
+                "untrusted",
+                sensitivity=1,
+                tenant="tenant-a",
                 origins=frozenset({"earlier_result"}),
             )
         }
@@ -354,11 +447,12 @@ def test_agentdojo_adapter_does_not_overwrite_output_labels_when_call_id_repeats
     assert aggregate_prior_output_labels(state).sensitivity == 3
 
 
-
 def test_agentdojo_adapter_rejects_monitor_with_effect_token_check_disabled():
     monitor = Monitor(disable={"C13"})
 
-    with pytest.raises(ValueError, match="C13 effect-token verification cannot be disabled"):
+    with pytest.raises(
+        ValueError, match="C13 effect-token verification cannot be disabled"
+    ):
         PacaToolsExecutor(monitor, lambda *args: None)
 
 
@@ -369,11 +463,15 @@ def test_agentdojo_adapter_rejects_other_security_policy_ablations():
         PacaToolsExecutor(monitor, lambda *args: None)
 
 
-
 def test_agentdojo_revalidates_policy_after_request_builder(tmp_path):
     capability = Capability(
-        "cap-policy-drift", "user@example.test", "tenant-a", "task-policy-drift", "assistant",
-        {"read_file": ("/tenant-a/report.txt",)}, expires=100,
+        "cap-policy-drift",
+        "user@example.test",
+        "tenant-a",
+        "task-policy-drift",
+        "assistant",
+        {"read_file": ("/tenant-a/report.txt",)},
+        expires=100,
     )
     monitor = Monitor()
 
@@ -390,7 +488,10 @@ def test_agentdojo_revalidates_policy_after_request_builder(tmp_path):
     runtime = RuntimeStub(["read_report"])
     executor = PacaToolsExecutor(monitor, request_builder)
     _, _, _, messages, _ = _run(
-        executor, runtime, "read_report", {"path": "/tenant-a/report.txt"},
+        executor,
+        runtime,
+        "read_report",
+        {"path": "/tenant-a/report.txt"},
     )
 
     assert runtime.calls == []
@@ -401,8 +502,13 @@ def test_agentdojo_revalidates_policy_after_request_builder(tmp_path):
 
 def test_agentdojo_adapter_fails_closed_when_request_builder_mutates_arguments():
     cap = Capability(
-        "cap-mutation", "user@example.test", "tenant-a", "task-mutation", "assistant",
-        {"read_file": ("/tenant-a/report.txt",)}, expires=100,
+        "cap-mutation",
+        "user@example.test",
+        "tenant-a",
+        "task-mutation",
+        "assistant",
+        {"read_file": ("/tenant-a/report.txt",)},
+        expires=100,
     )
 
     def request_builder(function_name, arguments, env, extra_args):
@@ -411,7 +517,12 @@ def test_agentdojo_adapter_fails_closed_when_request_builder_mutates_arguments()
         arguments["path"] = "/tenant-a/report.txt"
         return Request(
             "read_file",
-            {"path": Arg(arguments["path"], Label("untrusted", origins=frozenset({"tool_call"})))},
+            {
+                "path": Arg(
+                    arguments["path"],
+                    Label("untrusted", origins=frozenset({"tool_call"})),
+                )
+            },
             cap,
             step=1,
             resource=Label("untrusted", sensitivity=1, tenant="tenant-a"),
@@ -431,10 +542,17 @@ def test_agentdojo_adapter_fails_closed_when_request_builder_mutates_arguments()
     assert "attacker-selected" not in messages[-1]["error"]
 
 
-def test_agentdojo_adapter_fails_closed_when_effect_token_verification_fails(monkeypatch):
+def test_agentdojo_adapter_fails_closed_when_effect_token_verification_fails(
+    monkeypatch,
+):
     cap = Capability(
-        "cap-verify-failure", "user@example.test", "tenant-a", "task-verify-failure", "assistant",
-        {"read_file": ("/tenant-a/report.txt",)}, expires=100,
+        "cap-verify-failure",
+        "user@example.test",
+        "tenant-a",
+        "task-verify-failure",
+        "assistant",
+        {"read_file": ("/tenant-a/report.txt",)},
+        expires=100,
     )
 
     def request_builder(function_name, arguments, env, extra_args):
@@ -463,8 +581,13 @@ def test_agentdojo_adapter_fails_closed_when_effect_token_verification_fails(mon
 
 def test_agentdojo_adapter_advances_steps_for_multiple_calls_in_one_dispatch():
     cap = Capability(
-        "cap-multi-call", "user@example.test", "tenant-a", "task-multi-call", "assistant",
-        {"read_file": ("/tenant-a/report.txt",)}, expires=100,
+        "cap-multi-call",
+        "user@example.test",
+        "tenant-a",
+        "task-multi-call",
+        "assistant",
+        {"read_file": ("/tenant-a/report.txt",)},
+        expires=100,
     )
 
     def request_builder(function_name, arguments, env, extra_args):
@@ -480,26 +603,42 @@ def test_agentdojo_adapter_advances_steps_for_multiple_calls_in_one_dispatch():
     monitor = Monitor()
     executor = PacaToolsExecutor(monitor, request_builder)
     calls = [
-        FunctionCall(function="read_report", args={"path": "/tenant-a/report.txt"}, id="multi-1"),
-        FunctionCall(function="read_report", args={"path": "/tenant-a/report.txt"}, id="multi-2"),
+        FunctionCall(
+            function="read_report", args={"path": "/tenant-a/report.txt"}, id="multi-1"
+        ),
+        FunctionCall(
+            function="read_report", args={"path": "/tenant-a/report.txt"}, id="multi-2"
+        ),
     ]
-    messages = [{
-        "role": "assistant",
-        "content": None,
-        "tool_calls": calls,
-    }]
+    messages = [
+        {
+            "role": "assistant",
+            "content": None,
+            "tool_calls": calls,
+        }
+    ]
 
-    _, _, _, result_messages, _ = executor.query("task", runtime, object(), messages, {})
+    _, _, _, result_messages, _ = executor.query(
+        "task", runtime, object(), messages, {}
+    )
 
     assert len(runtime.calls) == 2
     assert len(result_messages) == 3
-    assert [entry["step"] for entry in monitor.audit.entries if "step" in entry] == [1, 2]
+    assert [entry["step"] for entry in monitor.audit.entries if "step" in entry] == [
+        1,
+        2,
+    ]
 
 
 def test_agentdojo_adapter_metrics_count_verified_dispatches():
     cap = Capability(
-        "cap-metrics-allow", "user@example.test", "tenant-a", "task-metrics-allow", "assistant",
-        {"read_file": ("/tenant-a/report.txt",)}, expires=100,
+        "cap-metrics-allow",
+        "user@example.test",
+        "tenant-a",
+        "task-metrics-allow",
+        "assistant",
+        {"read_file": ("/tenant-a/report.txt",)},
+        expires=100,
     )
 
     def request_builder(function_name, arguments, env, extra_args):

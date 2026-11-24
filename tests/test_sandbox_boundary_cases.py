@@ -5,9 +5,8 @@ sandbox-style comparator. They do not launch OpenShell, OpenAI sandbox workloads
 microVMs, DPU watchdogs, real artifact services, or external agents. The artifact
 store below is a protocol fixture used to test ordering and provenance preservation.
 """
-from __future__ import annotations
 
-from typing import Optional
+from __future__ import annotations
 
 from paca.baselines import SandboxScoped
 from paca.monitor import Monitor
@@ -45,7 +44,7 @@ class _ArtifactStore:
         # Persist the Arg itself so its label is not silently discarded.
         self._items[key] = value
 
-    def get(self, key: str) -> Optional[Arg]:
+    def get(self, key: str) -> Arg | None:
         self.reads += 1
         return self._items.get(key)
 

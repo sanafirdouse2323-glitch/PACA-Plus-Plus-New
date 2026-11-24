@@ -6,13 +6,13 @@ that can be consumed by backend-specific engines.
 
 from __future__ import annotations
 
-from typing import Any, Dict, List
+from typing import Any
 
 from .ast import Policy
 from .parser import parse_policy
 
 
-def compile_policy(policy: Policy | str) -> Dict[str, Any]:
+def compile_policy(policy: Policy | str) -> dict[str, Any]:
     """Compile a policy object or policy source string into a normalized dict."""
 
     if isinstance(policy, str):
@@ -37,9 +37,15 @@ def compile_policy(policy: Policy | str) -> Dict[str, Any]:
         ],
     }
 
-    all_obligations = policy.obligations or ([policy.obligation] if policy.obligation else [])
+    all_obligations = policy.obligations or (
+        [policy.obligation] if policy.obligation else []
+    )
     compiled["obligations"] = [
-        {"name": item.name, "parameter": item.parameter, "metadata": dict(item.metadata)}
+        {
+            "name": item.name,
+            "parameter": item.parameter,
+            "metadata": dict(item.metadata),
+        }
         for item in all_obligations
     ]
     if policy.obligation is not None:
@@ -51,7 +57,7 @@ def compile_policy(policy: Policy | str) -> Dict[str, Any]:
     return compiled
 
 
-def compile_policy_source(source: str) -> Dict[str, Any]:
+def compile_policy_source(source: str) -> dict[str, Any]:
     """Convenience helper to compile a policy text directly."""
 
     return compile_policy(parse_policy(source))

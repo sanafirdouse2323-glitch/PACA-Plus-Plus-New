@@ -100,9 +100,7 @@ def test_runner_uses_pinned_agentdojo_benchmark_api_contract():
     without_parameters = inspect.signature(
         api["run_task_without_injection_tasks"]
     ).parameters
-    with_parameters = inspect.signature(
-        api["run_task_with_injection_tasks"]
-    ).parameters
+    with_parameters = inspect.signature(api["run_task_with_injection_tasks"]).parameters
     assert "benchmark_version" in without_parameters
     assert "benchmark_version" in with_parameters
     assert "injection_tasks" in with_parameters
@@ -117,7 +115,10 @@ def test_runner_lists_real_injection_task_ids_without_model_initialization(capsy
     assert result == 0
     payload = __import__("json").loads(output)
     assert payload["injection_task_ids"]
-    assert all(task_id.startswith("injection_task_") for task_id in payload["injection_task_ids"])
+    assert all(
+        task_id.startswith("injection_task_")
+        for task_id in payload["injection_task_ids"]
+    )
 
 
 def test_runner_dry_run_emits_task_manifest_without_constructing_llm_pipeline(capsys):
@@ -126,12 +127,17 @@ def test_runner_dry_run_emits_task_manifest_without_constructing_llm_pipeline(ca
     suite = get_suite("v1.2.2", "workspace")
     injection_id = next(iter(suite.injection_tasks))
 
-    result = main([
-        "--model", "gpt-4o-mini-2024-07-18",
-        "--user-tasks", "user_task_1",
-        "--injection-tasks", injection_id,
-        "--dry-run",
-    ])
+    result = main(
+        [
+            "--model",
+            "gpt-4o-mini-2024-07-18",
+            "--user-tasks",
+            "user_task_1",
+            "--injection-tasks",
+            injection_id,
+            "--dry-run",
+        ]
+    )
     output = capsys.readouterr().out
     payload = __import__("json").loads(output)
 
@@ -163,10 +169,7 @@ def test_runner_reports_preflight_pairs_without_constructing_a_model_client():
 
     assert set(applicable) == {"user_task_1", "user_task_16"}
     assert all(isinstance(items, list) for items in applicable.values())
-    assert all(
-        item["user_task_id"] in applicable
-        for item in skipped
-    )
+    assert all(item["user_task_id"] in applicable for item in skipped)
 
 
 def test_build_pipeline_passes_official_tool_filter_defense_to_agentdojo():
@@ -220,13 +223,16 @@ def test_runner_agentdojo_benchmark_function_signatures_are_available():
     from paca.integrations.agentdojo_benchmark import _agentdojo_imports
 
     api = _agentdojo_imports()
-    assert "benchmark_version" in inspect.signature(
-        api["run_task_without_injection_tasks"]
-    ).parameters
-    assert "benchmark_version" in inspect.signature(
-        api["run_task_with_injection_tasks"]
-    ).parameters
-    assert "injection_tasks" in inspect.signature(
-        api["run_task_with_injection_tasks"]
-    ).parameters
+    assert (
+        "benchmark_version"
+        in inspect.signature(api["run_task_without_injection_tasks"]).parameters
+    )
+    assert (
+        "benchmark_version"
+        in inspect.signature(api["run_task_with_injection_tasks"]).parameters
+    )
+    assert (
+        "injection_tasks"
+        in inspect.signature(api["run_task_with_injection_tasks"]).parameters
+    )
     assert "logdir" in inspect.signature(api["load_task_results"]).parameters

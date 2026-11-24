@@ -1,8 +1,9 @@
 """Generates the self-contained interactive demo page (docs/index.html)."""
+
 from __future__ import annotations
 
 import json
-from typing import Any, Dict
+from typing import Any
 
 PAGE = r"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>PACA++ - simulated agent authorisation demo</title><style>
@@ -59,7 +60,7 @@ $('view').innerHTML=h;$('view').querySelectorAll('.tabs button').forEach(b=>b.on
 score();nav();view();</script></body></html>"""
 
 
-def write_html(data: Dict[str, Any], path: str) -> None:
+def write_html(data: dict[str, Any], path: str) -> None:
     blob = json.dumps(data, default=str).replace("</", "<\\/")
     with open(path, "w", encoding="utf-8") as fh:
         fh.write(PAGE.replace("__DATA__", blob))

@@ -5,70 +5,148 @@ mediate real agent planning, inbound communication, connector I/O, or production
 Every allowed request receives a single-use token bound to its arguments for an executor
 integration to verify.
 """
+
 from __future__ import annotations
 
 import fnmatch
 import hashlib
-import ipaddress
 import hmac
+import ipaddress
 import json
 import os
 import posixpath
 import re
-from typing import Any, Callable, Dict, Iterable, List, Optional
-from urllib.parse import urlparse
+from collections.abc import Callable, Iterable
 from importlib import resources
+from typing import Any
+from urllib.parse import urlparse
 
 from .authority import grant_pattern_is_subset as _grant_is_subset
 from .engine import PolicyEngine
+from .ledger import OperationLedger, task_scope_key
 from .obligations import ObligationRunner
 from .parser import parse_policy_set
-from .provenance import Arg, Label
+from .provenance import Label
 from .runtime import ACTIONS, Capability, Decision, Request, Violation
-from .ledger import OperationLedger, task_scope_key
 
 CHECKS = {
-    "C1":  ("Scope: action and target inside the task-bound capability", "capability escalation; goal hijack; cross-stage drift"),
-    "C2":  ("Liveness: capability not expired, call budget not exhausted", "stale authority; cost/loop DoS"),
-    "C3":  ("Manifest pin: tool hash/version matches what was authorised", "MCP poisoning; rug-pull; tool-selection hijack; supply chain"),
-    "C4a": ("Untrusted-derived control value on destructive action", "goal hijack; confused deputy"),
-    "C4b": ("Untrusted-derived control value on command execution", "indirect injection; structured-output injection; fragmentation"),
+    "C1": (
+        "Scope: action and target inside the task-bound capability",
+        "capability escalation; goal hijack; cross-stage drift",
+    ),
+    "C2": (
+        "Liveness: capability not expired, call budget not exhausted",
+        "stale authority; cost/loop DoS",
+    ),
+    "C3": (
+        "Manifest pin: tool hash/version matches what was authorised",
+        "MCP poisoning; rug-pull; tool-selection hijack; supply chain",
+    ),
+    "C4a": (
+        "Untrusted-derived control value on destructive action",
+        "goal hijack; confused deputy",
+    ),
+    "C4b": (
+        "Untrusted-derived control value on command execution",
+        "indirect injection; structured-output injection; fragmentation",
+    ),
     "C4c": ("Untrusted delegated grant set", "agent-to-agent injection"),
     "C4d": ("Untrusted-derived tool selection", "tool-selection hijack"),
     "C4e": ("Untrusted setting value", "confused deputy"),
-    "C4f": ("Untrusted recipient with non-public data", "indirect injection; exfiltration"),
-    "C4g": ("Untrusted recipient, public data: human approval", "reply/forward workflows"),
-    "C5":  ("Data sensitivity above destination clearance", "uncontrolled egress; sensitive-data extraction"),
-    "C6":  ("Tenant boundary", "cross-tenant retrieval"),
-    "C7":  ("Internal / metadata endpoint", "SSRF and network pivot"),
-    "C8":  ("Fan-out limit: distinct recipients per task", "agent worm / propagation"),
-    "C9":  ("Untrusted data into instruction memory", "memory poisoning; provenance laundering"),
-    "C10a": ("Protected configuration written from untrusted data", "config tampering; CI/CD injection"),
+    "C4f": (
+        "Untrusted recipient with non-public data",
+        "indirect injection; exfiltration",
+    ),
+    "C4g": (
+        "Untrusted recipient, public data: human approval",
+        "reply/forward workflows",
+    ),
+    "C5": (
+        "Data sensitivity above destination clearance",
+        "uncontrolled egress; sensitive-data extraction",
+    ),
+    "C6": ("Tenant boundary", "cross-tenant retrieval"),
+    "C7": ("Internal / metadata endpoint", "SSRF and network pivot"),
+    "C8": ("Fan-out limit: distinct recipients per task", "agent worm / propagation"),
+    "C9": (
+        "Untrusted data into instruction memory",
+        "memory poisoning; provenance laundering",
+    ),
+    "C10a": (
+        "Protected configuration written from untrusted data",
+        "config tampering; CI/CD injection",
+    ),
     "C10b": ("Protected configuration needs human approval", "config tampering"),
-    "C11": ("Delegated authority must be a subset of the parent's", "capability escalation; multi-agent confused deputy"),
-    "C12": ("Quarantine after repeated denied attempts", "approval fatigue; autonomy loops"),
-    "C13": ("Effect token binds executed effect to the authorised one", "planner/critic manipulation; TOCTOU argument swap"),
-    "C14": ("Required arguments are present; the target is a non-empty string", "missing required fields or invalid target shape"),
-    "C15": ("Human gate on irreversible release actions", "prompt-to-commit manipulation"),
-    "C16": ("Generic tool call lacks an action-specific effect contract", "unmapped tool effects and opaque tool arguments"),
+    "C11": (
+        "Delegated authority must be a subset of the parent's",
+        "capability escalation; multi-agent confused deputy",
+    ),
+    "C12": (
+        "Quarantine after repeated denied attempts",
+        "approval fatigue; autonomy loops",
+    ),
+    "C13": (
+        "Effect token binds executed effect to the authorised one",
+        "planner/critic manipulation; TOCTOU argument swap",
+    ),
+    "C14": (
+        "Required arguments are present; the target is a non-empty string",
+        "missing required fields or invalid target shape",
+    ),
+    "C15": (
+        "Human gate on irreversible release actions",
+        "prompt-to-commit manipulation",
+    ),
+    "C16": (
+        "Generic tool call lacks an action-specific effect contract",
+        "unmapped tool effects and opaque tool arguments",
+    ),
 }
 
-DEFAULT_CLEARANCE = {"corp.example": 3, "partner.example": 1, "storage.cloud.example": 0,
-                     "chan:#finance": 2, "chan:#general": 0}
-PROTECTED = ["*/.github/workflows/*", ".github/workflows/*", "*AGENTS.md", "*/.agent/*", "*/.git/*"]
-INTERNAL_RE = re.compile(r"^(localhost|127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|169\.254\.|metadata\.|.*\.internal$)")
+DEFAULT_CLEARANCE = {
+    "corp.example": 3,
+    "partner.example": 1,
+    "storage.cloud.example": 0,
+    "chan:#finance": 2,
+    "chan:#general": 0,
+}
+PROTECTED = [
+    "*/.github/workflows/*",
+    ".github/workflows/*",
+    "*AGENTS.md",
+    "*/.agent/*",
+    "*/.git/*",
+]
+INTERNAL_RE = re.compile(
+    r"^(localhost|127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|169\.254\.|metadata\.|.*\.internal$)"
+)
 PATH_ACTIONS = frozenset({"read_file", "write_file", "delete_file"})
 
 # These rules implement the non-ablatable security policy for consequential
 # runtime integrations. Research ablations remain available to the simulator,
 # but must never be accepted by a runtime that can invoke external effects.
-REQUIRED_RUNTIME_POLICY_IDS = frozenset({
-    "C0", "C4a", "C4b", "C4c", "C4d", "C4e", "C4f", "C4g",
-    "C5", "C6", "C7", "C9", "C10a", "C10b", "C15",
-})
+REQUIRED_RUNTIME_POLICY_IDS = frozenset(
+    {
+        "C0",
+        "C4a",
+        "C4b",
+        "C4c",
+        "C4d",
+        "C4e",
+        "C4f",
+        "C4g",
+        "C5",
+        "C6",
+        "C7",
+        "C9",
+        "C10a",
+        "C10b",
+        "C15",
+    }
+)
 
 
-def canonical_path_target(value: Any) -> Optional[str]:
+def canonical_path_target(value: Any) -> str | None:
     """Return a lexically safe absolute POSIX path, or None for an invalid path.
 
     This rejects traversal and platform-separator ambiguity. A real executor must still
@@ -86,10 +164,19 @@ def canonical_path_target(value: Any) -> Optional[str]:
     return normalized
 
 
-def _canonical_path_pattern(pattern: Any) -> Optional[str]:
-    if not isinstance(pattern, str) or not pattern or "\x00" in pattern or "\\" in pattern:
+def _canonical_path_pattern(pattern: Any) -> str | None:
+    if (
+        not isinstance(pattern, str)
+        or not pattern
+        or "\x00" in pattern
+        or "\\" in pattern
+    ):
         return None
-    if not pattern.startswith("/") or pattern.startswith("//") or ".." in pattern.split("/"):
+    if (
+        not pattern.startswith("/")
+        or pattern.startswith("//")
+        or ".." in pattern.split("/")
+    ):
         return None
     normalized = posixpath.normpath(pattern)
     if not normalized.startswith("/") or normalized.startswith("//"):
@@ -121,11 +208,9 @@ def is_internal_host(host: str) -> bool:
     except ValueError:
         return (
             normalized == "localhost"
-            or normalized.endswith(".localhost")
-            or normalized.endswith(".local")
+            or normalized.endswith((".localhost", ".local", ".internal"))
             or normalized == "metadata"
             or normalized.startswith("metadata.")
-            or normalized.endswith(".internal")
             or bool(INTERNAL_RE.match(normalized))
         )
 
@@ -136,15 +221,17 @@ def is_allowed_network_host(host: str, allowed_domains: Iterable[str]) -> bool:
     if not normalized:
         return False
     domains = {(domain or "").strip().lower().rstrip(".") for domain in allowed_domains}
-    return any(domain and (normalized == domain or normalized.endswith("." + domain))
-               for domain in domains)
+    return any(
+        domain and (normalized == domain or normalized.endswith("." + domain))
+        for domain in domains
+    )
 
 
 def is_exact(pattern: str) -> bool:
     return not any(c in pattern for c in "*?[")
 
 
-def match_grant(cap: Capability, action: str, target: str) -> Optional[str]:
+def match_grant(cap: Capability, action: str, target: str) -> str | None:
     """Match only canonical targets; filesystem paths reject traversal before globbing."""
     if action in PATH_ACTIONS:
         target = canonical_path_target(target)
@@ -165,19 +252,31 @@ class AuditLog:
     """Hash-chained, tamper-evident decision log."""
 
     def __init__(self) -> None:
-        self.entries: List[Dict[str, Any]] = []
+        self.entries: list[dict[str, Any]] = []
 
-    def append(self, rec: Dict[str, Any]) -> None:
+    def append(self, rec: dict[str, Any]) -> None:
         prev = self.entries[-1]["hash"] if self.entries else "0" * 64
         body = json.dumps(rec, sort_keys=True, default=str)
-        self.entries.append({**rec, "prev": prev, "hash": hashlib.sha256((prev + body).encode()).hexdigest()})
+        self.entries.append(
+            {
+                **rec,
+                "prev": prev,
+                "hash": hashlib.sha256((prev + body).encode()).hexdigest(),
+            }
+        )
 
     def verify(self) -> bool:
         prev = "0" * 64
         try:
             for entry in self.entries:
-                rec = {key: value for key, value in entry.items() if key not in ("prev", "hash")}
-                h = hashlib.sha256((prev + json.dumps(rec, sort_keys=True, default=str)).encode()).hexdigest()
+                rec = {
+                    key: value
+                    for key, value in entry.items()
+                    if key not in ("prev", "hash")
+                }
+                h = hashlib.sha256(
+                    (prev + json.dumps(rec, sort_keys=True, default=str)).encode()
+                ).hexdigest()
                 if entry.get("prev") != prev or entry.get("hash") != h:
                     return False
                 prev = entry["hash"]
@@ -190,14 +289,26 @@ class Monitor:
     name = "paca"
     tracks_labels = True
 
-    def __init__(self, policy_text: Optional[str] = None, clearance: Optional[Dict[str, int]] = None,
-                 protected: Optional[List[str]] = None, quarantine_after: int = 3,
-                 disable: Iterable[str] = (), key: Optional[bytes] = None,
-                 approval_verifier: Optional[Callable[[Request, str], bool]] = None,
-                 ledger: Optional[OperationLedger] = None) -> None:
+    def __init__(
+        self,
+        policy_text: str | None = None,
+        clearance: dict[str, int] | None = None,
+        protected: list[str] | None = None,
+        quarantine_after: int = 3,
+        disable: Iterable[str] = (),
+        key: bytes | None = None,
+        approval_verifier: Callable[[Request, str], bool] | None = None,
+        ledger: OperationLedger | None = None,
+    ) -> None:
         if policy_text is None:
-            policy_text = resources.files("paca").joinpath("policies", "agent_policy.paca").read_text(encoding="utf-8")
-        self.rules = parse_policy_set(policy_text, "agent_policy", default_decision="permit")
+            policy_text = (
+                resources.files("paca")
+                .joinpath("policies", "agent_policy.paca")
+                .read_text(encoding="utf-8")
+            )
+        self.rules = parse_policy_set(
+            policy_text, "agent_policy", default_decision="permit"
+        )
         self.engine = PolicyEngine("deny_overrides", default_decision="permit")
         self.clearance = dict(DEFAULT_CLEARANCE if clearance is None else clearance)
         self.protected = list(PROTECTED if protected is None else protected)
@@ -206,13 +317,17 @@ class Monitor:
         self.approval_verifier = approval_verifier
         self.ledger = ledger
         if self.ledger is not None and "C13" in self.disable:
-            raise ValueError("C13 token verification cannot be disabled with a persistent ledger")
-        self._issued_tokens: Dict[str, str] = {}
+            raise ValueError(
+                "C13 token verification cannot be disabled with a persistent ledger"
+            )
+        self._issued_tokens: dict[str, str] = {}
         self.audit = AuditLog()
         self.obligations = ObligationRunner()
-        self.obligations.register("audit_log", lambda **kw: None)   # audit is always written below
-        self.strikes: Dict[str, int] = {}
-        self.dests: Dict[str, set] = {}
+        self.obligations.register(
+            "audit_log", lambda **kw: None
+        )  # audit is always written below
+        self.strikes: dict[str, int] = {}
+        self.dests: dict[str, set] = {}
 
     def assert_consequential_safe(self) -> None:
         """Reject monitor configurations unsuitable for consequential execution.
@@ -248,18 +363,24 @@ class Monitor:
         # or quarantine threshold could weaken enforcement without changing a
         # single policy rule.
         if not isinstance(self.clearance, dict):
-            raise ValueError("consequential runtime requires a valid destination-clearance mapping")
+            raise TypeError(
+                "consequential runtime destination-clearance must be a mapping"
+            )
         for host, clearance in self.clearance.items():
             if (
-                not isinstance(host, str) or not host
+                not isinstance(host, str)
+                or not host
                 or isinstance(clearance, bool)
                 or not isinstance(clearance, int)
                 or not 0 <= clearance <= 3
             ):
-                raise ValueError("consequential runtime destination-clearance mapping is malformed")
+                raise ValueError(
+                    "consequential runtime destination-clearance mapping is malformed"
+                )
             baseline_clearance = max(
                 (
-                    value for suffix, value in DEFAULT_CLEARANCE.items()
+                    value
+                    for suffix, value in DEFAULT_CLEARANCE.items()
                     if host == suffix or host.endswith("." + suffix)
                 ),
                 default=0,
@@ -272,7 +393,10 @@ class Monitor:
 
         if (
             not isinstance(self.protected, list)
-            or any(not isinstance(pattern, str) or not pattern for pattern in self.protected)
+            or any(
+                not isinstance(pattern, str) or not pattern
+                for pattern in self.protected
+            )
             or not set(PROTECTED).issubset(set(self.protected))
         ):
             raise ValueError(
@@ -287,18 +411,22 @@ class Monitor:
                 "consequential runtime quarantine threshold cannot be weaker than the packaged default"
             )
 
-        baseline_text = resources.files("paca").joinpath(
-            "policies", "agent_policy.paca"
-        ).read_text(encoding="utf-8")
+        baseline_text = (
+            resources.files("paca")
+            .joinpath("policies", "agent_policy.paca")
+            .read_text(encoding="utf-8")
+        )
         baseline = parse_policy_set(
-            baseline_text, "runtime_baseline", default_decision="permit",
+            baseline_text,
+            "runtime_baseline",
+            default_decision="permit",
         )
         required = {
             policy.name: policy
             for policy in baseline.policies
             if policy.name in REQUIRED_RUNTIME_POLICY_IDS
         }
-        configured: Dict[str, List[Any]] = {}
+        configured: dict[str, list[Any]] = {}
         for policy in self.rules.policies:
             if policy.name in REQUIRED_RUNTIME_POLICY_IDS:
                 configured.setdefault(policy.name, []).append(policy)
@@ -312,12 +440,18 @@ class Monitor:
                 )
             actual = matches[0]
             expected_semantics = (
-                expected.action, expected.effect, tuple(expected.expressions),
-                tuple(expected.connectors), tuple(expected.obligations),
+                expected.action,
+                expected.effect,
+                tuple(expected.expressions),
+                tuple(expected.connectors),
+                tuple(expected.obligations),
             )
             actual_semantics = (
-                actual.action, actual.effect, tuple(actual.expressions),
-                tuple(actual.connectors), tuple(actual.obligations),
+                actual.action,
+                actual.effect,
+                tuple(actual.expressions),
+                tuple(actual.connectors),
+                tuple(actual.obligations),
             )
             if actual_semantics != expected_semantics:
                 raise ValueError(
@@ -335,7 +469,9 @@ class Monitor:
         # Unknown destinations are not automatically cleared merely because a literal was user-supplied.
         return 0
 
-    def _context(self, req: Request, spec: Dict[str, Any], matched_pat: Optional[str]) -> Dict[str, Any]:
+    def _context(
+        self, req: Request, spec: dict[str, Any], matched_pat: str | None
+    ) -> dict[str, Any]:
         args, cap = req.args, req.cap
         tgt = args.get(spec["target"])
         control_names = [spec["target"]] + spec.get("control", [])
@@ -344,8 +480,12 @@ class Monitor:
             a = args.get(n)
             if a is None or a.label.integrity != "untrusted":
                 continue
-            if n == spec["target"] and matched_pat is not None and is_exact(matched_pat):
-                continue          # the exact, human-granted literal is the authority, not the argument's provenance
+            if (
+                n == spec["target"]
+                and matched_pat is not None
+                and is_exact(matched_pat)
+            ):
+                continue  # the exact, human-granted literal is the authority, not the argument's provenance
             untrusted_control = True
         pay = [args[n] for n in spec.get("payload", []) if n in args]
         # A URL is itself outbound data: its path and query may carry model-derived
@@ -359,43 +499,97 @@ class Monitor:
         clr = self._clearance(host, trusted_dest) if is_egress else 99
         url_like = req.action in ("fetch_url", "http_post")
         raw_value = tgt.value if tgt is not None else ""
-        value = (canonical_path_target(raw_value) or "") if req.action in PATH_ACTIONS else str(raw_value)
-        scope = "core" if (req.action == "mem_write" and value.startswith("core/")) else ""
+        value = (
+            (canonical_path_target(raw_value) or "")
+            if req.action in PATH_ACTIONS
+            else str(raw_value)
+        )
+        scope = (
+            "core" if (req.action == "mem_write" and value.startswith("core/")) else ""
+        )
         contributing_labels = [pl]
         if req.resource is not None:
             contributing_labels.append(req.resource)
-        contributing_tenants = set().union(*(label.tenants for label in contributing_labels))
+        contributing_tenants = set().union(
+            *(label.tenants for label in contributing_labels)
+        )
         unknown_tenant = any(label.tenant_unknown for label in contributing_labels)
-        cross = unknown_tenant or any(tenant != cap.tenant for tenant in contributing_tenants)
+        cross = unknown_tenant or any(
+            tenant != cap.tenant for tenant in contributing_tenants
+        )
         action_class = spec["cls"]
 
-        return {
-            "action": {"name": req.action, "cls": action_class},
-            "dest": {"host": host, "clearance": clr, "internal": bool(url_like and (not host or is_internal_host(host))),
-                     "trusted": trusted_dest},
-            "flow": {"max_sens": pl.sensitivity, "excess": (pl.sensitivity - clr) if is_egress else -9,
-                     "cross_tenant": cross},
-            "control": {"integrity": "untrusted" if untrusted_control else "trusted"},
-            "payload": {"integrity": pl.integrity, "sensitivity": pl.sensitivity},
-            "target": {"scope": scope, "protected": any(fnmatch.fnmatchcase(value, p) for p in self.protected)
-                       if req.action in ("write_file", "delete_file") else False},
-            "cap": {"principal": cap.principal, "task": cap.task_id},
-        }, is_egress, host
+        return (
+            {
+                "action": {"name": req.action, "cls": action_class},
+                "dest": {
+                    "host": host,
+                    "clearance": clr,
+                    "internal": bool(url_like and (not host or is_internal_host(host))),
+                    "trusted": trusted_dest,
+                },
+                "flow": {
+                    "max_sens": pl.sensitivity,
+                    "excess": (pl.sensitivity - clr) if is_egress else -9,
+                    "cross_tenant": cross,
+                },
+                "control": {
+                    "integrity": "untrusted" if untrusted_control else "trusted"
+                },
+                "payload": {"integrity": pl.integrity, "sensitivity": pl.sensitivity},
+                "target": {
+                    "scope": scope,
+                    "protected": any(
+                        fnmatch.fnmatchcase(value, p) for p in self.protected
+                    )
+                    if req.action in ("write_file", "delete_file")
+                    else False,
+                },
+                "cap": {"principal": cap.principal, "task": cap.task_id},
+            },
+            is_egress,
+            host,
+        )
 
     # ---------------------------------------------------------------- decision
     def decide(self, req: Request) -> Decision:
         try:
             request_digest = req.digest
         except (AttributeError, TypeError, ValueError) as exc:
-            self.audit.append({"action": str(getattr(req, "action", "<invalid>")),
-                               "verdict": "deny", "checks": ["C13"],
-                               "reason": f"invalid request encoding: {exc}"})
-            return Decision("deny", [Violation("C13", "deny", "request contains non-canonical or invalid data")], "")
+            self.audit.append(
+                {
+                    "action": str(getattr(req, "action", "<invalid>")),
+                    "verdict": "deny",
+                    "checks": ["C13"],
+                    "reason": f"invalid request encoding: {exc}",
+                }
+            )
+            return Decision(
+                "deny",
+                [
+                    Violation(
+                        "C13", "deny", "request contains non-canonical or invalid data"
+                    )
+                ],
+                "",
+            )
         if req.action not in ACTIONS:
-            decision = Decision("deny", [Violation("C1", "deny", f"unknown action {req.action!r}")], request_digest)
-            self.audit.append({"step": req.step, "task": req.cap.task_id, "action": req.action,
-                               "verdict": "deny", "checks": decision.checks,
-                               "digest": request_digest[:16], "principal": req.cap.principal})
+            decision = Decision(
+                "deny",
+                [Violation("C1", "deny", f"unknown action {req.action!r}")],
+                request_digest,
+            )
+            self.audit.append(
+                {
+                    "step": req.step,
+                    "task": req.cap.task_id,
+                    "action": req.action,
+                    "verdict": "deny",
+                    "checks": decision.checks,
+                    "digest": request_digest[:16],
+                    "principal": req.cap.principal,
+                }
+            )
             return decision
         spec, cap, v = ACTIONS[req.action], req.cap, []
         try:
@@ -403,37 +597,55 @@ class Monitor:
         except (TypeError, ValueError) as exc:
             decision = Decision(
                 "deny",
-                [Violation("C13", "deny", "capability tenant/task identity is invalid")],
+                [
+                    Violation(
+                        "C13", "deny", "capability tenant/task identity is invalid"
+                    )
+                ],
                 request_digest,
             )
-            self.audit.append({
-                "step": getattr(req, "step", None),
-                "task": str(getattr(cap, "task_id", "<invalid>")),
-                "tenant": str(getattr(cap, "tenant", "<invalid>")),
-                "action": req.action,
-                "verdict": "deny",
-                "checks": decision.checks,
-                "digest": request_digest[:16],
-                "principal": str(getattr(cap, "principal", "<invalid>")),
-                "reason": f"invalid tenant/task identity: {exc}",
-            })
+            self.audit.append(
+                {
+                    "step": getattr(req, "step", None),
+                    "task": str(getattr(cap, "task_id", "<invalid>")),
+                    "tenant": str(getattr(cap, "tenant", "<invalid>")),
+                    "action": req.action,
+                    "verdict": "deny",
+                    "checks": decision.checks,
+                    "digest": request_digest[:16],
+                    "principal": str(getattr(cap, "principal", "<invalid>")),
+                    "reason": f"invalid tenant/task identity: {exc}",
+                }
+            )
             return decision
         if self.ledger is not None:
             try:
                 ledger_state = self.ledger.register_capability(cap)
-            except Exception:
+            except Exception:  # noqa: BLE001 - any registry failure must deny, never fall back to local authority state.
                 # A missing or inconsistent durable state must never degrade to
                 # process-local authorisation.
                 decision = Decision(
                     "deny",
-                    [Violation("C13", "deny", "persistent authorisation state unavailable or inconsistent")],
+                    [
+                        Violation(
+                            "C13",
+                            "deny",
+                            "persistent authorisation state unavailable or inconsistent",
+                        )
+                    ],
                     request_digest,
                 )
-                self.audit.append({
-                    "step": req.step, "task": cap.task_id, "action": req.action,
-                    "verdict": "deny", "checks": decision.checks,
-                    "digest": request_digest[:16], "principal": cap.principal,
-                })
+                self.audit.append(
+                    {
+                        "step": req.step,
+                        "task": cap.task_id,
+                        "action": req.action,
+                        "verdict": "deny",
+                        "checks": decision.checks,
+                        "digest": request_digest[:16],
+                        "principal": cap.principal,
+                    }
+                )
                 return decision
             cap.calls = ledger_state.calls
             self.strikes[task_key] = ledger_state.strikes
@@ -443,45 +655,99 @@ class Monitor:
         missing = []
         for name in spec.get("required", ()):
             arg = req.args.get(name)
-            if arg is None or arg.value is None:
-                missing.append(name)
-            elif name == spec["target"] and (
-                not isinstance(arg.value, str) or not arg.value.strip()
+            if (
+                arg is None
+                or arg.value is None
+                or name == spec["target"]
+                and (not isinstance(arg.value, str) or not arg.value.strip())
             ):
                 missing.append(name)
         if missing:
-            v.append(Violation("C14", "deny",
-                               f"missing required argument(s) or invalid target: {', '.join(missing)}"))
+            v.append(
+                Violation(
+                    "C14",
+                    "deny",
+                    f"missing required argument(s) or invalid target: {', '.join(missing)}",
+                )
+            )
         tgt = req.args.get(spec["target"])
         tval = str(tgt.value) if tgt is not None else ""
         consequential = spec["cls"] != "read"
 
         if consequential and self.strikes.get(task_key, 0) >= self.quarantine_after:
-            v.append(Violation("C12", "deny", "task quarantined after repeated denied/escalated attempts"))
+            v.append(
+                Violation(
+                    "C12",
+                    "deny",
+                    "task quarantined after repeated denied/escalated attempts",
+                )
+            )
         pat = match_grant(cap, req.action, tval)
         if req.action not in cap.grants:
             v.append(Violation("C1", "deny", f"{req.action} not granted for this task"))
         elif pat is None:
-            v.append(Violation("C1", "deny", f"target {tval!r} outside granted scope {list(cap.grants[req.action])}"))
+            v.append(
+                Violation(
+                    "C1",
+                    "deny",
+                    f"target {tval!r} outside granted scope {list(cap.grants[req.action])}",
+                )
+            )
         if req.step > cap.expires:
-            v.append(Violation("C2", "deny", f"capability expired at step {cap.expires} (now {req.step})"))
+            v.append(
+                Violation(
+                    "C2",
+                    "deny",
+                    f"capability expired at step {cap.expires} (now {req.step})",
+                )
+            )
         elif cap.calls >= cap.max_calls:
             v.append(Violation("C2", "deny", f"call budget {cap.max_calls} exhausted"))
         if req.action == "call_tool":
             if req.tool is None:
-                v.append(Violation("C3", "deny", "generic tool dispatch requires a pinned Tool manifest"))
+                v.append(
+                    Violation(
+                        "C3",
+                        "deny",
+                        "generic tool dispatch requires a pinned Tool manifest",
+                    )
+                )
             elif tgt is None or req.tool.name != tval:
-                v.append(Violation("C3", "deny", "tool manifest name does not match the authorised tool target"))
+                v.append(
+                    Violation(
+                        "C3",
+                        "deny",
+                        "tool manifest name does not match the authorised tool target",
+                    )
+                )
             # A generic invocation cannot infer whether opaque tool arguments perform
             # reads, writes, disclosure, delegation or irreversible effects. Integrators
             # must map the operation to a specific PACA action before it can execute.
-            v.append(Violation("C16", "deny", "generic tool dispatch is disabled; use an action-specific effect mapping"))
+            v.append(
+                Violation(
+                    "C16",
+                    "deny",
+                    "generic tool dispatch is disabled; use an action-specific effect mapping",
+                )
+            )
         if req.tool is not None:
             pinned = cap.tool_pins.get(req.tool.name)
             if pinned is None:
-                v.append(Violation("C3", "deny", f"tool {req.tool.name!r} was never authorised for this task"))
+                v.append(
+                    Violation(
+                        "C3",
+                        "deny",
+                        f"tool {req.tool.name!r} was never authorised for this task",
+                    )
+                )
             elif pinned != req.tool.hash:
-                v.append(Violation("C3", "deny", f"manifest of {req.tool.name!r} changed after authorisation (v{req.tool.version})"))
+                v.append(
+                    Violation(
+                        "C3",
+                        "deny",
+                        f"manifest of {req.tool.name!r} changed after authorisation (v{req.tool.version})",
+                    )
+                )
         if req.action == "delegate":
             child = req.args.get("child_grants")
             child_grants = child.value if child is not None else None
@@ -489,14 +755,28 @@ class Monitor:
             if not invalid:
                 for act, patterns in child_grants.items():
                     parent_patterns = cap.grants.get(act)
-                    if (not isinstance(act, str) or not isinstance(patterns, (list, tuple))
-                            or parent_patterns is None
-                            or not all(any(_grant_is_subset(pattern, parent) for parent in parent_patterns)
-                                       for pattern in patterns)):
+                    if (
+                        not isinstance(act, str)
+                        or not isinstance(patterns, (list, tuple))
+                        or parent_patterns is None
+                        or not all(
+                            any(
+                                _grant_is_subset(pattern, parent)
+                                for parent in parent_patterns
+                            )
+                            for pattern in patterns
+                        )
+                    ):
                         invalid = True
                         break
             if invalid:
-                v.append(Violation("C11", "deny", "child grants are malformed or exceed parent authority"))
+                v.append(
+                    Violation(
+                        "C11",
+                        "deny",
+                        "child grants are malformed or exceed parent authority",
+                    )
+                )
 
         ctx, is_egress, host = self._context(req, spec, pat)
         if is_egress:
@@ -505,11 +785,15 @@ class Monitor:
             # reading several pages from one site does not consume recipient slots.
             destination_key = host if req.action == "fetch_url" else tval
             if destination_key not in seen and len(seen) >= cap.max_fanout:
-                v.append(Violation("C8", "deny", f"fan-out limit {cap.max_fanout} reached"))
+                v.append(
+                    Violation("C8", "deny", f"fan-out limit {cap.max_fanout} reached")
+                )
         res = self.engine.evaluate_set(self.rules, ctx, action=req.action)
         obl = sorted({o for n, os_ in res.obligation_map.items() for o in os_})
         for effect, name in res.fired:
-            note = next((p.metadata.get("note", "") for p in self.rules if p.name == name), "")
+            note = next(
+                (p.metadata.get("note", "") for p in self.rules if p.name == name), ""
+            )
             if effect == "deny":
                 v.append(Violation(name, "deny", note or "policy rule"))
             elif "require_approval" in res.obligation_map.get(name, []):
@@ -524,7 +808,7 @@ class Monitor:
             if req.approval is not None and self.approval_verifier is not None:
                 try:
                     approval_valid = bool(self.approval_verifier(req, req.approval))
-                except Exception:
+                except Exception:  # noqa: BLE001 - an approval verifier failure is not an approval.
                     approval_valid = False
             verdict = "allow" if approval_valid else "needs_approval"
         else:
@@ -532,14 +816,20 @@ class Monitor:
 
         try:
             completed_obligations = self.obligations.run(obl, req=req)
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - obligation handlers are extension code; failure denies the request.
             verdict = "deny"
-            v.append(Violation("C0", "deny", f"obligation execution failed: {type(exc).__name__}"))
+            v.append(
+                Violation(
+                    "C0", "deny", f"obligation execution failed: {type(exc).__name__}"
+                )
+            )
             completed_obligations = []
         d = Decision(verdict, v, request_digest, None, completed_obligations)
         if verdict == "allow":
             if self.ledger is not None:
-                destination_key = (host if req.action == "fetch_url" else tval) if is_egress else None
+                destination_key = (
+                    (host if req.action == "fetch_url" else tval) if is_egress else None
+                )
                 try:
                     token, failure_check = self.ledger.issue_authorization(
                         capability=cap,
@@ -550,11 +840,15 @@ class Monitor:
                         consequential=consequential,
                         quarantine_after=self.quarantine_after,
                     )
-                except Exception:
+                except Exception:  # noqa: BLE001 - persistent authorization failures must deny the effect.
                     d.verdict = "deny"
-                    d.violations.append(Violation(
-                        "C13", "deny", "persistent authorisation transaction failed; execution is denied"
-                    ))
+                    d.violations.append(
+                        Violation(
+                            "C13",
+                            "deny",
+                            "persistent authorisation transaction failed; execution is denied",
+                        )
+                    )
                 else:
                     if token is None:
                         d.verdict = "deny"
@@ -563,10 +857,16 @@ class Monitor:
                             "C2": "persistent capability call budget exhausted",
                             "C8": "persistent destination fan-out limit reached",
                         }
-                        d.violations.append(Violation(
-                            failure_check or "C13", "deny",
-                            failure_messages.get(failure_check, "persistent authorisation was not issued"),
-                        ))
+                        d.violations.append(
+                            Violation(
+                                failure_check or "C13",
+                                "deny",
+                                failure_messages.get(
+                                    failure_check,
+                                    "persistent authorisation was not issued",
+                                ),
+                            )
+                        )
                     else:
                         d.token = token
                         cap.calls += 1
@@ -591,17 +891,30 @@ class Monitor:
                     checks=d.checks,
                     consequential=consequential,
                 )
-            except Exception:
+            except Exception:  # noqa: BLE001 - failed durable decision recording must invalidate authorization.
                 d.verdict = "deny"
-                d.violations.append(Violation(
-                    "C13", "deny", "persistent decision record could not be committed"
-                ))
+                d.violations.append(
+                    Violation(
+                        "C13",
+                        "deny",
+                        "persistent decision record could not be committed",
+                    )
+                )
         elif consequential and verdict == "deny":
             # A pending approval is not a denied attempt. Only a definitive denial
             # contributes to quarantine.
             self.strikes[task_key] = self.strikes.get(task_key, 0) + 1
-        self.audit.append({"step": req.step, "task": cap.task_id, "action": req.action, "verdict": verdict,
-                           "checks": d.checks, "digest": request_digest[:16], "principal": cap.principal})
+        self.audit.append(
+            {
+                "step": req.step,
+                "task": cap.task_id,
+                "action": req.action,
+                "verdict": verdict,
+                "checks": d.checks,
+                "digest": request_digest[:16],
+                "principal": cap.principal,
+            }
+        )
         return d
 
     def verify(self, req: Request, d: Decision) -> bool:
@@ -609,8 +922,13 @@ class Monitor:
         if d.verdict != "allow" or d.token is None:
             return False
         if "C13" in self.disable and self.ledger is None:
-            self.audit.append({"action": req.action, "verdict": "executor_verification_bypassed",
-                               "digest": d.digest[:16]})
+            self.audit.append(
+                {
+                    "action": req.action,
+                    "verdict": "executor_verification_bypassed",
+                    "digest": d.digest[:16],
+                }
+            )
             return True
         try:
             current_digest = req.digest
@@ -623,21 +941,38 @@ class Monitor:
                     and d.digest == current_digest
                     and self.ledger.consume_token(d.token, current_digest)
                 )
-            except Exception:
+            except Exception:  # noqa: BLE001 - token-store errors must invalidate, not validate, an effect token.
                 valid = False
         else:
             issued_digest = self._issued_tokens.pop(d.token, None)
-            valid = current_digest is not None and d.digest == current_digest and issued_digest == current_digest
-        self.audit.append({"action": req.action, "verdict": "executor_verified" if valid else "executor_rejected",
-                           "digest": (current_digest or "")[:16]})
+            valid = (
+                current_digest is not None
+                and d.digest == current_digest
+                and issued_digest == current_digest
+            )
+        self.audit.append(
+            {
+                "action": req.action,
+                "verdict": "executor_verified" if valid else "executor_rejected",
+                "digest": (current_digest or "")[:16],
+            }
+        )
         return valid
 
-    def scan(self, source: str, text: str, style: Optional[str]) -> bool:
-        return False            # PACA++ does not rely on content classification
+    def scan(self, source: str, text: str, style: str | None) -> bool:
+        return False  # PACA++ does not rely on content classification
 
     def issue(self, cap: Capability) -> Capability:
         return cap
 
 
-__all__ = ["Monitor", "AuditLog", "CHECKS", "host_of", "match_grant",
-           "is_internal_host", "is_allowed_network_host", "canonical_path_target"]
+__all__ = [
+    "CHECKS",
+    "AuditLog",
+    "Monitor",
+    "canonical_path_target",
+    "host_of",
+    "is_allowed_network_host",
+    "is_internal_host",
+    "match_grant",
+]

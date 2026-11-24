@@ -141,23 +141,31 @@ capability = Capability(
 # the evaluation's trusted fixture/connector metadata.
 source_labels = {
     "mail": Label(
-        integrity="untrusted", sensitivity=2, tenant="workspace-v1.2.2",
+        integrity="untrusted",
+        sensitivity=2,
+        tenant="workspace-v1.2.2",
         origins=frozenset({"agentdojo_fixture:mail"}),
     ),
     "calendar": Label(
-        integrity="untrusted", sensitivity=1, tenant="workspace-v1.2.2",
+        integrity="untrusted",
+        sensitivity=1,
+        tenant="workspace-v1.2.2",
         origins=frozenset({"agentdojo_fixture:calendar"}),
     ),
     "drive": Label(
-        integrity="untrusted", sensitivity=2, tenant="workspace-v1.2.2",
+        integrity="untrusted",
+        sensitivity=2,
+        tenant="workspace-v1.2.2",
         origins=frozenset({"agentdojo_fixture:drive"}),
     ),
 }
+
 
 def label_workspace_resource(source, arguments, env):
     # A real experiment may inspect a trusted sidecar keyed by file ID, date,
     # or fixture record. Never classify from text written by the model.
     return source_labels[source]
+
 
 context = WorkspaceTaskContext(
     capability=capability,
@@ -245,8 +253,7 @@ pipeline = AgentPipeline.from_config(
 )
 
 tools_loop = next(
-    element for element in pipeline.elements
-    if isinstance(element, ToolsExecutionLoop)
+    element for element in pipeline.elements if isinstance(element, ToolsExecutionLoop)
 )
 tools_loop.elements = [
     PacaToolsExecutor(monitor=monitor, request_builder=request_builder),

@@ -5,9 +5,11 @@ MAC, not a public-key credential format or an OAuth authorization server. Every 
 holding the verification key can also mint credentials, so key distribution and the
 issuer process remain part of the trusted computing base.
 """
+
 from __future__ import annotations
 
 import base64
+import contextlib
 import hashlib
 import hmac
 import json
@@ -15,10 +17,10 @@ import os
 import secrets
 import sqlite3
 import time
+from collections.abc import Callable, Iterable, Mapping
 from contextlib import closing
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable, Dict, Iterable, Mapping, Optional, Tuple
 
 from .authority import AuthorityLineage, AuthorityLineageGraph, grant_pattern_is_subset
 from .runtime import Capability
@@ -61,7 +63,10 @@ class VerifiedResourceCommitPermit:
 
 def _canonical(value: object) -> bytes:
     return json.dumps(
-        value, sort_keys=True, separators=(",", ":"), ensure_ascii=False,
+        value,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
         allow_nan=False,
     ).encode("utf-8")
 
@@ -72,7 +77,9 @@ def _b64encode(value: bytes) -> str:
 
 def _b64decode(value: str) -> bytes:
     return base64.b64decode(
-        value + ("=" * (-len(value) % 4)), altchars=b"-_", validate=True,
+        value + ("=" * (-len(value) % 4)),
+        altchars=b"-_",
+        validate=True,
     )
 
 
@@ -99,7 +106,9 @@ def _record_from_dict(data: Mapping[str, object]) -> AuthorityLineage:
             purpose=str(data["purpose"]),
             policy_epoch=int(data["policy_epoch"]),
             expires=int(data["expires"]),
-            grants={str(action): tuple(patterns) for action, patterns in grants.items()},
+            grants={
+                str(action): tuple(patterns) for action, patterns in grants.items()
+            },
             parent_id=str(parent_id) if parent_id is not None else None,
             parent_digest=str(parent_digest) if parent_digest is not None else None,
             max_task_calls=max_task_calls,
@@ -127,7 +136,9 @@ class SQLiteAuthorityRegistry:
     ) -> None:
         raw = os.fspath(database)
         if raw == ":memory:" or not raw:
-            raise ValueError("authority registry requires a file-backed SQLite database")
+            raise ValueError(
+                "authority registry requires a file-backed SQLite database"
+            )
         if timeout <= 0:
             raise ValueError("timeout must be positive")
         self.database = Path(raw).expanduser().resolve()
@@ -138,11 +149,13 @@ class SQLiteAuthorityRegistry:
 
     def _connect(self) -> sqlite3.Connection:
         connection = sqlite3.connect(
-            str(self.database), timeout=self.timeout, isolation_level=None,
+            str(self.database),
+            timeout=self.timeout,
+            isolation_level=None,
         )
         connection.row_factory = sqlite3.Row
         connection.execute("PRAGMA foreign_keys=ON")
-        connection.execute("PRAGMA busy_timeout=%d" % int(self.timeout * 1000))
+        connection.execute(f"PRAGMA busy_timeout={int(self.timeout * 1000)}")
         connection.execute("PRAGMA synchronous=FULL")
         return connection
 
@@ -160,7 +173,9 @@ class SQLiteAuthorityRegistry:
                 ).fetchone()
                 version = int(row["value"]) if row else 0
                 if version > self.SCHEMA_VERSION:
-                    raise AuthorityRegistryError("authority database schema is newer than this package")
+                    raise AuthorityRegistryError(
+                        "authority database schema is newer than this package"
+                    )
                 if version < 1:
                     connection.execute(
                         "CREATE TABLE authority_state ("
@@ -286,10 +301,8 @@ class SQLiteAuthorityRegistry:
             except Exception:
                 connection.rollback()
                 raise
-        try:
+        with contextlib.suppress(OSError):
             os.chmod(self.database, 0o600)
-        except OSError:
-            pass
 
     @staticmethod
     def _load_graph(connection: sqlite3.Connection) -> AuthorityLineageGraph:
@@ -313,7 +326,9 @@ class SQLiteAuthorityRegistry:
             except (TypeError, ValueError, json.JSONDecodeError) as exc:
                 if isinstance(exc, AuthorityRegistryError):
                     raise
-                raise AuthorityRegistryError("stored authority graph failed validation") from exc
+                raise AuthorityRegistryError(
+                    "stored authority graph failed validation"
+                ) from exc
         return graph
 
     def current_epoch(self) -> int:
@@ -331,9 +346,11 @@ class SQLiteAuthorityRegistry:
         with closing(self._connect()) as connection:
             connection.execute("BEGIN IMMEDIATE")
             try:
-                current = int(connection.execute(
-                    "SELECT policy_epoch FROM authority_state WHERE singleton=1"
-                ).fetchone()["policy_epoch"])
+                current = int(
+                    connection.execute(
+                        "SELECT policy_epoch FROM authority_state WHERE singleton=1"
+                    ).fetchone()["policy_epoch"]
+                )
                 new_epoch = current + 1
                 connection.execute(
                     "UPDATE authority_state SET policy_epoch=? WHERE singleton=1",
@@ -353,8 +370,8 @@ class SQLiteAuthorityRegistry:
         self,
         record: AuthorityLineage,
         *,
-        parent_max_fanout: Optional[int] = None,
-        parent_max_calls: Optional[int] = None,
+        parent_max_fanout: int | None = None,
+        parent_max_calls: int | None = None,
     ) -> AuthorityLineage:
         if not isinstance(record, AuthorityLineage):
             raise TypeError("record must be an AuthorityLineage")
@@ -422,7 +439,9 @@ class SQLiteAuthorityRegistry:
                 epoch_row = connection.execute(
                     "SELECT policy_epoch FROM authority_state WHERE singleton=1"
                 ).fetchone()
-                if epoch_row is None or record.policy_epoch != int(epoch_row["policy_epoch"]):
+                if epoch_row is None or record.policy_epoch != int(
+                    epoch_row["policy_epoch"]
+                ):
                     raise AuthorityRegistryError(
                         "authority must be issued at the current policy epoch"
                     )
@@ -509,7 +528,7 @@ class SQLiteAuthorityRegistry:
                 connection.rollback()
                 raise
 
-    def get_authority(self, authority_id: str) -> Optional[AuthorityLineage]:
+    def get_authority(self, authority_id: str) -> AuthorityLineage | None:
         # Return only records from a fully reconstructed graph whose canonical
         # parent edges agree with the SQL columns used by revocation queries.
         with closing(self._connect()) as connection:
@@ -552,7 +571,11 @@ class SQLiteAuthorityRegistry:
 
     def consume_effect(self, authority_id: str, *, max_calls: int) -> int:
         """Atomically consume per-capability and tenant/task-wide call budgets."""
-        if isinstance(max_calls, bool) or not isinstance(max_calls, int) or max_calls < 1:
+        if (
+            isinstance(max_calls, bool)
+            or not isinstance(max_calls, int)
+            or max_calls < 1
+        ):
             raise ValueError("max_calls must be a positive integer")
         with closing(self._connect()) as connection:
             connection.execute("BEGIN IMMEDIATE")
@@ -560,13 +583,17 @@ class SQLiteAuthorityRegistry:
                 graph = self._load_graph(connection)
                 record = graph.get(authority_id)
                 if record is None or not self._is_active(connection, authority_id):
-                    raise AuthorityRegistryError("cannot consume a call for inactive authority")
+                    raise AuthorityRegistryError(
+                        "cannot consume a call for inactive authority"
+                    )
                 row = connection.execute(
                     "SELECT calls_used FROM authority_usage WHERE authority_id=?",
                     (authority_id,),
                 ).fetchone()
                 if row is None:
-                    raise AuthorityRegistryError("durable capability usage state is missing")
+                    raise AuthorityRegistryError(
+                        "durable capability usage state is missing"
+                    )
                 used = int(row["calls_used"])
                 if used >= max_calls:
                     raise AuthorityRegistryError("capability call budget is exhausted")
@@ -611,7 +638,7 @@ class SQLiteAuthorityRegistry:
         self,
         permit: VerifiedResourceCommitPermit,
         payload: Mapping[str, object],
-    ) -> Dict[str, object]:
+    ) -> dict[str, object]:
         """Commit one resource mutation under the same transaction as revocation.
 
         This reference data plane is intentionally colocated with the authority
@@ -621,9 +648,13 @@ class SQLiteAuthorityRegistry:
         and fails. This guarantee does not extend to a remote provider/API.
         """
         if not isinstance(permit, VerifiedResourceCommitPermit):
-            raise TypeError("resource commit requires a cryptographically verified permit")
+            raise TypeError(
+                "resource commit requires a cryptographically verified permit"
+            )
         if permit.action not in {"write_file", "mem_write"}:
-            raise AuthorityRegistryError("resource commit action is not supported by this local commit gate")
+            raise AuthorityRegistryError(
+                "resource commit action is not supported by this local commit gate"
+            )
         if (
             not isinstance(permit.resource, str)
             or not permit.resource
@@ -664,7 +695,9 @@ class SQLiteAuthorityRegistry:
                 or len(digest) != 64
                 or any(character not in "0123456789abcdef" for character in digest)
             ):
-                raise ValueError(f"commit permit {name} must be a lowercase SHA-256 digest")
+                raise ValueError(
+                    f"commit permit {name} must be a lowercase SHA-256 digest"
+                )
         if not isinstance(payload, Mapping):
             raise TypeError("fenced resource payload must be a JSON object")
         try:
@@ -673,7 +706,9 @@ class SQLiteAuthorityRegistry:
             raise ValueError("fenced resource payload must be canonical JSON") from exc
         payload_digest = hashlib.sha256(encoded_payload).hexdigest()
         if not hmac.compare_digest(payload_digest, permit.payload_digest):
-            raise AuthorityRegistryError("resource payload does not match the signed commit permit")
+            raise AuthorityRegistryError(
+                "resource payload does not match the signed commit permit"
+            )
         now = int(self.clock())
         if (
             permit.issued_at > now + 30
@@ -681,7 +716,9 @@ class SQLiteAuthorityRegistry:
             or permit.expires_at <= permit.issued_at
             or permit.expires_at - permit.issued_at > 30
         ):
-            raise AuthorityRegistryError("resource commit permit is expired or has an invalid lifetime")
+            raise AuthorityRegistryError(
+                "resource commit permit is expired or has an invalid lifetime"
+            )
 
         encoded_value = encoded_payload.decode("utf-8")
         with closing(self._connect()) as connection:
@@ -689,8 +726,12 @@ class SQLiteAuthorityRegistry:
             try:
                 graph = self._load_graph(connection)
                 record = graph.get(permit.authority_id)
-                if record is None or not self._is_active(connection, permit.authority_id):
-                    raise AuthorityRegistryError("resource commit authority is expired, revoked, stale or unknown")
+                if record is None or not self._is_active(
+                    connection, permit.authority_id
+                ):
+                    raise AuthorityRegistryError(
+                        "resource commit authority is expired, revoked, stale or unknown"
+                    )
                 if (
                     record.issuer != permit.issuer
                     or record.tenant != permit.tenant
@@ -698,20 +739,26 @@ class SQLiteAuthorityRegistry:
                     or record.purpose != permit.purpose
                     or record.policy_epoch != permit.policy_epoch
                 ):
-                    raise AuthorityRegistryError("resource commit permit does not match the active authority record")
+                    raise AuthorityRegistryError(
+                        "resource commit permit does not match the active authority record"
+                    )
                 patterns = dict(record.grants).get(permit.action, ())
                 if not any(
                     grant_pattern_is_subset(permit.resource, pattern)
                     for pattern in patterns
                 ):
-                    raise AuthorityRegistryError("active authority does not grant the fenced resource target")
+                    raise AuthorityRegistryError(
+                        "active authority does not grant the fenced resource target"
+                    )
 
                 usage = connection.execute(
                     "SELECT calls_used FROM authority_usage WHERE authority_id=?",
                     (permit.authority_id,),
                 ).fetchone()
                 if usage is None or int(usage["calls_used"]) >= permit.max_calls:
-                    raise AuthorityRegistryError("capability call budget is exhausted at resource commit")
+                    raise AuthorityRegistryError(
+                        "capability call budget is exhausted at resource commit"
+                    )
                 task_usage = connection.execute(
                     "SELECT calls_used,max_task_calls FROM task_usage WHERE tenant=? AND task_id=?",
                     (record.tenant, record.task_id),
@@ -721,7 +768,9 @@ class SQLiteAuthorityRegistry:
                     or int(task_usage["max_task_calls"]) != record.max_task_calls
                     or int(task_usage["calls_used"]) >= record.max_task_calls
                 ):
-                    raise AuthorityRegistryError("task-wide call budget is exhausted or inconsistent at resource commit")
+                    raise AuthorityRegistryError(
+                        "task-wide call budget is exhausted or inconsistent at resource commit"
+                    )
 
                 # The unique nonce prevents a captured commit permit from being
                 # replayed to produce a second mutation or quota charge.
@@ -758,7 +807,9 @@ class SQLiteAuthorityRegistry:
                     (record.tenant, record.task_id),
                 )
                 if updated.rowcount != 1:
-                    raise AuthorityRegistryError("task-wide quota was exhausted during resource commit")
+                    raise AuthorityRegistryError(
+                        "task-wide quota was exhausted during resource commit"
+                    )
 
                 existing = connection.execute(
                     "SELECT version FROM paca_resource_values "
@@ -820,7 +871,9 @@ class SQLiteAuthorityRegistry:
         """
         values = (principal, tenant, task_id, message_id)
         if any(not isinstance(value, str) or not value for value in values):
-            raise ValueError("message receipt identity fields must be non-empty strings")
+            raise ValueError(
+                "message receipt identity fields must be non-empty strings"
+            )
         if len(message_id) > 256:
             raise ValueError("message_id exceeds the supported length")
         try:
@@ -846,7 +899,11 @@ class SQLiteAuthorityRegistry:
         """Atomically enforce replay, per-capability and task-wide receive budgets."""
         if not isinstance(message_id, str) or not message_id or len(message_id) > 256:
             raise ValueError("message_id must be a non-empty bounded string")
-        if isinstance(max_calls, bool) or not isinstance(max_calls, int) or max_calls < 1:
+        if (
+            isinstance(max_calls, bool)
+            or not isinstance(max_calls, int)
+            or max_calls < 1
+        ):
             raise ValueError("max_calls must be a positive integer")
         with closing(self._connect()) as connection:
             connection.execute("BEGIN IMMEDIATE")
@@ -867,9 +924,7 @@ class SQLiteAuthorityRegistry:
                     )
                 used = int(usage["calls_used"])
                 if used >= max_calls:
-                    raise AuthorityRegistryError(
-                        "recipient call budget is exhausted"
-                    )
+                    raise AuthorityRegistryError("recipient call budget is exhausted")
 
                 task_row = connection.execute(
                     "SELECT calls_used,max_task_calls FROM task_usage "
@@ -893,8 +948,12 @@ class SQLiteAuthorityRegistry:
                         "principal,tenant,task_id,message_id,authority_id,received_at"
                         ") VALUES(?,?,?,?,?,?)",
                         (
-                            record.principal, record.tenant, record.task_id,
-                            message_id, authority_id, int(self.clock()),
+                            record.principal,
+                            record.tenant,
+                            record.task_id,
+                            message_id,
+                            authority_id,
+                            int(self.clock()),
                         ),
                     )
                 except sqlite3.IntegrityError as exc:
@@ -922,7 +981,7 @@ class SQLiteAuthorityRegistry:
                 connection.rollback()
                 raise
 
-    def usage(self, authority_id: str) -> Tuple[int, int]:
+    def usage(self, authority_id: str) -> tuple[int, int]:
         with closing(self._connect()) as connection:
             row = connection.execute(
                 "SELECT calls_used,fanout_used FROM authority_usage WHERE authority_id=?",
@@ -931,7 +990,8 @@ class SQLiteAuthorityRegistry:
         if row is None:
             raise KeyError(authority_id)
         return int(row["calls_used"]), int(row["fanout_used"])
-    def task_usage(self, tenant: str, task_id: str) -> Tuple[int, int]:
+
+    def task_usage(self, tenant: str, task_id: str) -> tuple[int, int]:
         """Return (calls_used, max_task_calls) for one authenticated tenant/task."""
         if not isinstance(tenant, str) or not tenant:
             raise ValueError("tenant must be a non-empty string")
@@ -958,27 +1018,34 @@ class SQLiteAuthorityRegistry:
         with closing(self._connect()) as connection:
             graph = self._load_graph(connection)
             if graph.get(authority_id) is None:
-                raise AuthorityRegistryError("authority is missing from the validated delegation graph")
+                raise AuthorityRegistryError(
+                    "authority is missing from the validated delegation graph"
+                )
             active = self._is_active(connection, authority_id)
             row = connection.execute(
                 "SELECT record_json FROM authority_records WHERE authority_id=?",
                 (authority_id,),
             ).fetchone()
         if not active or row is None:
-            raise AuthorityRegistryError("authority is expired, revoked, stale or unknown")
+            raise AuthorityRegistryError(
+                "authority is expired, revoked, stale or unknown"
+            )
         return _record_from_dict(json.loads(row["record_json"]))
 
-    def revoke(self, authority_id: str, reason: str) -> Tuple[str, ...]:
+    def revoke(self, authority_id: str, reason: str) -> tuple[str, ...]:
         if not isinstance(reason, str) or not reason.strip():
             raise ValueError("revocation requires a reason")
         with closing(self._connect()) as connection:
             connection.execute("BEGIN IMMEDIATE")
             try:
                 self._load_graph(connection)
-                if connection.execute(
-                    "SELECT 1 FROM authority_records WHERE authority_id=?",
-                    (authority_id,),
-                ).fetchone() is None:
+                if (
+                    connection.execute(
+                        "SELECT 1 FROM authority_records WHERE authority_id=?",
+                        (authority_id,),
+                    ).fetchone()
+                    is None
+                ):
                     raise KeyError(authority_id)
                 connection.execute(
                     "INSERT OR IGNORE INTO authority_revocations(authority_id,revoked_at,reason) "
@@ -1000,12 +1067,14 @@ class SQLiteAuthorityRegistry:
                 connection.rollback()
                 raise
 
-    def policy_events(self) -> Tuple[Tuple[int, int, str], ...]:
+    def policy_events(self) -> tuple[tuple[int, int, str], ...]:
         with closing(self._connect()) as connection:
             rows = connection.execute(
                 "SELECT epoch,changed_at,reason FROM policy_epoch_events ORDER BY epoch"
             ).fetchall()
-        return tuple((int(row["epoch"]), int(row["changed_at"]), row["reason"]) for row in rows)
+        return tuple(
+            (int(row["epoch"]), int(row["changed_at"]), row["reason"]) for row in rows
+        )
 
 
 @dataclass(frozen=True)
@@ -1035,7 +1104,11 @@ class HMACCapabilityAuthority:
     ) -> None:
         if not isinstance(key, bytes) or len(key) < 32:
             raise ValueError("HMAC key must contain at least 32 bytes")
-        for name, value in (("issuer_id", issuer_id), ("key_id", key_id), ("audience", audience)):
+        for name, value in (
+            ("issuer_id", issuer_id),
+            ("key_id", key_id),
+            ("audience", audience),
+        ):
             if not isinstance(value, str) or not value:
                 raise ValueError(name + " must be a non-empty string")
         self.registry = registry
@@ -1043,7 +1116,9 @@ class HMACCapabilityAuthority:
         self.key_id = key_id
         self._key = bytes(key)
         if not callable(identity_verifier):
-            raise TypeError("identity_verifier must bind a principal to a tenant using trusted identity state")
+            raise TypeError(
+                "identity_verifier must bind a principal to a tenant using trusted identity state"
+            )
         if not callable(task_context_verifier):
             raise TypeError(
                 "task_context_verifier must validate principal, tenant, task and purpose "
@@ -1097,7 +1172,9 @@ class HMACCapabilityAuthority:
             ):
                 raise ValueError(f"{name} must be a lowercase SHA-256 digest")
         if action not in {"write_file", "mem_write"}:
-            raise ValueError("resource commit permits are supported only for write_file and mem_write")
+            raise ValueError(
+                "resource commit permits are supported only for write_file and mem_write"
+            )
         if not isinstance(resource, str) or not resource or len(resource) > 4096:
             raise ValueError("resource must be a non-empty bounded key")
         if (
@@ -1105,14 +1182,18 @@ class HMACCapabilityAuthority:
             or not isinstance(lifetime_seconds, int)
             or not 1 <= lifetime_seconds <= 30
         ):
-            raise ValueError("resource commit permit lifetime must be between 1 and 30 seconds")
+            raise ValueError(
+                "resource commit permit lifetime must be between 1 and 30 seconds"
+            )
         signed = self.verify(capability_token)
         capability = signed.capability
         record = capability.authority_lineage
         if record is None:
-            raise CapabilityAuthenticationError("resource commit capability lacks authority lineage")
+            raise CapabilityAuthenticationError(
+                "resource commit capability lacks authority lineage"
+            )
         now = int(self.clock())
-        payload: Dict[str, object] = {
+        payload: dict[str, object] = {
             "version": 1,
             "issuer": self.issuer_id,
             "key_id": self.key_id,
@@ -1147,10 +1228,13 @@ class HMACCapabilityAuthority:
                 raise ValueError("invalid resource commit permit size or type")
             version, key_id, body, signature = token.split(".")
             if version != "resource-commit-v1" or key_id != self.key_id:
-                raise ValueError("resource commit permit version or key identifier mismatch")
+                raise ValueError(
+                    "resource commit permit version or key identifier mismatch"
+                )
             signing_input = version + "." + key_id + "." + body
             if not self._verify_bytes(
-                signing_input.encode("ascii"), _b64decode(signature),
+                signing_input.encode("ascii"),
+                _b64decode(signature),
             ):
                 raise ValueError("resource commit permit signature mismatch")
             payload = json.loads(_b64decode(body))
@@ -1158,18 +1242,37 @@ class HMACCapabilityAuthority:
                 raise ValueError("resource commit permit payload is malformed")
             if payload.get("issuer") != self.issuer_id:
                 raise ValueError("resource commit permit issuer mismatch")
-            if payload.get("key_id") != self.key_id or payload.get("audience") != self.audience:
+            if (
+                payload.get("key_id") != self.key_id
+                or payload.get("audience") != self.audience
+            ):
                 raise ValueError("resource commit permit key or audience mismatch")
             if payload.get("signature_algorithm") != self.SIGNATURE_ALGORITHM:
                 raise ValueError("resource commit permit signature algorithm mismatch")
             expected_fields = {
-                "version", "signature_algorithm", "issuer", "key_id", "audience", "authority_id",
-                "tenant", "task_id", "purpose", "policy_epoch", "issued_at",
-                "expires_at", "max_calls", "action", "resource", "request_digest",
-                "payload_digest", "nonce",
+                "version",
+                "signature_algorithm",
+                "issuer",
+                "key_id",
+                "audience",
+                "authority_id",
+                "tenant",
+                "task_id",
+                "purpose",
+                "policy_epoch",
+                "issued_at",
+                "expires_at",
+                "max_calls",
+                "action",
+                "resource",
+                "request_digest",
+                "payload_digest",
+                "nonce",
             }
             if set(payload) != expected_fields:
-                raise ValueError("resource commit permit contains missing or unknown fields")
+                raise ValueError(
+                    "resource commit permit contains missing or unknown fields"
+                )
             result = VerifiedResourceCommitPermit(
                 nonce=payload["nonce"],
                 issuer=payload["issuer"],
@@ -1195,10 +1298,16 @@ class HMACCapabilityAuthority:
                 or result.expires_at <= result.issued_at
                 or result.expires_at - result.issued_at > 30
             ):
-                raise ValueError("resource commit permit is expired or has an invalid lifetime")
+                raise ValueError(
+                    "resource commit permit is expired or has an invalid lifetime"
+                )
             return result
         except (
-            ValueError, TypeError, KeyError, json.JSONDecodeError, AuthorityRegistryError,
+            ValueError,
+            TypeError,
+            KeyError,
+            json.JSONDecodeError,
+            AuthorityRegistryError,
             sqlite3.Error,
         ) as exc:
             raise CapabilityAuthenticationError(
@@ -1209,24 +1318,36 @@ class HMACCapabilityAuthority:
         self,
         *,
         principal: str,
-        tenant: Optional[str] = None,
-        task_id: Optional[str] = None,
-        purpose: Optional[str] = None,
+        tenant: str | None = None,
+        task_id: str | None = None,
+        purpose: str | None = None,
         grants: Mapping[str, Iterable[str]],
         expires_at: int,
         role: str = "assistant",
         max_calls: int = 40,
         max_fanout: int = 5,
-        max_task_calls: Optional[int] = None,
-        tool_pins: Optional[Mapping[str, str]] = None,
-        parent_token: Optional[str] = None,
+        max_task_calls: int | None = None,
+        tool_pins: Mapping[str, str] | None = None,
+        parent_token: str | None = None,
     ) -> SignedCapability:
         now = int(self.clock())
-        if isinstance(expires_at, bool) or not isinstance(expires_at, int) or expires_at <= now:
+        if (
+            isinstance(expires_at, bool)
+            or not isinstance(expires_at, int)
+            or expires_at <= now
+        ):
             raise ValueError("expires_at must be a future Unix timestamp in seconds")
-        if isinstance(max_calls, bool) or not isinstance(max_calls, int) or max_calls < 1:
+        if (
+            isinstance(max_calls, bool)
+            or not isinstance(max_calls, int)
+            or max_calls < 1
+        ):
             raise ValueError("max_calls must be a positive integer")
-        if isinstance(max_fanout, bool) or not isinstance(max_fanout, int) or max_fanout < 1:
+        if (
+            isinstance(max_fanout, bool)
+            or not isinstance(max_fanout, int)
+            or max_fanout < 1
+        ):
             raise ValueError("max_fanout must be a positive integer")
         if max_task_calls is not None and (
             isinstance(max_task_calls, bool)
@@ -1234,10 +1355,18 @@ class HMACCapabilityAuthority:
             or max_task_calls < 1
         ):
             raise ValueError("max_task_calls must be a positive integer")
-        if not isinstance(principal, str) or not principal or not isinstance(role, str) or not role:
+        if (
+            not isinstance(principal, str)
+            or not principal
+            or not isinstance(role, str)
+            or not role
+        ):
             raise ValueError("principal and role must be non-empty strings")
         pins = dict(tool_pins or {})
-        if any(not isinstance(k, str) or not k or not isinstance(v, str) or not v for k, v in pins.items()):
+        if any(
+            not isinstance(k, str) or not k or not isinstance(v, str) or not v
+            for k, v in pins.items()
+        ):
             raise ValueError("tool pins must map non-empty names to non-empty hashes")
         epoch = self.registry.current_epoch()
         parent_id = None
@@ -1246,7 +1375,9 @@ class HMACCapabilityAuthority:
             parent_signed = self.verify(parent_token)
             parent_record = parent_signed.capability.authority_lineage
             if parent_record is None:
-                raise CapabilityAuthenticationError("delegation parent lacks authority lineage")
+                raise CapabilityAuthenticationError(
+                    "delegation parent lacks authority lineage"
+                )
             parent_id = parent_record.authority_id
             self.registry.assert_active(parent_id)
             if (
@@ -1259,13 +1390,19 @@ class HMACCapabilityAuthority:
             max_task_calls = parent_record.max_task_calls
             delegated_targets = dict(parent_record.grants).get("delegate", ())
             from .authority import grant_pattern_is_subset
+
             if not delegated_targets or not any(
-                grant_pattern_is_subset(principal, target) for target in delegated_targets
+                grant_pattern_is_subset(principal, target)
+                for target in delegated_targets
             ):
-                raise ValueError("parent capability does not authorise delegation to this principal")
+                raise ValueError(
+                    "parent capability does not authorise delegation to this principal"
+                )
             parent_pins = parent_signed.capability.tool_pins
             if any(parent_pins.get(name) != digest for name, digest in pins.items()):
-                raise ValueError("delegated tool pins must be a subset of the parent's pins")
+                raise ValueError(
+                    "delegated tool pins must be a subset of the parent's pins"
+                )
             tenant = parent_record.tenant
             task_id = parent_record.task_id
             purpose = parent_record.purpose
@@ -1278,18 +1415,30 @@ class HMACCapabilityAuthority:
             parent_digest = self.registry.chain_digest(parent_id)
         if max_task_calls is None:
             max_task_calls = self.DEFAULT_TASK_MAX_CALLS
-        if any(value is None or not isinstance(value, str) or not value for value in (tenant, task_id, purpose)):
-            raise ValueError("root capability issuance requires tenant, task_id and purpose")
+        if any(
+            value is None or not isinstance(value, str) or not value
+            for value in (tenant, task_id, purpose)
+        ):
+            raise ValueError(
+                "root capability issuance requires tenant, task_id and purpose"
+            )
         try:
             authenticated = bool(self.identity_verifier(principal, str(tenant)))
         except Exception as exc:
-            raise CapabilityAuthenticationError("trusted principal authentication failed") from exc
+            raise CapabilityAuthenticationError(
+                "trusted principal authentication failed"
+            ) from exc
         if not authenticated:
-            raise CapabilityAuthenticationError("principal is not authenticated for the requested tenant")
+            raise CapabilityAuthenticationError(
+                "principal is not authenticated for the requested tenant"
+            )
         try:
             task_context_authenticated = bool(
                 self.task_context_verifier(
-                    principal, str(tenant), str(task_id), str(purpose),
+                    principal,
+                    str(tenant),
+                    str(task_id),
+                    str(purpose),
                 )
             )
         except Exception as exc:
@@ -1318,7 +1467,9 @@ class HMACCapabilityAuthority:
         self.registry.register_authority(
             record,
             parent_max_fanout=(
-                parent_signed.capability.max_fanout if parent_token is not None else None
+                parent_signed.capability.max_fanout
+                if parent_token is not None
+                else None
             ),
             parent_max_calls=(
                 parent_signed.capability.max_calls if parent_token is not None else None
@@ -1338,7 +1489,7 @@ class HMACCapabilityAuthority:
             parent=record.parent_id,
             authority_lineage=record,
         )
-        payload: Dict[str, object] = {
+        payload: dict[str, object] = {
             "version": self.TOKEN_VERSION,
             "issuer": self.issuer_id,
             "audience": self.audience,
@@ -1352,10 +1503,12 @@ class HMACCapabilityAuthority:
         }
         return SignedCapability(self._encode(payload), capability)
 
-    def verify(self, token: str, *, audience: Optional[str] = None) -> SignedCapability:
+    def verify(self, token: str, *, audience: str | None = None) -> SignedCapability:
         try:
-            if not isinstance(token, str) or len(token) > 65536:
-                raise ValueError("invalid token size or type")
+            if not isinstance(token, str):
+                raise TypeError("token must be a string")
+            if len(token) > 65536:
+                raise ValueError("token exceeds the maximum size")
             key_id, body, signature = token.split(".")
             if key_id != self.key_id:
                 raise ValueError("unknown signing key")
@@ -1365,25 +1518,37 @@ class HMACCapabilityAuthority:
                 raise ValueError("signature mismatch")
             payload = json.loads(_b64decode(body))
             if not isinstance(payload, dict):
-                raise ValueError("token payload is not an object")
+                raise TypeError("token payload must be an object")
             if payload.get("version") != self.TOKEN_VERSION:
                 raise ValueError("unsupported token version")
             token_algorithm = payload.get("signature_algorithm")
             if token_algorithm not in (None, self.SIGNATURE_ALGORITHM):
                 raise ValueError("token signature algorithm mismatch")
-            if self.SIGNATURE_ALGORITHM != "HS256" and token_algorithm != self.SIGNATURE_ALGORITHM:
-                raise ValueError("asymmetric token is missing its required signature algorithm")
-            if payload.get("key_id") != self.key_id or payload.get("issuer") != self.issuer_id:
+            if (
+                self.SIGNATURE_ALGORITHM != "HS256"
+                and token_algorithm != self.SIGNATURE_ALGORITHM
+            ):
+                raise ValueError(
+                    "asymmetric token is missing its required signature algorithm"
+                )
+            if (
+                payload.get("key_id") != self.key_id
+                or payload.get("issuer") != self.issuer_id
+            ):
                 raise ValueError("issuer or key identifier mismatch")
             expected_audience = audience or self.audience
             if payload.get("audience") != expected_audience:
                 raise ValueError("token audience mismatch")
             issued_at = payload.get("issued_at")
-            if isinstance(issued_at, bool) or not isinstance(issued_at, int) or issued_at > int(self.clock()) + 30:
+            if (
+                isinstance(issued_at, bool)
+                or not isinstance(issued_at, int)
+                or issued_at > int(self.clock()) + 30
+            ):
                 raise ValueError("invalid token issuance time")
             authority_data = payload.get("authority")
             if not isinstance(authority_data, dict):
-                raise ValueError("authority record is missing")
+                raise TypeError("authority record must be an object")
             record = _record_from_dict(authority_data)
             if record.issuer != self.issuer_id:
                 raise ValueError("authority issuer mismatch")
@@ -1397,12 +1562,21 @@ class HMACCapabilityAuthority:
             pins = payload.get("tool_pins")
             if not isinstance(role, str) or not role:
                 raise ValueError("invalid capability role")
-            if isinstance(max_calls, bool) or not isinstance(max_calls, int) or max_calls < 1:
+            if (
+                isinstance(max_calls, bool)
+                or not isinstance(max_calls, int)
+                or max_calls < 1
+            ):
                 raise ValueError("invalid call budget")
-            if isinstance(max_fanout, bool) or not isinstance(max_fanout, int) or max_fanout < 1:
+            if (
+                isinstance(max_fanout, bool)
+                or not isinstance(max_fanout, int)
+                or max_fanout < 1
+            ):
                 raise ValueError("invalid fan-out budget")
             if not isinstance(pins, dict) or any(
-                not isinstance(k, str) or not isinstance(v, str) for k, v in pins.items()
+                not isinstance(k, str) or not isinstance(v, str)
+                for k, v in pins.items()
             ):
                 raise ValueError("invalid tool pins")
             capability = Capability(
@@ -1421,10 +1595,19 @@ class HMACCapabilityAuthority:
             )
             capability.validate_authority_lineage()
             return SignedCapability(token, capability)
-        except (ValueError, TypeError, KeyError, json.JSONDecodeError, AuthorityRegistryError, sqlite3.Error) as exc:
+        except (
+            ValueError,
+            TypeError,
+            KeyError,
+            json.JSONDecodeError,
+            AuthorityRegistryError,
+            sqlite3.Error,
+        ) as exc:
             if isinstance(exc, CapabilityAuthenticationError):
                 raise
-            raise CapabilityAuthenticationError("capability authentication or active-state validation failed") from exc
+            raise CapabilityAuthenticationError(
+                "capability authentication or active-state validation failed"
+            ) from exc
 
 
 class Ed25519CapabilityAuthority(HMACCapabilityAuthority):
@@ -1447,8 +1630,8 @@ class Ed25519CapabilityAuthority(HMACCapabilityAuthority):
         audience: str,
         identity_verifier: Callable[[str, str], bool],
         task_context_verifier: Callable[[str, str, str, str], bool],
-        public_key: Optional[bytes] = None,
-        private_key: Optional[bytes] = None,
+        public_key: bytes | None = None,
+        private_key: bytes | None = None,
         clock=time.time,
     ) -> None:
         if public_key is None and private_key is None:
@@ -1475,19 +1658,28 @@ class Ed25519CapabilityAuthority(HMACCapabilityAuthority):
 
         signing_key = (
             Ed25519PrivateKey.from_private_bytes(private_key)
-            if private_key is not None else None
+            if private_key is not None
+            else None
         )
         derived_public = (
             signing_key.public_key().public_bytes(
                 encoding=serialization.Encoding.Raw,
                 format=serialization.PublicFormat.Raw,
             )
-            if signing_key is not None else None
+            if signing_key is not None
+            else None
         )
-        if public_key is not None and derived_public is not None and not hmac.compare_digest(
-            public_key, derived_public,
+        if (
+            public_key is not None
+            and derived_public is not None
+            and not hmac.compare_digest(
+                public_key,
+                derived_public,
+            )
         ):
-            raise ValueError("Ed25519 public key does not match the supplied private key")
+            raise ValueError(
+                "Ed25519 public key does not match the supplied private key"
+            )
         verification_bytes = public_key or derived_public
         if verification_bytes is None:
             raise ValueError("Ed25519 verification key is missing")
@@ -1542,7 +1734,8 @@ class Ed25519CapabilityAuthority(HMACCapabilityAuthority):
                 "public-key-only verifier cannot issue resource commit permits"
             )
         return super().issue_resource_commit_permit(
-            capability_token, **kwargs,
+            capability_token,
+            **kwargs,
         )  # type: ignore[arg-type]
 
 

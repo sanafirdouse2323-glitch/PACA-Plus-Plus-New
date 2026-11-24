@@ -1,4 +1,5 @@
 """Local reference decision API for PACA++; it never executes side effects."""
+
 from __future__ import annotations
 
 import hashlib
@@ -74,16 +75,24 @@ def _get_capability(data: CapabilityInput) -> Capability:
         if previous:
             old_fingerprint, capability = previous
             if old_fingerprint != fingerprint:
-                raise HTTPException(409, "capability authority cannot change for an active id")
+                raise HTTPException(
+                    409, "capability authority cannot change for an active id"
+                )
             return capability
         task_identity = json.dumps(
             [data.principal, data.tenant, data.task], separators=(",", ":")
         ).encode()
         task_id = "reference:" + hashlib.sha256(task_identity).hexdigest()
         capability = Capability(
-            data.id, data.principal, data.tenant, task_id, data.role,
-            grants=grants, expires=data.expires,
-            max_calls=data.max_calls, max_fanout=data.max_fanout,
+            data.id,
+            data.principal,
+            data.tenant,
+            task_id,
+            data.role,
+            grants=grants,
+            expires=data.expires,
+            max_calls=data.max_calls,
+            max_fanout=data.max_fanout,
         )
         _capabilities[key] = (fingerprint, capability)
         return capability

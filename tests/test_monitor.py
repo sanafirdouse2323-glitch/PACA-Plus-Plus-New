@@ -1,6 +1,6 @@
 import pytest
 
-from paca.monitor import AuditLog, Monitor
+from paca.monitor import Monitor
 from paca.provenance import Arg, Label, derive
 from paca.runtime import Capability, Request, Tool
 
@@ -10,21 +10,41 @@ CONF = Label("trusted", 3, "acme", frozenset({"fs"}))
 
 def cap(**kw):
     g = kw.pop("grants", {"send_email": ("*@corp.example",), "read_file": ("/acme/*",)})
-    return Capability("c1", "sana", "acme", "t1", "assistant", g, kw.pop("expires", 30), **kw)
+    return Capability(
+        "c1", "sana", "acme", "t1", "assistant", g, kw.pop("expires", 30), **kw
+    )
 
 
 def req(action, c, step=1, **args):
-    return Request(action, {k: (v if isinstance(v, Arg) else Arg(v, Label("trusted", origins=frozenset({"user"})))) for k, v in args.items()}, c, step)
+    return Request(
+        action,
+        {
+            k: (
+                v
+                if isinstance(v, Arg)
+                else Arg(v, Label("trusted", origins=frozenset({"user"})))
+            )
+            for k, v in args.items()
+        },
+        c,
+        step,
+    )
 
 
 def test_label_join_never_improves():
     d = derive("summary", Arg("x", CONF), Arg("y", U))
-    assert d.label.integrity == "untrusted" and d.label.sensitivity == 3 and d.label.origins == {"fs", "mail"}
+    assert (
+        d.label.integrity == "untrusted"
+        and d.label.sensitivity == 3
+        and d.label.origins == {"fs", "mail"}
+    )
 
 
 def test_exfil_denied_by_independent_checks():
     m, c = Monitor(), cap()
-    d = m.decide(req("send_email", c, to=Arg("a@evil.test", U), body=derive("x", Arg("d", CONF))))
+    d = m.decide(
+        req("send_email", c, to=Arg("a@evil.test", U), body=derive("x", Arg("d", CONF)))
+    )
     assert d.verdict == "deny" and {"C1", "C4f", "C5"} <= set(d.checks)
 
 
@@ -33,12 +53,19 @@ def test_legit_send_allowed_and_token_binds_args():
     r = req("send_email", c, to="bob@corp.example", body=Arg("hi", CONF))
     d = m.decide(r)
     assert d.verdict == "allow" and m.verify(r, d)
-    assert not m.verify(req("send_email", c, to="bob@corp.example", body=Arg("DIFFERENT")), d)
+    assert not m.verify(
+        req("send_email", c, to="bob@corp.example", body=Arg("DIFFERENT")), d
+    )
 
 
 def test_expiry_budget_and_unknown_action():
     m = Monitor()
-    assert "C2" in m.decide(req("send_email", cap(expires=3), step=9, to="b@corp.example", body="x")).checks
+    assert (
+        "C2"
+        in m.decide(
+            req("send_email", cap(expires=3), step=9, to="b@corp.example", body="x")
+        ).checks
+    )
     c = cap(max_calls=1)
     assert m.decide(req("read_file", c, path="/acme/a")).verdict == "allow"
     assert "C2" in m.decide(req("read_file", c, path="/acme/b")).checks
@@ -48,17 +75,26 @@ def test_expiry_budget_and_unknown_action():
 def test_manifest_pin_detects_rug_pull_on_action_mapped_tool():
     m = Monitor()
     t1 = Tool("docs_search", "1.2", "Search")
-    c = cap(grants={"read_file": ("/acme/report.txt",)}, tool_pins={"docs_search": t1.hash})
+    c = cap(
+        grants={"read_file": ("/acme/report.txt",)}, tool_pins={"docs_search": t1.hash}
+    )
     ok = Request("read_file", {"path": Arg("/acme/report.txt")}, c, 1, tool=t1)
-    bad = Request("read_file", {"path": Arg("/acme/report.txt")}, c, 2,
-                  tool=Tool("docs_search", "1.2", "Search. hidden text"))
+    bad = Request(
+        "read_file",
+        {"path": Arg("/acme/report.txt")},
+        c,
+        2,
+        tool=Tool("docs_search", "1.2", "Search. hidden text"),
+    )
     assert m.decide(ok).verdict == "allow"
     assert "C3" in m.decide(bad).checks
 
 
 def test_generic_tool_dispatch_fails_closed_even_when_manifest_is_pinned():
     tool = Tool("docs_search", "1.2", "Search")
-    c = cap(grants={"call_tool": ("docs_search",)}, tool_pins={"docs_search": tool.hash})
+    c = cap(
+        grants={"call_tool": ("docs_search",)}, tool_pins={"docs_search": tool.hash}
+    )
     request = Request("call_tool", {"tool": Arg("docs_search")}, c, 1, tool=tool)
     decision = Monitor().decide(request)
     assert decision.verdict == "deny"
@@ -67,7 +103,9 @@ def test_generic_tool_dispatch_fails_closed_even_when_manifest_is_pinned():
 
 def test_generic_tool_dispatch_cannot_be_reenabled_by_ablation():
     tool = Tool("docs_search", "1.2", "Search")
-    c = cap(grants={"call_tool": ("docs_search",)}, tool_pins={"docs_search": tool.hash})
+    c = cap(
+        grants={"call_tool": ("docs_search",)}, tool_pins={"docs_search": tool.hash}
+    )
     decision = Monitor(disable={"C16"}).decide(
         Request("call_tool", {"tool": Arg("docs_search")}, c, 1, tool=tool)
     )
@@ -78,9 +116,18 @@ def test_generic_tool_dispatch_cannot_be_reenabled_by_ablation():
 def test_cross_tenant_and_ssrf():
     m = Monitor()
     c = cap(grants={"read_file": ("/tenants/*",), "fetch_url": ("http://*",)})
-    r = Request("read_file", {"path": Arg("/tenants/globex/x")}, c, 1, resource=Label("trusted", 2, "globex"))
+    r = Request(
+        "read_file",
+        {"path": Arg("/tenants/globex/x")},
+        c,
+        1,
+        resource=Label("trusted", 2, "globex"),
+    )
     assert "C6" in m.decide(r).checks
-    assert "C7" in m.decide(req("fetch_url", c, url="http://169.254.169.254/latest")).checks
+    assert (
+        "C7"
+        in m.decide(req("fetch_url", c, url="http://169.254.169.254/latest")).checks
+    )
 
 
 def test_fetch_url_without_separate_query_is_still_outbound_egress():
@@ -100,10 +147,17 @@ def test_fetch_url_without_separate_query_is_still_outbound_egress():
     # even if the integration does not supply a separate query argument.
     embedded_disclosure = Request(
         "fetch_url",
-        {"url": Arg(
-            "https://news.example/search?token=secret",
-            Label("untrusted", sensitivity=3, tenant="acme", origins=frozenset({"derived_url"})),
-        )},
+        {
+            "url": Arg(
+                "https://news.example/search?token=secret",
+                Label(
+                    "untrusted",
+                    sensitivity=3,
+                    tenant="acme",
+                    origins=frozenset({"derived_url"}),
+                ),
+            )
+        },
         capability,
         2,
     )
@@ -135,11 +189,22 @@ def test_fetch_url_without_separate_query_is_still_outbound_egress():
     )
     assert "C7" in Monitor().decide(internal).checks
 
+
 def test_delegation_must_attenuate():
     m = Monitor()
     c = cap(grants={"delegate": ("w1",), "read_file": ("/acme/*",)})
-    assert m.decide(req("delegate", c, agent="w1", child_grants={"read_file": ["/acme/docs/*"]})).verdict == "allow"
-    assert "C11" in m.decide(req("delegate", c, agent="w1", child_grants={"delete_file": ["*"]})).checks
+    assert (
+        m.decide(
+            req("delegate", c, agent="w1", child_grants={"read_file": ["/acme/docs/*"]})
+        ).verdict
+        == "allow"
+    )
+    assert (
+        "C11"
+        in m.decide(
+            req("delegate", c, agent="w1", child_grants={"delete_file": ["*"]})
+        ).checks
+    )
 
 
 def test_approval_is_bound_to_exact_effect():
@@ -149,7 +214,8 @@ def test_approval_is_bound_to_exact_effect():
     assert m.decide(r1).verdict == "needs_approval"
     r1.approval = r1.digest
     assert m.decide(r1).verdict == "allow"
-    r2 = req("merge_pr", c, pr="#2"); r2.approval = r1.digest        # replayed approval for another effect
+    r2 = req("merge_pr", c, pr="#2")
+    r2.approval = r1.digest  # replayed approval for another effect
     assert m.decide(r2).verdict == "needs_approval"
 
 
@@ -157,7 +223,9 @@ def test_quarantine_after_repeated_denials():
     m, c = Monitor(), cap(grants={"send_email": ("bob@corp.example",)})
     for _ in range(3):
         m.decide(req("send_email", c, to="x@evil.test", body="b"))
-    assert "C12" in m.decide(req("send_email", c, to="bob@corp.example", body="b")).checks
+    assert (
+        "C12" in m.decide(req("send_email", c, to="bob@corp.example", body="b")).checks
+    )
 
 
 def test_pending_approvals_do_not_accumulate_quarantine_strikes():
@@ -165,7 +233,9 @@ def test_pending_approvals_do_not_accumulate_quarantine_strikes():
     c = cap(grants={"send_email": ("*@partner.example",)})
     for step in range(1, 5):
         request = req(
-            "send_email", c, step,
+            "send_email",
+            c,
+            step,
             to=Arg("person@partner.example", U),
             body=Arg("public update", Label("trusted", 0, "acme")),
         )
@@ -181,10 +251,12 @@ def test_pending_approvals_do_not_accumulate_quarantine_strikes():
 
 def test_audit_chain_detects_tampering():
     m, c = Monitor(), cap()
-    m.decide(req("read_file", c, path="/acme/a")); m.decide(req("read_file", c, path="/acme/b"))
+    m.decide(req("read_file", c, path="/acme/a"))
+    m.decide(req("read_file", c, path="/acme/b"))
     assert m.audit.verify()
     m.audit.entries[0]["verdict"] = "deny"
     assert not m.audit.verify()
+
 
 @pytest.mark.parametrize(
     ("tenant", "task_id"),
@@ -194,7 +266,9 @@ def test_audit_chain_detects_tampering():
         ("acme", 42),
     ],
 )
-def test_monitor_fails_closed_and_audits_invalid_tenant_or_task_identity(tenant, task_id):
+def test_monitor_fails_closed_and_audits_invalid_tenant_or_task_identity(
+    tenant, task_id
+):
     capability = cap()
     capability.tenant = tenant
     capability.task_id = task_id
@@ -209,7 +283,6 @@ def test_monitor_fails_closed_and_audits_invalid_tenant_or_task_identity(tenant,
     assert "invalid tenant/task identity" in monitor.audit.entries[-1]["reason"]
 
 
-
 def test_consequential_runtime_profile_rejects_ablations_and_policy_drift():
     monitor = Monitor()
     monitor.assert_consequential_safe()
@@ -221,10 +294,15 @@ def test_consequential_runtime_profile_rejects_ablations_and_policy_drift():
     from importlib import resources
 
     tampered_policy = Monitor(
-        policy_text=resources.files("paca").joinpath(
-            "policies", "agent_policy.paca",
-        ).read_text(encoding="utf-8").replace(
-            "flow.cross_tenant == true", "flow.cross_tenant == false",
+        policy_text=resources.files("paca")
+        .joinpath(
+            "policies",
+            "agent_policy.paca",
+        )
+        .read_text(encoding="utf-8")
+        .replace(
+            "flow.cross_tenant == true",
+            "flow.cross_tenant == false",
         )
     )
     with pytest.raises(ValueError, match="policy rule C6"):
@@ -234,14 +312,20 @@ def test_consequential_runtime_profile_rejects_ablations_and_policy_drift():
 def test_consequential_runtime_profile_rejects_unknown_or_duplicate_required_rules():
     from importlib import resources
 
-    default_policy = resources.files("paca").joinpath(
-        "policies", "agent_policy.paca",
-    ).read_text(encoding="utf-8")
+    default_policy = (
+        resources.files("paca")
+        .joinpath(
+            "policies",
+            "agent_policy.paca",
+        )
+        .read_text(encoding="utf-8")
+    )
     duplicate = default_policy + "\nC6: deny any when flow.cross_tenant == true\n"
     monitor = Monitor(policy_text=duplicate)
-    with pytest.raises(ValueError, match="missing or duplicates required policy rule C6"):
+    with pytest.raises(
+        ValueError, match="missing or duplicates required policy rule C6"
+    ):
         monitor.assert_consequential_safe()
-
 
 
 @pytest.mark.parametrize(
@@ -254,7 +338,9 @@ def test_consequential_runtime_profile_rejects_unknown_or_duplicate_required_rul
         ({"quarantine_after": 4}, "quarantine threshold"),
     ],
 )
-def test_consequential_runtime_profile_rejects_permissive_monitor_overrides(kwargs, message):
+def test_consequential_runtime_profile_rejects_permissive_monitor_overrides(
+    kwargs, message
+):
     with pytest.raises(ValueError, match=message):
         Monitor(**kwargs).assert_consequential_safe()
 

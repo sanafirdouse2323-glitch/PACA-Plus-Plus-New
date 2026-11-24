@@ -1,5 +1,7 @@
 # Adversarial Security Audit — Phase 1
 
+> **Historical snapshot:** this document records the earlier code state reviewed against PRs #13 and #14. Those changes have since been merged. The findings below have not all been revalidated against current `main`; use [the current implementation roadmap](security-roadmap.md) and [direct-bypass evaluation](DIRECT_BYPASS_EVALUATION.md) for current boundaries. This source-level review is not an independent penetration test or security certification.
+
 **Scope:** PAC++ New only, on top of the cumulative PR #13 branch and dependent PR #14 aggregate task-quota change.
 
 **Audit type:** Source-level adversarial review of the integrated Python implementation and its stated trust boundaries. This is not an independent penetration test, a production deployment assessment, or a proof that all bypasses have been eliminated.

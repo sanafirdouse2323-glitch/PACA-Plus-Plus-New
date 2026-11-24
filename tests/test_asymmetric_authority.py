@@ -33,7 +33,9 @@ def _keypair():
 
 def _callbacks():
     return {
-        "identity_verifier": lambda principal, tenant: bool(principal and tenant == "acme"),
+        "identity_verifier": lambda principal, tenant: bool(
+            principal and tenant == "acme"
+        ),
         "task_context_verifier": lambda principal, tenant, task_id, purpose: (
             bool(principal)
             and tenant == "acme"
@@ -44,7 +46,9 @@ def _callbacks():
     }
 
 
-def _ed_issuer(registry, private_key, public_key, *, key_id="ed-key-1", audience="paca-test"):
+def _ed_issuer(
+    registry, private_key, public_key, *, key_id="ed-key-1", audience="paca-test"
+):
     return Ed25519CapabilityAuthority(
         registry,
         issuer_id="ed-issuer",
@@ -83,7 +87,9 @@ def _capability(issuer):
 
 
 def test_ed25519_public_key_only_verifier_validates_but_cannot_mint(tmp_path):
-    registry = SQLiteAuthorityRegistry(tmp_path / "authority.sqlite3", clock=lambda: 1_000)
+    registry = SQLiteAuthorityRegistry(
+        tmp_path / "authority.sqlite3", clock=lambda: 1_000
+    )
     private_key, public_key = _keypair()
     issuer = _ed_issuer(registry, private_key, public_key)
     verifier = _ed_verifier(registry, public_key)
@@ -112,8 +118,12 @@ def test_ed25519_public_key_only_verifier_validates_but_cannot_mint(tmp_path):
         )
 
 
-def test_ed25519_resource_commit_permit_is_verified_by_public_key_only_verifier(tmp_path):
-    registry = SQLiteAuthorityRegistry(tmp_path / "authority.sqlite3", clock=lambda: 1_000)
+def test_ed25519_resource_commit_permit_is_verified_by_public_key_only_verifier(
+    tmp_path,
+):
+    registry = SQLiteAuthorityRegistry(
+        tmp_path / "authority.sqlite3", clock=lambda: 1_000
+    )
     private_key, public_key = _keypair()
     issuer = _ed_issuer(registry, private_key, public_key)
     verifier = _ed_verifier(registry, public_key)
@@ -135,7 +145,9 @@ def test_ed25519_resource_commit_permit_is_verified_by_public_key_only_verifier(
 
 
 def test_ed25519_wrong_key_id_audience_public_key_and_tampering_fail_closed(tmp_path):
-    registry = SQLiteAuthorityRegistry(tmp_path / "authority.sqlite3", clock=lambda: 1_000)
+    registry = SQLiteAuthorityRegistry(
+        tmp_path / "authority.sqlite3", clock=lambda: 1_000
+    )
     private_key, public_key = _keypair()
     _, wrong_public = _keypair()
     issuer = _ed_issuer(registry, private_key, public_key)
@@ -144,7 +156,9 @@ def test_ed25519_wrong_key_id_audience_public_key_and_tampering_fail_closed(tmp_
     with pytest.raises(CapabilityAuthenticationError):
         _ed_verifier(registry, public_key, key_id="rotated-key").verify(signed.token)
     with pytest.raises(CapabilityAuthenticationError):
-        _ed_verifier(registry, public_key, audience="wrong-audience").verify(signed.token)
+        _ed_verifier(registry, public_key, audience="wrong-audience").verify(
+            signed.token
+        )
     with pytest.raises(CapabilityAuthenticationError):
         _ed_verifier(registry, wrong_public).verify(signed.token)
 
@@ -156,7 +170,9 @@ def test_ed25519_wrong_key_id_audience_public_key_and_tampering_fail_closed(tmp_
 
 
 def test_ed25519_rejects_mismatched_private_and_public_keys(tmp_path):
-    registry = SQLiteAuthorityRegistry(tmp_path / "authority.sqlite3", clock=lambda: 1_000)
+    registry = SQLiteAuthorityRegistry(
+        tmp_path / "authority.sqlite3", clock=lambda: 1_000
+    )
     private_key, _public_key = _keypair()
     _, mismatched_public = _keypair()
 
@@ -173,7 +189,9 @@ def test_ed25519_rejects_mismatched_private_and_public_keys(tmp_path):
 
 
 def test_ed25519_issuer_can_derive_verification_key_from_private_seed(tmp_path):
-    registry = SQLiteAuthorityRegistry(tmp_path / "authority.sqlite3", clock=lambda: 1_000)
+    registry = SQLiteAuthorityRegistry(
+        tmp_path / "authority.sqlite3", clock=lambda: 1_000
+    )
     private_key, public_key = _keypair()
     issuer = Ed25519CapabilityAuthority(
         registry,
@@ -185,34 +203,45 @@ def test_ed25519_issuer_can_derive_verification_key_from_private_seed(tmp_path):
     )
     signed = _capability(issuer)
 
-    assert _ed_verifier(registry, public_key).verify(signed.token).capability.principal == "agent-a"
+    assert (
+        _ed_verifier(registry, public_key).verify(signed.token).capability.principal
+        == "agent-a"
+    )
 
 
 def test_ed25519_rejects_validly_signed_algorithm_downgrade(tmp_path):
-    registry = SQLiteAuthorityRegistry(tmp_path / "authority.sqlite3", clock=lambda: 1_000)
+    registry = SQLiteAuthorityRegistry(
+        tmp_path / "authority.sqlite3", clock=lambda: 1_000
+    )
     private_key, public_key = _keypair()
     issuer = _ed_issuer(registry, private_key, public_key)
     verifier = _ed_verifier(registry, public_key)
     signed = _capability(issuer)
 
     key_id, body, _signature = signed.token.split(".")
-    payload = json.loads(
-        base64.urlsafe_b64decode(body + "=" * (-len(body) % 4))
-    )
+    payload = json.loads(base64.urlsafe_b64decode(body + "=" * (-len(body) % 4)))
     payload["signature_algorithm"] = "HS256"
     downgraded_body_bytes = json.dumps(
-        payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False,
+        payload,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
         allow_nan=False,
     ).encode("utf-8")
-    downgraded_body = base64.urlsafe_b64encode(
-        downgraded_body_bytes,
-    ).rstrip(b"=").decode("ascii")
+    downgraded_body = (
+        base64.urlsafe_b64encode(
+            downgraded_body_bytes,
+        )
+        .rstrip(b"=")
+        .decode("ascii")
+    )
     signing_input = key_id + "." + downgraded_body
     downgrade_signature = Ed25519PrivateKey.from_private_bytes(
         private_key,
     ).sign(signing_input.encode("ascii"))
     downgrade_token = (
-        signing_input + "."
+        signing_input
+        + "."
         + base64.urlsafe_b64encode(downgrade_signature).rstrip(b"=").decode("ascii")
     )
 
@@ -222,7 +251,9 @@ def test_ed25519_rejects_validly_signed_algorithm_downgrade(tmp_path):
 
 
 def test_ed25519_rejects_validly_signed_resource_permit_algorithm_downgrade(tmp_path):
-    registry = SQLiteAuthorityRegistry(tmp_path / "authority.sqlite3", clock=lambda: 1_000)
+    registry = SQLiteAuthorityRegistry(
+        tmp_path / "authority.sqlite3", clock=lambda: 1_000
+    )
     private_key, public_key = _keypair()
     issuer = _ed_issuer(registry, private_key, public_key)
     verifier = _ed_verifier(registry, public_key)
@@ -236,33 +267,45 @@ def test_ed25519_rejects_validly_signed_resource_permit_algorithm_downgrade(tmp_
     )
 
     version, key_id, body, _signature = permit.split(".")
-    payload = json.loads(
-        base64.urlsafe_b64decode(body + "=" * (-len(body) % 4))
-    )
+    payload = json.loads(base64.urlsafe_b64decode(body + "=" * (-len(body) % 4)))
     payload["signature_algorithm"] = "HS256"
     downgraded_body_bytes = json.dumps(
-        payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False,
+        payload,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
         allow_nan=False,
     ).encode("utf-8")
-    downgraded_body = base64.urlsafe_b64encode(
-        downgraded_body_bytes,
-    ).rstrip(b"=").decode("ascii")
+    downgraded_body = (
+        base64.urlsafe_b64encode(
+            downgraded_body_bytes,
+        )
+        .rstrip(b"=")
+        .decode("ascii")
+    )
     signing_input = version + "." + key_id + "." + downgraded_body
     downgrade_signature = Ed25519PrivateKey.from_private_bytes(
         private_key,
     ).sign(signing_input.encode("ascii"))
     downgrade_permit = (
-        signing_input + "."
+        signing_input
+        + "."
         + base64.urlsafe_b64encode(downgrade_signature).rstrip(b"=").decode("ascii")
     )
 
     with pytest.raises(CapabilityAuthenticationError) as error:
         verifier.verify_resource_commit_permit(downgrade_permit)
-    assert "resource commit permit signature algorithm mismatch" in str(error.value.__cause__)
+    assert "resource commit permit signature algorithm mismatch" in str(
+        error.value.__cause__
+    )
 
 
-def test_hmac_v2_tokens_with_legacy_payload_without_algorithm_remain_verifiable(tmp_path):
-    registry = SQLiteAuthorityRegistry(tmp_path / "authority.sqlite3", clock=lambda: 1_000)
+def test_hmac_v2_tokens_with_legacy_payload_without_algorithm_remain_verifiable(
+    tmp_path,
+):
+    registry = SQLiteAuthorityRegistry(
+        tmp_path / "authority.sqlite3", clock=lambda: 1_000
+    )
     issuer = HMACCapabilityAuthority(
         registry,
         issuer_id="hmac-issuer",
@@ -280,21 +323,27 @@ def test_hmac_v2_tokens_with_legacy_payload_without_algorithm_remain_verifiable(
         expires_at=1_900,
     )
     key_id, body, _signature = signed.token.split(".")
-    payload = json.loads(
-        base64.urlsafe_b64decode(body + "=" * (-len(body) % 4))
-    )
+    payload = json.loads(base64.urlsafe_b64decode(body + "=" * (-len(body) % 4)))
     payload.pop("signature_algorithm", None)
     legacy_body_bytes = json.dumps(
-        payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False,
+        payload,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
         allow_nan=False,
     ).encode("utf-8")
-    legacy_body = base64.urlsafe_b64encode(legacy_body_bytes).rstrip(b"=").decode("ascii")
+    legacy_body = (
+        base64.urlsafe_b64encode(legacy_body_bytes).rstrip(b"=").decode("ascii")
+    )
     signing_input = key_id + "." + legacy_body
     legacy_signature = hmac.new(
-        issuer._key, signing_input.encode("ascii"), hashlib.sha256,
+        issuer._key,
+        signing_input.encode("ascii"),
+        hashlib.sha256,
     ).digest()
     legacy_token = (
-        signing_input + "."
+        signing_input
+        + "."
         + base64.urlsafe_b64encode(legacy_signature).rstrip(b"=").decode("ascii")
     )
     assert issuer.verify(legacy_token).capability.principal == "agent-a"

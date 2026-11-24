@@ -5,6 +5,7 @@ mapped. All mutating workspace tools intentionally remain unsupported and are
 rejected by the request builder. Resource labels and capabilities must come from
 trusted application/evaluation setup, never from model output or retrieved content.
 """
+
 from __future__ import annotations
 
 import copy
@@ -35,7 +36,10 @@ _MAIL_TOOLS: dict[str, tuple[str, str, frozenset[str], frozenset[str]]] = {
     "get_received_emails": ("read_mail", "mail:received", frozenset(), frozenset()),
     "get_draft_emails": ("read_mail", "mail:drafts", frozenset(), frozenset()),
     "search_emails": (
-        "read_mail", "mail:search", frozenset({"query", "sender"}), frozenset({"query"})
+        "read_mail",
+        "mail:search",
+        frozenset({"query", "sender"}),
+        frozenset({"query"}),
     ),
     "search_contacts_by_name": (
         "read_mail",
@@ -63,7 +67,11 @@ _CALENDAR_TOOLS: dict[str, tuple[frozenset[str], frozenset[str]]] = {
 _DRIVE_TOOLS: dict[str, tuple[str, frozenset[str], frozenset[str]]] = {
     "get_file_by_id": ("drive:file", frozenset({"file_id"}), frozenset({"file_id"})),
     "list_files": ("drive:list:all", frozenset(), frozenset()),
-    "search_files": ("drive:search:content", frozenset({"query"}), frozenset({"query"})),
+    "search_files": (
+        "drive:search:content",
+        frozenset({"query"}),
+        frozenset({"query"}),
+    ),
     "search_files_by_filename": (
         "drive:search:filename",
         frozenset({"filename"}),
@@ -112,17 +120,29 @@ class WorkspaceTaskContext:
             if action not in allowed_actions:
                 raise ValueError(f"unsupported workspace capability action: {action!r}")
             if not isinstance(patterns, (tuple, list)):
-                raise TypeError(f"capability grants for {action!r} must be a tuple or list")
-            if any(not isinstance(pattern, str) or not pattern.strip() for pattern in patterns):
-                raise ValueError(f"capability grants for {action!r} must contain non-empty strings")
+                raise TypeError(
+                    f"capability grants for {action!r} must be a tuple or list"
+                )
+            if any(
+                not isinstance(pattern, str) or not pattern.strip()
+                for pattern in patterns
+            ):
+                raise ValueError(
+                    f"capability grants for {action!r} must contain non-empty strings"
+                )
         for name in ("expires", "max_calls", "max_fanout"):
             value = getattr(self.capability, name)
             if isinstance(value, bool) or not isinstance(value, int) or value < 1:
                 raise ValueError(f"capability.{name} must be a positive integer")
         if self.initial_step > self.capability.expires:
             raise ValueError("initial_step must not exceed capability.expires")
-        if self.capability.calls < 0 or self.capability.calls >= self.capability.max_calls:
-            raise ValueError("capability.calls must be non-negative and below max_calls")
+        if (
+            self.capability.calls < 0
+            or self.capability.calls >= self.capability.max_calls
+        ):
+            raise ValueError(
+                "capability.calls must be non-negative and below max_calls"
+            )
 
 
 def _validate_arguments(
@@ -201,13 +221,10 @@ def _resource_label(
     label = context.resource_labeler(source, copy.deepcopy(dict(arguments)), env)
     if not isinstance(label, Label):
         raise TypeError(
-            "resource_labeler must return a PACA++ Label for "
-            f"the {source!r} source"
+            f"resource_labeler must return a PACA++ Label for the {source!r} source"
         )
     if label.integrity != "untrusted":
-        raise ValueError(
-            f"AgentDojo {source!r} resources must be labelled untrusted"
-        )
+        raise ValueError(f"AgentDojo {source!r} resources must be labelled untrusted")
     if context.capability.tenant not in label.tenants:
         raise ValueError(
             f"AgentDojo {source!r} resource label must include the capability tenant"
@@ -253,7 +270,10 @@ def make_workspace_request_builder(context: WorkspaceTaskContext):
                 _required_string(normalized, "query")
                 _optional_string(normalized, "sender")
                 target = f"{target}:{_selector_digest(normalized)}"
-            elif function_name in {"search_contacts_by_name", "search_contacts_by_email"}:
+            elif function_name in {
+                "search_contacts_by_name",
+                "search_contacts_by_email",
+            }:
                 _required_string(normalized, "query")
                 target = f"{target}:{_selector_digest(normalized)}"
 
