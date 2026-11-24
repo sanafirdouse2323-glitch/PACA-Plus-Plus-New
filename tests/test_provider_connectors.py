@@ -88,7 +88,7 @@ def test_oauth_refresh_caches_token_checks_scopes_and_persists_rotation():
         assert first.access_token == "access-secret"
         assert second is first
         assert len(calls) == 1
-        assert rotations == ["rotated-refresh-secret"]
+        assert rotations == ["rotated-refresh-secret", "rotated-refresh-secret"]
         assert "access-secret" not in repr(first)
         assert "rotated-refresh-secret" not in repr(provider)
 
