@@ -241,3 +241,29 @@ def test_consequential_runtime_profile_rejects_unknown_or_duplicate_required_rul
     monitor = Monitor(policy_text=duplicate)
     with pytest.raises(ValueError, match="missing or duplicates required policy rule C6"):
         monitor.assert_consequential_safe()
+
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "message"),
+    [
+        ({"clearance": {"corp.example": 4}}, "destination clearance"),
+        ({"clearance": {"attacker.example": 1}}, "destination clearance"),
+        ({"protected": []}, "protected-path patterns"),
+        ({"quarantine_after": 4}, "quarantine threshold"),
+    ],
+)
+def test_consequential_runtime_profile_rejects_permissive_monitor_overrides(kwargs, message):
+    with pytest.raises(ValueError, match=message):
+        Monitor(**kwargs).assert_consequential_safe()
+
+
+def test_consequential_runtime_profile_allows_stricter_monitor_overrides():
+    from paca.monitor import PROTECTED
+
+    monitor = Monitor(
+        clearance={"corp.example": 2},
+        protected=PROTECTED + ["/workspace/extra-protected/*"],
+        quarantine_after=2,
+    )
+    monitor.assert_consequential_safe()
