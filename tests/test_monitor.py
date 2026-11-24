@@ -247,8 +247,9 @@ def test_consequential_runtime_profile_rejects_unknown_or_duplicate_required_rul
 @pytest.mark.parametrize(
     ("kwargs", "message"),
     [
-        ({"clearance": {"corp.example": 4}}, "destination clearance"),
+        ({"clearance": {"corp.example": 4}}, "destination-clearance"),
         ({"clearance": {"attacker.example": 1}}, "destination clearance"),
+        ({"clearance": {"partner.example": 2}}, "destination clearance"),
         ({"protected": []}, "protected-path patterns"),
         ({"quarantine_after": 4}, "quarantine threshold"),
     ],
