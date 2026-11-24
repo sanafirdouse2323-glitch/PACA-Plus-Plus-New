@@ -812,7 +812,10 @@ def test_filesystem_commit_permit_replay_cannot_replace_file_twice(tmp_path, mon
         env["request"],
         executor,
     )
-    first_content = (root / "acme" / "reports" / "report.txt").read_bytes()
+    first_content = _filesystem_relative_target(
+        root,
+        env["signed"].capability.task_id,
+    ).read_bytes()
     usage_after_first_commit = env["registry"].usage(
         env["signed"].capability.cap_id
     )[0]
@@ -820,7 +823,13 @@ def test_filesystem_commit_permit_replay_cannot_replace_file_twice(tmp_path, mon
     with pytest.raises(ResourceCommitDenied, match="replay"):
         executor.execute_authorized(env["request"], issued[0])
 
-    assert (root / "acme" / "reports" / "report.txt").read_bytes() == first_content
+    assert (
+        _filesystem_relative_target(
+            root,
+            env["signed"].capability.task_id,
+        ).read_bytes()
+        == first_content
+    )
     assert env["registry"].usage(env["signed"].capability.cap_id)[0] == usage_after_first_commit
     executor.close()
 
