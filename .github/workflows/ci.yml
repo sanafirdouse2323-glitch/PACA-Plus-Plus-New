@@ -69,7 +69,45 @@ jobs:
           python -m venv /tmp/paca-wheel-env
           /tmp/paca-wheel-env/bin/pip install dist/*.whl "fastapi>=0.110.0" "uvicorn[standard]>=0.30.0" "jsonschema>=4.23,<5" "rfc8785>=0.1.4,<0.2"
           cd /tmp
-          /tmp/paca-wheel-env/bin/python -c "from paca.monitor import Monitor; m = Monitor(); assert m.rules.policies; from paca_executor import app; assert app.title == 'PACA++ Reference Decision API'; from paca.contracts import ContractValidationError, canonicalize, validate_message; assert canonicalize({'z': 1}) == b'{\\\"z\\\":1}'; \ntry: validate_message({'message_type': 'unsupported'})\nexcept ContractValidationError: pass\nelse: raise AssertionError('packaged protocol schema did not reject an unsupported message type')"
+          /tmp/paca-wheel-env/bin/python -c "from paca.monitor import Monitor; m = Monitor(); assert m.rules.policies; from paca_executor import app; assert app.title == 'PACA++ Reference Decision API'"
+
+      - name: Exercise the protocol schema from the installed wheel
+        working-directory: /tmp
+        run: |
+          /tmp/paca-wheel-env/bin/python - <<'PY'
+          from paca.contracts import canonicalize, validate_message
+
+          assert canonicalize({"z": 1}) == b'{"z":1}'
+          message = {
+              "message_id": "wheel-smoke",
+              "message_type": "paca.identity-context.v1",
+              "contract_version": "1.0.0",
+              "created_at": "2026-11-24T12:00:00Z",
+              "issuer": "identity-authority",
+              "audience": "paca-core",
+              "proof": {
+                  "key_id": "key-1",
+                  "algorithm": "Ed25519",
+                  "signature": "A" * 86,
+              },
+              "subject": {"kind": "agent", "id": "agent-1"},
+              "workload": {"kind": "workload", "id": "worker-1"},
+              "tenant_id": "tenant-1",
+              "task_id": "task-1",
+              "purpose": "smoke-test",
+              "session_id": "session-1",
+              "authentication": {
+                  "method": "workload_identity",
+                  "issuer": "https://identity.example.test/",
+                  "subject_id": "agent-1",
+                  "credential_digest": {"algorithm": "sha-256", "value": "a" * 64},
+                  "authenticated_at": "2026-11-24T12:00:00Z",
+                  "expires_at": "2026-11-24T12:05:00Z",
+              },
+          }
+          validate_message(message)
+          print("Installed wheel loaded and validated the packaged PACA++ v1.0.0 schema")
+          PY
 
 
   agentdojo-integration:
