@@ -16,6 +16,7 @@ from paca.integrations.providers import (
     ProviderAuthenticationError,
     ProviderCapture,
     ProviderConnectorError,
+    ProviderProtocolError,
     ProviderResponseTooLarge,
     ProviderScopeError,
     QdrantVectorConnector,
@@ -497,7 +498,7 @@ def test_slack_api_level_denial_and_wrong_scope_fail_closed():
         token_client.close()
 
 
-def test_qdrant_search_uses_injected_key_and_validates_vector():
+def test_qdrant_search_enforces_tenant_filter_and_validates_returned_payload():
     calls = []
 
     def handler(request):
@@ -506,11 +507,26 @@ def test_qdrant_search_uses_injected_key_and_validates_vector():
         assert request.url.path.endswith("/collections/reports/points/search")
         body = json.loads(request.content)
         assert body["vector"] == [0.1, 0.2]
+        assert body["with_payload"] is True
+        assert body["filter"]["must"][0] == {
+            "key": "tenant_id",
+            "match": {"value": "tenant-acme"},
+        }
+        assert body["filter"]["must"][1] == {
+            "filter": {
+                "must": [{"key": "kind", "match": {"value": "report"}}],
+            },
+        }
         return httpx.Response(
             200,
             headers={"content-type": "application/json"},
             json={
-                "result": [{"id": "point-1", "version": 12, "score": 0.91, "payload": {"text": "external"}}]
+                "result": [{
+                    "id": "point-1",
+                    "version": 12,
+                    "score": 0.91,
+                    "payload": {"text": "external", "tenant_id": "tenant-acme"},
+                }]
             },
         )
 
@@ -518,16 +534,58 @@ def test_qdrant_search_uses_injected_key_and_validates_vector():
     connector = QdrantVectorConnector(
         "https://qdrant.example.test",
         cluster_id="cluster-1",
+        tenant_id="tenant-acme",
         api_key_provider=lambda: "qdrant-secret",
         client=client,
     )
     try:
-        page = connector.search("reports", [0.1, 0.2], limit=10)
+        page = connector.search(
+            "reports",
+            [0.1, 0.2],
+            limit=10,
+            query_filter={"must": [{"key": "kind", "match": {"value": "report"}}]},
+        )
         assert page.items[0].object_id == "qdrant:cluster-1:reports:point-1"
         assert page.items[0].provider_version == "12"
+        assert page.items[0].value["tenant_id"] == "tenant-acme"
         with pytest.raises(ValueError, match="finite numbers"):
             connector.search("reports", [float("nan")])
+        with pytest.raises(ValueError, match="with_payload=True"):
+            connector.search("reports", [0.1], with_payload=False)
         assert len(calls) == 1
+    finally:
+        connector.close()
+        client.close()
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"tenant_id": "tenant-other", "text": "foreign point"},
+        {"text": "missing tenant marker"},
+    ],
+)
+def test_qdrant_rejects_foreign_or_unverifiable_tenant_results(payload):
+    client = httpx.Client(
+        transport=httpx.MockTransport(
+            lambda _request: httpx.Response(
+                200,
+                headers={"content-type": "application/json"},
+                json={"result": [{"id": "foreign-point", "payload": payload}]},
+            )
+        ),
+        follow_redirects=False,
+    )
+    connector = QdrantVectorConnector(
+        "https://qdrant.example.test",
+        cluster_id="cluster-1",
+        tenant_id="tenant-acme",
+        api_key_provider=lambda: "qdrant-secret",
+        client=client,
+    )
+    try:
+        with pytest.raises(ProviderProtocolError, match="tenant"):
+            connector.search("reports", [0.1, 0.2])
     finally:
         connector.close()
         client.close()
@@ -792,6 +850,7 @@ def test_qdrant_api_key_provider_errors_do_not_leak_secret_material():
     connector = QdrantVectorConnector(
         "https://qdrant.example.test",
         cluster_id="cluster-1",
+        tenant_id="tenant-acme",
         api_key_provider=secret_provider,
         client=client,
     )
