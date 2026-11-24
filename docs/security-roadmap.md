@@ -124,4 +124,4 @@ See:
 - POSTGRES_CHECKPOINT_AND_LIFECYCLE_MODEL.md
 - DIRECT_BYPASS_EVALUATION.md
 
-Remaining gates: provider-backed production connectors (mail/chat/vector sources), separate issuer/verifier keys and protected key management, a distributed authority/evidence registry that preserves the now-implemented tenant/task-wide quota across hosts, a native async provider adapter, process/container isolation tests with attacker-controlled code, and destination-side authorization at remote commit.
+Remaining gates: provider-backed production connectors (mail/chat/vector sources), KMS/HSM-backed private-key custody, authenticated public-key distribution and key-ring rotation/revocation, production workload identity and OIDC validation, a distributed authority/evidence registry that preserves the now-implemented tenant/task-wide quota across hosts, a native async provider adapter, process/container isolation tests with attacker-controlled code, and destination-side authorization at remote commit.
