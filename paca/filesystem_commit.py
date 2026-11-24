@@ -728,6 +728,14 @@ class FilesystemFencedResourceExecutor(FencedResourceExecutor):
                     # Detect an out-of-band same-identity writer that changed
                     # the destination after staging. Never silently overwrite
                     # bytes that were not the snapshot covered by this permit.
+                    staged_data = self._read_target(parent_fd, temp_name)
+                    if (
+                        staged_data is None
+                        or self._digest(staged_data) != journal["new_digest"]
+                    ):
+                        raise ResourceCommitDenied(
+                            "filesystem staged bytes no longer match the authorized payload digest"
+                        )
                     current = self._read_target(parent_fd, target_name)
                     if journal["old_exists"]:
                         if (
