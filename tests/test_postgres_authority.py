@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+from contextlib import closing
 import os
 import threading
 import uuid
@@ -157,7 +158,7 @@ def test_postgres_fenced_resource_commit_and_quota_are_shared_across_clients():
         )
     assert env["registry_a"].usage(env["root"].capability.cap_id) == (1, 0)
 
-    with env["registry_b"]._connect() as connection:
+    with closing(env["registry_b"]._connect()) as connection:
         row = connection.execute(
             "SELECT value_json,payload_digest,version FROM paca_resource_values "
             "WHERE tenant=? AND task_id=? AND resource_key=?",
