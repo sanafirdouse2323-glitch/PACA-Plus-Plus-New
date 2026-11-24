@@ -408,8 +408,14 @@ def test_ed25519_key_ring_supports_rotation_overlap_and_retirement(tmp_path):
         resource="/acme/new.txt",
         payload_digest="d" * 64,
     )
-    assert overlapping_verifier.verify_resource_commit_permit(old_permit).key_id == "ed-key-1"
-    assert overlapping_verifier.verify_resource_commit_permit(new_permit).key_id == "ed-key-2"
+    assert (
+        overlapping_verifier.verify_resource_commit_permit(old_permit).key_id
+        == "ed-key-1"
+    )
+    assert (
+        overlapping_verifier.verify_resource_commit_permit(new_permit).key_id
+        == "ed-key-2"
+    )
 
     # Retirement is explicit: a verifier configured only with key 2 no longer
     # accepts credentials or permits signed with key 1.
