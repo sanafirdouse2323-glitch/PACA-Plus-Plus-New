@@ -852,10 +852,24 @@ class HMACAgentMessageCodec:
             if not isinstance(body, dict) or body.get("version") != 1:
                 raise ValueError("unsupported message envelope")
             message_id = body.get("message_id")
-            if not isinstance(message_id, str) or not message_id:
-                raise ValueError("message identifier is missing")
+            if not isinstance(message_id, str) or not message_id or len(message_id) > 256:
+                raise ValueError("message identifier is missing or exceeds the supported length")
             if body.get("recipient") != recipient:
                 raise ValueError("message recipient mismatch")
+            # The envelope MAC and recipient capability have both been verified.
+            # Short-circuit a sequential replay using the composite receipt index
+            # before sender-authority lookup and provenance-DAG traversal. This
+            # check is not the concurrency boundary: consume_message() below still
+            # performs the unique receipt insert and quota charge atomically.
+            if self.registry.has_message_receipt(
+                recipient_record.principal,
+                recipient_record.tenant,
+                recipient_record.task_id,
+                message_id,
+            ):
+                # Preserve the explicit denial reason; the outer parser-error
+                # handler intentionally normalizes malformed-envelope failures.
+                raise MemoryAccessDenied("inter-agent message replay was rejected")
             if int(body.get("issued_at", -1)) > int(self.clock()) + 30:
                 raise ValueError("message issuance time is invalid")
             authority_id = body.get("authority_id")

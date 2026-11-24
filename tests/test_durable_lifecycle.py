@@ -566,7 +566,15 @@ def test_inter_agent_envelope_authenticates_both_sides_and_preserves_lineage(tmp
 
     # Also exercise receiver-side verification against a correctly signed but
     # internally inconsistent envelope, as can occur with a compromised sender.
-    body_part_valid, _signature = sealed.split(".")
+    # Use a fresh message identifier so this test reaches the receiver's
+    # digest validation rather than correctly stopping at the replay fast path.
+    digest_test_sealed = env["messages"].seal(
+        payload,
+        sender="agent-a",
+        recipient="worker-b",
+        capability_token=env["root"].token,
+    )
+    body_part_valid, _signature = digest_test_sealed.split(".")
     padded = body_part_valid + "=" * (-len(body_part_valid) % 4)
     body = json.loads(base64.urlsafe_b64decode(padded))
     body["value"] = {"text": "changed inside signed envelope"}
@@ -664,8 +672,23 @@ def test_inter_agent_message_replay_is_rejected_after_registry_restart(tmp_path)
         memory=restarted_memory,
         clock=env["clock"],
     )
+    # An authenticated replay must be rejected by the indexed receipt
+    # before re-reading the source node or traversing its provenance ancestry.
+    def unexpected_lineage_access(*_args, **_kwargs):
+        pytest.fail("replayed message performed unnecessary provenance work")
+
+    env["repo"].get_node = unexpected_lineage_access
+    env["repo"].ancestors = unexpected_lineage_access
     with pytest.raises(MemoryAccessDenied, match="replay"):
         restarted_messages.open(sealed, recipient_token=recipient.token)
+    encoded_body = sealed.split(".")[0]
+    decoded_body = base64.urlsafe_b64decode(
+        encoded_body + ("=" * (-len(encoded_body) % 4))
+    )
+    message_id = json.loads(decoded_body)["message_id"]
+    assert restarted_registry.has_message_receipt(
+        "worker-b", "acme", "task-1", message_id,
+    )
     assert restarted_registry.usage(recipient_authority_id)[0] == calls_after_first_delivery
 
 

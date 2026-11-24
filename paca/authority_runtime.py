@@ -542,6 +542,37 @@ class SQLiteAuthorityRegistry:
                 connection.rollback()
                 raise
 
+    def has_message_receipt(
+        self,
+        principal: str,
+        tenant: str,
+        task_id: str,
+        message_id: str,
+    ) -> bool:
+        """Check the indexed durable replay key without traversing message lineage.
+
+        This is an availability fast path only. It is intentionally a read-only
+        pre-check: consume_message() remains the authoritative transactional
+        insert-and-charge operation and rejects concurrent duplicate deliveries.
+        """
+        values = (principal, tenant, task_id, message_id)
+        if any(not isinstance(value, str) or not value for value in values):
+            raise ValueError("message receipt identity fields must be non-empty strings")
+        if len(message_id) > 256:
+            raise ValueError("message_id exceeds the supported length")
+        try:
+            with closing(self._connect()) as connection:
+                row = connection.execute(
+                    "SELECT 1 FROM authority_message_receipts "
+                    "WHERE principal=? AND tenant=? AND task_id=? AND message_id=? LIMIT 1",
+                    values,
+                ).fetchone()
+            return row is not None
+        except sqlite3.Error as exc:
+            raise AuthorityRegistryError(
+                "durable message replay state is unavailable"
+            ) from exc
+
     def consume_message(
         self,
         authority_id: str,
