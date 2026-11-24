@@ -7,6 +7,7 @@ import hmac
 from types import SimpleNamespace
 import json
 import sqlite3
+import threading
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 
@@ -702,6 +703,65 @@ def test_inter_agent_message_replay_is_rejected_after_registry_restart(tmp_path)
         "worker-b", "acme", "task-1", message_id,
     )
     assert restarted_registry.usage(recipient_authority_id)[0] == calls_after_first_delivery
+
+
+def test_concurrent_duplicate_message_delivery_commits_once(tmp_path):
+    env = _environment(tmp_path)
+    payload = _ingest(env, {"text": "one delivery under concurrent replay"})
+    recipient = env["issuer"].issue(
+        principal="worker-b",
+        tenant="acme",
+        task_id="task-1",
+        purpose="prepare-report",
+        grants={
+            "mem_read": ("mem/*",),
+            "receive_agent_message": ("agent-a",),
+        },
+        expires_at=1_900,
+    )
+    sealed = env["messages"].seal(
+        payload,
+        sender="agent-a",
+        recipient="worker-b",
+        capability_token=env["root"].token,
+    )
+    recipient_authority_id = recipient.capability.authority_lineage.authority_id
+    calls_before = env["registry"].usage(recipient_authority_id)[0]
+
+    # Force both threads to observe "not received" before either can reach
+    # consume_message(). This exercises the read-only pre-check race directly.
+    precheck_barrier = threading.Barrier(2)
+    original_lookup = env["registry"].has_message_receipt
+
+    def synchronized_lookup(principal, tenant, task_id, message_id):
+        result = original_lookup(principal, tenant, task_id, message_id)
+        precheck_barrier.wait(timeout=10)
+        return result
+
+    env["registry"].has_message_receipt = synchronized_lookup
+
+    def deliver():
+        try:
+            opened = env["messages"].open(sealed, recipient_token=recipient.token)
+            return "accepted", opened
+        except MemoryAccessDenied:
+            return "rejected", None
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        outcomes = list(pool.map(lambda _index: deliver(), range(2)))
+
+    assert sorted(status for status, _value in outcomes) == ["accepted", "rejected"]
+    accepted = next(value for status, value in outcomes if status == "accepted")
+    assert accepted.value == payload.value
+    # One message-receive charge plus one protected memory-read charge;
+    # the losing concurrent duplicate commits neither a receipt nor a charge.
+    assert env["registry"].usage(recipient_authority_id)[0] == calls_before + 2
+    encoded_body = sealed.split(".")[0]
+    decoded_body = base64.urlsafe_b64decode(
+        encoded_body + "=" * (-len(encoded_body) % 4)
+    )
+    message_id = json.loads(decoded_body)["message_id"]
+    assert original_lookup("worker-b", "acme", "task-1", message_id)
 
 
 def test_sender_cannot_send_to_an_unapproved_agent(tmp_path):
