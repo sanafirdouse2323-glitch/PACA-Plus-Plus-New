@@ -1,10 +1,12 @@
 # PAC++ New — implementation status and engineering gates
 
-**Snapshot:** 24 November 2026, after the stacked structural refactors in PRs #32–#34 were merged to `main` (`2476b13489188b38b0c81eab032abb7222e5d7e2`).
+**Snapshot baseline:** 24 November 2026, `main` commit `a81bbffe3cf081830e7b87bba90f5342a327dfa0`; architecture work is proposed separately and does not change this implementation baseline.
 
 **Maturity:** research prototype. The repository contains useful reference mechanisms and integrations, but does not mediate every agent lifecycle transition and is not production-ready.
 
 **Project boundary:** this roadmap applies only to `PACA-Plus-Plus-New`. The separate `PACA-Plus-Plus` repository is an enterprise authorization gateway and has a different architecture, codebase and evidence base.
+
+**Architecture direction:** [ARCHITECTURE_SPECIFICATION.md](ARCHITECTURE_SPECIFICATION.md) defines the proposed open, platform-independent target architecture (Draft v0.1.0). It is a normative design proposal for future work, not a claim that the current implementation already satisfies it.
 
 ## Current implementation
 
@@ -32,6 +34,8 @@ The generated simulator output is attached to the latest successful `main`-branc
 The tests deliberately demonstrate bypasses as well as mediated controls. Direct access to raw SQLite values, raw PostgreSQL checkpoint APIs, direct Python tool calls, subprocesses and direct filesystem/network operations can escape the adapters. These are documented in [DIRECT_BYPASS_EVALUATION.md](DIRECT_BYPASS_EVALUATION.md).
 
 ## Highest-priority work
+
+The architecture specification is the target-design reference. Before adding security-sensitive implementation, translate its contracts and invariants into versioned schemas, formal state transitions and conformance tests. Do not introduce a mandatory dependency on a particular OS, framework, protocol, policy engine or storage product.
 
 Before further security-sensitive changes, a repository administrator must also apply and verify the `main` branch ruleset and release-tag protections described in [REPOSITORY_SECURITY_CONFIGURATION.md](REPOSITORY_SECURITY_CONFIGURATION.md). The guide is configuration guidance, not evidence that protection is currently active.
 
