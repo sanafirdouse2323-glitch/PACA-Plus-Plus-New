@@ -701,6 +701,32 @@ def test_provider_capture_persists_only_through_matching_untrusted_ingress(tmp_p
             capability_token=root.token,
         )
 
+    # A connector ID is not sufficient to relabel a Qdrant record for a
+    # different tenant: the verified Qdrant tenant must match the memory adapter.
+    qdrant_value = {"tenant_id": "globex", "payload": {"text": "foreign"}}
+    qdrant_capture = ProviderCapture(
+        provider="qdrant",
+        connector_id="qdrant:cluster-1:tenant:acme",
+        object_id="qdrant:cluster-1:reports:foreign-point",
+        version_id=hashlib.sha256(canonical_value_bytes(qdrant_value)).hexdigest(),
+        provider_version="1",
+        value=qdrant_value,
+    )
+    qdrant_memory_connector = TrustedConnectorAdapter(
+        memory,
+        connector_id="qdrant:cluster-1:tenant:acme",
+        source_class="external_content",
+        tenant="acme",
+        sensitivity=1,
+        integrity="untrusted",
+    )
+    with pytest.raises(ProviderAuthenticationError, match="capture tenant"):
+        qdrant_capture.persist(
+            qdrant_memory_connector,
+            purpose="review-mail",
+            capability_token=root.token,
+        )
+
 
 def test_provider_http_client_rejects_redirect_and_oversized_json():
     from paca.integrations.providers import _ProviderHTTPClient
