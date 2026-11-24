@@ -29,6 +29,16 @@ from .memory import (
     TrustedConnectorAdapter,
     TrustedMemoryAdapter,
 )
+from .sandbox import (
+    DockerSandbox,
+    DockerSandboxExecutor,
+    SandboxError,
+    SandboxExecutionError,
+    SandboxOutputLimitExceeded,
+    SandboxResult,
+    SandboxTimeout,
+    SandboxUnavailable,
+)
 
 __version__ = "0.3.2"
 __all__ = [n for n in dir() if not n.startswith("_")]
