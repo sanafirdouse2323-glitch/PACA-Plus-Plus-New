@@ -10,6 +10,8 @@ authorization or a host kernel/container-runtime security review.
 from __future__ import annotations
 
 import contextlib
+import hashlib
+import hmac
 import json
 import math
 import re
@@ -21,6 +23,7 @@ import time
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
+from types import MappingProxyType
 from typing import Any
 
 
@@ -70,16 +73,25 @@ _CONTAINER_ID = re.compile(r"^[0-9a-f]{64}$")
 class DockerSandbox:
     """Run a fixed command in a digest-pinned, network-isolated Docker container.
 
+    Configuration becomes immutable after initialization so the worker identity
+    checked by the executor cannot be changed before the container is launched.
+
     No host volumes, devices, credentials, Docker socket, or environment variables
     are passed into the container. The command and image are trusted deployment
     configuration; model-provided strings are arguments only and never a shell.
     """
+
+    def __setattr__(self, name: str, value: Any) -> None:
+        if getattr(self, "_sealed", False):
+            raise AttributeError("DockerSandbox configuration is immutable")
+        object.__setattr__(self, name, value)
 
     def __init__(
         self,
         image: str,
         *,
         docker_binary: str = "docker",
+        platform: str = "linux/amd64",
         timeout_seconds: float = 15.0,
         memory_bytes: int = 536_870_912,
         cpu_limit: float = 1.0,
@@ -89,6 +101,7 @@ class DockerSandbox:
         tmpfs_bytes: int = 33_554_432,
         docker_env: Mapping[str, str] | None = None,
     ) -> None:
+        object.__setattr__(self, "_sealed", False)
         if not isinstance(image, str) or _IMAGE_DIGEST.fullmatch(image) is None:
             raise ValueError(
                 "sandbox image must be pinned by an immutable sha256 digest"
@@ -96,6 +109,13 @@ class DockerSandbox:
         if not isinstance(docker_binary, str) or not docker_binary:
             raise ValueError(
                 "docker_binary must be a non-empty executable name or path"
+            )
+        if (
+            not isinstance(platform, str)
+            or re.fullmatch(r"[a-z0-9]+/[a-z0-9_]+(?:/[a-z0-9_]+)?", platform) is None
+        ):
+            raise ValueError(
+                "platform must be a supported Docker OS/architecture string"
             )
         if (
             isinstance(timeout_seconds, bool)
@@ -145,6 +165,7 @@ class DockerSandbox:
             raise ValueError("docker_env keys and values must be NUL-free strings")
         self.image = image
         self.docker_binary = docker_binary
+        self.platform = platform
         self.timeout_seconds = float(timeout_seconds)
         self.memory_bytes = memory_bytes
         self.cpu_limit = float(cpu_limit)
@@ -152,7 +173,8 @@ class DockerSandbox:
         self.max_input_bytes = max_input_bytes
         self.max_output_bytes = max_output_bytes
         self.tmpfs_bytes = tmpfs_bytes
-        self.docker_env = supplied_env
+        self.docker_env = MappingProxyType(supplied_env)
+        object.__setattr__(self, "_sealed", True)
 
     @staticmethod
     def _validate_argv(argv: Sequence[str]) -> tuple[str, ...]:
@@ -167,18 +189,17 @@ class DockerSandbox:
             )
         return command
 
-    def _build_command(self, argv: Sequence[str], cidfile: str) -> tuple[str, ...]:
-        command = self._validate_argv(argv)
+    def _container_options(self, cidfile: str) -> tuple[str, ...]:
+        """Return every fixed Docker run option in the exact order used at launch."""
         if not isinstance(cidfile, str) or not cidfile:
             raise ValueError("cidfile path must be non-empty")
         return (
-            self.docker_binary,
-            "run",
             "--rm",
             "--interactive",
             "--init",
             "--cidfile",
             cidfile,
+            f"--platform={self.platform}",
             "--network=none",
             "--read-only",
             "--cap-drop=ALL",
@@ -198,11 +219,47 @@ class DockerSandbox:
             "--env=HOME=/tmp",
             "--env=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
             "--env=LANG=C.UTF-8",
+        )
+
+    def _build_command(self, argv: Sequence[str], cidfile: str) -> tuple[str, ...]:
+        command = self._validate_argv(argv)
+        return (
+            self.docker_binary,
+            "run",
+            *self._container_options(cidfile),
             "--entrypoint",
             command[0],
             self.image,
             *command[1:],
         )
+
+    def _implementation_descriptor(self, argv: Sequence[str]) -> dict[str, Any]:
+        """Describe the same command builder used at runtime with a stable CID file."""
+        command = self._validate_argv(argv)
+        return {
+            "profile": "paca-docker-worker-v1",
+            "docker_cli_executable": self.docker_binary,
+            "docker_cli_environment": dict(sorted(self.docker_env.items())),
+            "docker_invocation": list(self._build_command(command, "<PACA_CIDFILE>")),
+        }
+
+    def implementation_digest(self, argv: Sequence[str]) -> str:
+        """Digest the exact Docker invocation used for this pinned worker.
+
+        The CID file path is normalized because it is an ephemeral host temporary
+        path. Every other Docker argument, the image reference, platform, worker
+        command, and explicit CLI environment selection is included. The Docker
+        CLI binary and daemon remain trusted deployment components.
+        """
+        descriptor = self._implementation_descriptor(argv)
+        encoded = json.dumps(
+            descriptor,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=False,
+            allow_nan=False,
+        ).encode("utf-8")
+        return hashlib.sha256(encoded).hexdigest()
 
     def _remove_container(self, cidfile: Path) -> None:
         try:
@@ -368,11 +425,13 @@ class DockerSandboxExecutor:
                 raise ValueError("duplicate sandbox action mapping")
             normalized[action] = DockerSandbox._validate_argv(argv)
         self.sandbox = sandbox
-        self.commands = normalized
+        # Prevent runtime mutation of the trusted action-to-command map. The
+        # implementation-digest check also detects changed sandbox configuration.
+        self.commands = MappingProxyType(normalized)
 
     def __call__(self, request: Any) -> Any:
         from .provenance import Arg
-        from .runtime import Request
+        from .runtime import Request, Tool
 
         if not isinstance(request, Request):
             raise TypeError("DockerSandboxExecutor requires a typed PACA Request")
@@ -381,6 +440,35 @@ class DockerSandboxExecutor:
             raise SandboxExecutionError(
                 "no isolated worker is registered for this action"
             )
+        tool_manifest = request.tool
+        if not isinstance(tool_manifest, Tool):
+            raise SandboxExecutionError(
+                "isolated tool execution requires a typed, capability-pinned tool manifest"
+            )
+        implementation_digest = tool_manifest.implementation_digest
+        if implementation_digest is None:
+            raise SandboxExecutionError(
+                "isolated tool manifest has no signed implementation digest"
+            )
+        digest_builder = getattr(self.sandbox, "implementation_digest", None)
+        if not callable(digest_builder):
+            raise SandboxExecutionError(
+                "sandbox runner cannot attest its configured worker identity"
+            )
+        try:
+            actual_implementation_digest = digest_builder(command)
+        except Exception as exc:
+            raise SandboxExecutionError(
+                "sandbox worker identity could not be computed"
+            ) from exc
+        if not isinstance(actual_implementation_digest, str) or not hmac.compare_digest(
+            actual_implementation_digest,
+            implementation_digest,
+        ):
+            raise SandboxExecutionError(
+                "tool implementation digest does not match the configured sandbox worker"
+            )
+
         arguments: dict[str, Any] = {}
         for name, argument in request.args.items():
             if not isinstance(name, str) or not name or not isinstance(argument, Arg):
@@ -388,15 +476,13 @@ class DockerSandboxExecutor:
                     "sandbox request contains an invalid typed argument"
                 )
             arguments[name] = argument.value
-        tool = None
-        if request.tool is not None:
-            tool = {
-                "name": request.tool.name,
-                "version": request.tool.version,
-                "description": request.tool.description,
-                "schema": list(request.tool.schema),
-                "hash": request.tool.hash,
-            }
+        tool = {
+            "name": tool_manifest.name,
+            "version": tool_manifest.version,
+            "description": tool_manifest.description,
+            "schema": list(tool_manifest.schema),
+            "hash": tool_manifest.hash,
+        }
         try:
             encoded = json.dumps(
                 {

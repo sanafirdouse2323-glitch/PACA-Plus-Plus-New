@@ -88,13 +88,29 @@ class Tool:
     version: str
     description: str
     schema: tuple[str, ...] = ()
+    implementation_digest: str | None = None
+
+    def __post_init__(self) -> None:
+        if self.implementation_digest is not None and (
+            not isinstance(self.implementation_digest, str)
+            or len(self.implementation_digest) != 64
+            or any(
+                character not in "0123456789abcdef"
+                for character in self.implementation_digest
+            )
+        ):
+            raise ValueError(
+                "implementation_digest must be a lowercase SHA-256 hexadecimal digest"
+            )
 
     @property
     def hash(self) -> str:
-        blob = json.dumps(
-            [self.name, self.version, self.description, list(self.schema)],
-            sort_keys=True,
-        )
+        identity = [self.name, self.version, self.description, list(self.schema)]
+        # Keep the historical hash byte-for-byte stable for legacy manifests.
+        # New manifests opt in to binding the actual implementation artifact.
+        if self.implementation_digest is not None:
+            identity.append({"implementation_digest": self.implementation_digest})
+        blob = json.dumps(identity, sort_keys=True)
         return hashlib.sha256(blob.encode("utf-8")).hexdigest()
 
 
@@ -223,6 +239,18 @@ class Request:
             "tool_pins": dict(sorted(self.cap.tool_pins.items())),
             "authority_lineage": authority_data,
         }
+        tool_data = None
+        if self.tool is not None:
+            tool_data = {
+                "name": self.tool.name,
+                "version": self.tool.version,
+                "description": self.tool.description,
+                "schema": list(self.tool.schema),
+                "hash": self.tool.hash,
+            }
+            if self.tool.implementation_digest is not None:
+                tool_data["implementation_digest"] = self.tool.implementation_digest
+
         payload = {
             "action": self.action,
             "args": args_data,
@@ -232,15 +260,7 @@ class Request:
             if self.resource is not None
             else None,
             "resource_lineage_refs": sorted(self.resource_lineage_refs),
-            "tool": None
-            if self.tool is None
-            else {
-                "name": self.tool.name,
-                "version": self.tool.version,
-                "description": self.tool.description,
-                "schema": list(self.tool.schema),
-                "hash": self.tool.hash,
-            },
+            "tool": tool_data,
         }
         blob = json.dumps(
             payload,
