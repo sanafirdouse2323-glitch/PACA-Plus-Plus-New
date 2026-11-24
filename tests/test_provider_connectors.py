@@ -513,9 +513,7 @@ def test_qdrant_search_enforces_tenant_filter_and_validates_returned_payload():
             "match": {"value": "tenant-acme"},
         }
         assert body["filter"]["must"][1] == {
-            "filter": {
-                "must": [{"key": "kind", "match": {"value": "report"}}],
-            },
+            "must": [{"key": "kind", "match": {"value": "report"}}],
         }
         return httpx.Response(
             200,
