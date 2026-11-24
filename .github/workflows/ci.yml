@@ -29,7 +29,7 @@ jobs:
       - name: Install package and test dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -e ".[dev,api,crypto]"
+          pip install -e ".[dev,api,crypto,providers]"
 
       - name: Run tests
         run: pytest -q
@@ -234,11 +234,11 @@ jobs:
       - name: Install dev dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -e ".[dev,api,crypto]"
-      - name: Lint API and asymmetric tests (ruff)
-        run: ruff check paca_executor.py tests/test_asymmetric_authority.py
+          pip install -e ".[dev,api,crypto,providers]"
+      - name: Lint API and security tests (ruff)
+        run: ruff check paca_executor.py tests/test_asymmetric_authority.py tests/test_provider_connectors.py
       - name: Check imports and undefined names in security modules (ruff)
-        run: ruff check --select F paca/authority_runtime.py paca/resource_commit.py
+        run: ruff check --select F paca/authority_runtime.py paca/resource_commit.py paca/integrations/providers.py
       - name: Type check (mypy)
         run: mypy --follow-imports=silent paca_executor.py
 
