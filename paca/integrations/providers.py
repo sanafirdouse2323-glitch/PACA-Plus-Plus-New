@@ -322,6 +322,10 @@ class ProviderCapture:
             raise ProviderAuthenticationError(
                 "provider capture must use its fixed-identity untrusted external-content connector"
             )
+        if self.provider == "qdrant" and self.value.get("tenant_id") != connector.tenant:
+            raise ProviderAuthenticationError(
+                "Qdrant capture tenant does not match the authenticated memory connector tenant"
+            )
         # Snapshot the provider record before persistence. The record digest is
         # checked against the digest captured by the connector, so a caller cannot
         # mutate a nested response field and persist altered content under the
@@ -855,7 +859,7 @@ class QdrantVectorConnector:
             raise ValueError("tenant_id must be a bounded non-empty trusted tenant identifier")
         if (
             not isinstance(tenant_payload_key, str)
-            or re.fullmatch(r"[A-Za-z0-9_-]+(?:\\.[A-Za-z0-9_-]+)*", tenant_payload_key) is None
+            or re.fullmatch(r"[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*", tenant_payload_key) is None
         ):
             raise ValueError("tenant_payload_key must be a simple or dotted Qdrant payload field path")
         if not callable(api_key_provider):
