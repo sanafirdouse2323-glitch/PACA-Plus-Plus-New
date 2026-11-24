@@ -515,6 +515,7 @@ def _filesystem_executor(env, tmp_path, *, initial_content=None):
     root = tmp_path / "filesystem-root"
     target_parent = root / "acme" / "reports"
     target_parent.mkdir(parents=True)
+    root.chmod(0o700)
     if initial_content is not None:
         (target_parent / "report.txt").write_bytes(initial_content)
     state_dir = tmp_path / "filesystem-state"
