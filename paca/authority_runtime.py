@@ -1751,6 +1751,8 @@ class Ed25519CapabilityAuthority(HMACCapabilityAuthority):
                     "current Ed25519 key does not match the configured verification key ring"
                 )
             configured_verification_keys[key_id] = verification_bytes
+        if len(configured_verification_keys) > 32:
+            raise ValueError("Ed25519 verification key rings are limited to 32 keys")
         if key_id not in configured_verification_keys:
             raise ValueError(
                 "verification key ring must contain the configured current key ID"
