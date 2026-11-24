@@ -102,11 +102,33 @@ def resolve_public_endpoints(
             raise UnsafeNetworkDestination("resolver returned an unsupported socket address")
         if not isinstance(sockaddr, tuple) or not sockaddr:
             raise UnsafeNetworkDestination("resolver returned a malformed socket address")
+        expected_length = 2 if family == socket.AF_INET else 4
+        if len(sockaddr) != expected_length or sockaddr[1] != port:
+            raise UnsafeNetworkDestination(
+                "resolver returned an address tuple with an unexpected port or shape"
+            )
         raw_address = sockaddr[0]
         try:
             address = ipaddress.ip_address(str(raw_address).split("%", 1)[0])
         except ValueError as exc:
             raise UnsafeNetworkDestination("resolver did not return a numeric IP address") from exc
+        # The well-known NAT64 prefix is globally classified by ipaddress even
+        # when its embedded IPv4 target is private (for example 64:ff9b::7f00:1
+        # represents 127.0.0.1). This helper has no trusted translator-policy
+        # configuration, so reject the entire translation prefix rather than
+        # treating the IPv6 outer address as sufficient evidence of a public
+        # destination.
+        if isinstance(address, ipaddress.IPv6Address):
+            if address in ipaddress.ip_network("64:ff9b::/96"):
+                raise UnsafeNetworkDestination(
+                    "destination uses the well-known NAT64 translation prefix"
+                )
+            if address.ipv4_mapped is not None:
+                address = address.ipv4_mapped
+        if address.version != (4 if family == socket.AF_INET else 6):
+            raise UnsafeNetworkDestination(
+                "resolver address family does not match the numeric address"
+            )
         if not address.is_global:
             raise UnsafeNetworkDestination(
                 f"destination resolved to a non-public address: {address}"
