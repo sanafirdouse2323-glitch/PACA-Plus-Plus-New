@@ -78,14 +78,16 @@ class FilesystemFencedResourceExecutor(FencedResourceExecutor):
             not stat.S_ISDIR(root_metadata.st_mode)
             or stat.S_ISLNK(root_metadata.st_mode)
             or root_metadata.st_uid != os.geteuid()
-            or root_metadata.st_mode & 0o022
+            or root_metadata.st_mode & 0o077
         ):
             raise ResourceCommitDenied(
-                "filesystem root must be a broker-owned directory not writable by group or others"
+                "filesystem root must be a private broker-owned directory with no group or other permissions"
             )
         try:
             self.secure_root = SecureRoot(root_path)
-        except (OSError, SecurePathUnavailable, SecurePathError) as exc:
+        except SecurePathUnavailable:
+            raise
+        except (OSError, SecurePathError) as exc:
             raise ResourceCommitDenied(
                 "filesystem root could not be opened with required openat2 constraints"
             ) from exc
