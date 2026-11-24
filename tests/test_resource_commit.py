@@ -27,7 +27,11 @@ from paca.memory import (
     TrustedMemoryAdapter,
     canonical_value_bytes,
 )
-from paca.resource_commit import ResourceCommitDenied, SQLiteFencedResourceExecutor
+from paca.resource_commit import (
+    FencedResourceExecutor,
+    ResourceCommitDenied,
+    SQLiteFencedResourceExecutor,
+)
 from paca.runtime import Decision, Request, Tool
 
 
@@ -481,3 +485,17 @@ def test_async_runtime_uses_the_same_resource_commit_fence(tmp_path):
     assert stored is not None
     assert json.loads(stored[0]) == {"content": "approved report body"}
     assert env["registry"].usage(env["signed"].capability.cap_id)[0] == 5
+
+
+def test_sqlite_fenced_executor_name_remains_a_compatibility_alias():
+    assert SQLiteFencedResourceExecutor is FencedResourceExecutor
+
+
+def test_sqlite_authority_store_identity_is_stable_and_database_scoped(tmp_path):
+    first = SQLiteAuthorityRegistry(tmp_path / "authority.sqlite3")
+    second = SQLiteAuthorityRegistry(tmp_path / "authority.sqlite3")
+    separate = SQLiteAuthorityRegistry(tmp_path / "separate-authority.sqlite3")
+
+    assert first.authority_store_id == second.authority_store_id
+    assert first.authority_store_id.startswith("sqlite:")
+    assert first.authority_store_id != separate.authority_store_id

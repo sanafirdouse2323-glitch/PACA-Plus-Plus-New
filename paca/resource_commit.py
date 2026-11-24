@@ -1,8 +1,9 @@
-"""Resource-side commit fencing for the local PACA reference deployment.
+"""Resource-side commit fencing for local PACA reference deployments.
 
-The SQLite resource adapter stores an effect and its one-use permit receipt in the
-same authority database used by revocation and task-wide quotas. It is a local
-reference implementation, not a remote-provider transaction protocol.
+The adapter delegates the final mutation to the configured authority registry.
+SQLite uses one local transaction; PostgreSQL uses the registry's serialized
+single-primary transaction. Both are logical resource stores, not remote-provider
+transaction protocols or proof of host-level filesystem mediation.
 """
 
 from __future__ import annotations
@@ -20,13 +21,14 @@ class ResourceCommitDenied(PermissionError):
     """A resource mutation failed its signed permit or active-state checks."""
 
 
-class SQLiteFencedResourceExecutor:
-    """Commit supported local mutations only through the atomic SQLite fence.
+class FencedResourceExecutor:
+    """Commit supported local mutations through the configured registry fence.
 
     This executor supports the currently mapped `write_file` and `mem_write`
-    actions. It stores a logical resource value in the same database as authority
-    revocations, so a revocation transaction and a resource commit have a single
-    SQLite serialization order. It does not claim to mediate external APIs.
+    actions. SQLite stores the logical resource and authority state in one local
+    transaction. PostgreSQL uses its registry-level transaction lock to serialize
+    the logical write against revocation on one shared primary. Neither backend
+    writes to a real filesystem or mediates a remote provider API.
     """
 
     SUPPORTED_ACTIONS = frozenset({"write_file", "mem_write"})
@@ -125,8 +127,17 @@ class SQLiteFencedResourceExecutor:
     async def aexecute_authorized(
         self, request: Request, permit_token: str
     ) -> dict[str, Any]:
-        """Async-compatible adapter; the commit itself remains one synchronous DB transaction."""
+        """Async-compatible adapter; the commit remains one synchronous DB transaction."""
         return self.execute_authorized(request, permit_token)
 
 
-__all__ = ["ResourceCommitDenied", "SQLiteFencedResourceExecutor"]
+# Backwards-compatible name for callers that explicitly use the SQLite backend.
+# The adapter itself is backend-neutral; its registry determines transaction semantics.
+SQLiteFencedResourceExecutor = FencedResourceExecutor
+
+
+__all__ = [
+    "FencedResourceExecutor",
+    "ResourceCommitDenied",
+    "SQLiteFencedResourceExecutor",
+]
