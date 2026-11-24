@@ -2553,3 +2553,291 @@ def test_async_runtime_rejects_nested_task_returned_from_authorized_coroutine(tm
     asyncio.run(exercise())
     assert started == []
     assert tasks and tasks[0].cancelled()
+
+
+
+def test_task_quota_is_shared_across_delegated_descendants_and_messages(tmp_path):
+    env = _environment(tmp_path)
+    root = env["issuer"].issue(
+        principal="quota-root",
+        tenant="acme",
+        task_id="quota-task",
+        purpose="prepare-report",
+        grants={
+            "delegate": ("worker-a",),
+            "read_file": ("/acme/*",),
+        },
+        expires_at=1_900,
+        max_calls=20,
+        max_fanout=3,
+        max_task_calls=3,
+    )
+    child = env["issuer"].issue(
+        parent_token=root.token,
+        principal="worker-a",
+        grants={
+            "delegate": ("worker-b",),
+            "read_file": ("/acme/*",),
+        },
+        expires_at=1_800,
+        max_calls=10,
+        max_fanout=2,
+    )
+    assert env["registry"].task_usage("acme", "quota-task") == (1, 3)
+
+    child_capability = env["issuer"].verify(child.token).capability
+    assert env["registry"].consume_effect(
+        child_capability.cap_id, max_calls=child_capability.max_calls,
+    ) == 1
+    assert env["registry"].task_usage("acme", "quota-task") == (2, 3)
+
+    grandchild = env["issuer"].issue(
+        parent_token=child.token,
+        principal="worker-b",
+        grants={"read_file": ("/acme/reports/*",)},
+        expires_at=1_700,
+        max_calls=8,
+        max_fanout=1,
+    )
+    assert grandchild.capability.authority_lineage.max_task_calls == 3
+    assert env["registry"].task_usage("acme", "quota-task") == (3, 3)
+
+    with pytest.raises(AuthorityRegistryError, match="task-wide call budget"):
+        env["registry"].consume_message(
+            grandchild.capability.cap_id,
+            "message-after-exhaustion",
+            max_calls=grandchild.capability.max_calls,
+        )
+    with sqlite3.connect(env["registry"].database) as connection:
+        receipt_count = connection.execute(
+            "SELECT COUNT(*) FROM authority_message_receipts "
+            "WHERE task_id=? AND message_id=?",
+            ("quota-task", "message-after-exhaustion"),
+        ).fetchone()[0]
+    assert receipt_count == 0
+    assert env["registry"].task_usage("acme", "quota-task") == (3, 3)
+
+
+def test_task_quota_is_atomic_across_authority_ids_and_tenant_scoped(tmp_path):
+    env = _environment(tmp_path)
+    root = env["issuer"].issue(
+        principal="quota-root",
+        tenant="acme",
+        task_id="same-task-id",
+        purpose="prepare-report",
+        grants={
+            "delegate": ("worker-a", "worker-b"),
+            "read_file": ("/acme/*",),
+        },
+        expires_at=1_900,
+        max_calls=20,
+        max_fanout=3,
+        max_task_calls=4,
+    )
+    child_a = env["issuer"].issue(
+        parent_token=root.token,
+        principal="worker-a",
+        grants={"read_file": ("/acme/a/*",)},
+        expires_at=1_800,
+        max_calls=10,
+        max_fanout=1,
+    )
+    child_b = env["issuer"].issue(
+        parent_token=root.token,
+        principal="worker-b",
+        grants={"read_file": ("/acme/b/*",)},
+        expires_at=1_800,
+        max_calls=10,
+        max_fanout=1,
+    )
+    other_tenant = env["issuer"].issue(
+        principal="other-tenant-root",
+        tenant="other",
+        task_id="same-task-id",
+        purpose="prepare-report",
+        grants={"read_file": ("/other/*",)},
+        expires_at=1_900,
+        max_calls=20,
+        max_task_calls=4,
+    )
+
+    authority_ids = [
+        root.capability.cap_id,
+        child_a.capability.cap_id,
+        child_b.capability.cap_id,
+    ] * 10
+
+    def consume(authority_id):
+        try:
+            env["registry"].consume_effect(authority_id, max_calls=20)
+            return True
+        except AuthorityRegistryError:
+            return False
+
+    with ThreadPoolExecutor(max_workers=12) as pool:
+        results = list(pool.map(consume, authority_ids))
+
+    assert sum(results) == 2  # two delegations already consumed two of four units
+    assert env["registry"].task_usage("acme", "same-task-id") == (4, 4)
+    assert env["registry"].task_usage("other", "same-task-id") == (0, 4)
+
+    restarted = SQLiteAuthorityRegistry(
+        tmp_path / "authority.sqlite3", clock=env["clock"],
+    )
+    assert restarted.task_usage("acme", "same-task-id") == (4, 4)
+    assert restarted.task_usage("other", "same-task-id") == (0, 4)
+
+
+def test_task_quota_configuration_cannot_be_reset_or_changed_by_new_root(tmp_path):
+    env = _environment(tmp_path)
+    first = env["issuer"].issue(
+        principal="root-one",
+        tenant="acme",
+        task_id="fixed-quota-task",
+        purpose="prepare-report",
+        grants={"read_file": ("/acme/*",)},
+        expires_at=1_900,
+        max_calls=10,
+        max_task_calls=2,
+    )
+    second = env["issuer"].issue(
+        principal="root-two",
+        tenant="acme",
+        task_id="fixed-quota-task",
+        purpose="prepare-report",
+        grants={"read_file": ("/acme/*",)},
+        expires_at=1_900,
+        max_calls=10,
+        max_task_calls=2,
+    )
+    assert env["registry"].task_usage("acme", "fixed-quota-task") == (0, 2)
+
+    with pytest.raises(AuthorityRegistryError, match="quota differs"):
+        env["issuer"].issue(
+            principal="root-three",
+            tenant="acme",
+            task_id="fixed-quota-task",
+            purpose="prepare-report",
+            grants={"read_file": ("/acme/*",)},
+            expires_at=1_900,
+            max_calls=10,
+            max_task_calls=3,
+        )
+
+    env["registry"].consume_effect(first.capability.cap_id, max_calls=10)
+    env["registry"].consume_effect(second.capability.cap_id, max_calls=10)
+    with pytest.raises(AuthorityRegistryError, match="task-wide call budget"):
+        env["registry"].consume_effect(first.capability.cap_id, max_calls=10)
+    assert env["registry"].task_usage("acme", "fixed-quota-task") == (2, 2)
+
+
+def test_task_quota_also_covers_memory_io_across_root_capabilities(tmp_path):
+    env = _environment(tmp_path)
+    writer = env["issuer"].issue(
+        principal="memory-writer",
+        tenant="acme",
+        task_id="shared-memory-task",
+        purpose="prepare-report",
+        grants={"mem_write": ("mem/*",), "mem_read": ("mem/*",)},
+        expires_at=1_900,
+        max_calls=10,
+        max_task_calls=2,
+    )
+    reader = env["issuer"].issue(
+        principal="memory-reader",
+        tenant="acme",
+        task_id="shared-memory-task",
+        purpose="prepare-report",
+        grants={"mem_read": ("mem/*",)},
+        expires_at=1_900,
+        max_calls=10,
+        max_task_calls=2,
+    )
+    connector = TrustedConnectorAdapter(
+        env["memory"],
+        connector_id="mail:shared-task",
+        source_class="external_content",
+        tenant="acme",
+        sensitivity=1,
+        integrity="untrusted",
+    )
+    connector.ingest(
+        {"text": "one shared task-budgeted write"},
+        object_id="mem/shared-task",
+        version_id="v1",
+        purpose="prepare-report",
+        capability_token=writer.token,
+    )
+    env["memory"].read(
+        "mem/shared-task",
+        "v1",
+        purpose="prepare-report",
+        capability_token=reader.token,
+    )
+    assert env["registry"].task_usage("acme", "shared-memory-task") == (2, 2)
+    with pytest.raises(MemoryAccessDenied, match="budget"):
+        env["memory"].read(
+            "mem/shared-task",
+            "v1",
+            purpose="prepare-report",
+            capability_token=writer.token,
+        )
+    assert env["registry"].task_usage("acme", "shared-memory-task") == (2, 2)
+
+
+def test_registry_migrates_empty_v3_database_to_task_quota_schema(tmp_path):
+    database = tmp_path / "authority.sqlite3"
+    SQLiteAuthorityRegistry(database)
+    with sqlite3.connect(database) as connection:
+        connection.execute("DROP TABLE task_usage")
+        connection.execute(
+            "UPDATE paca_authority_meta SET value='3' WHERE key='schema_version'"
+        )
+
+    migrated = SQLiteAuthorityRegistry(database)
+    with sqlite3.connect(database) as connection:
+        version = connection.execute(
+            "SELECT value FROM paca_authority_meta WHERE key='schema_version'"
+        ).fetchone()[0]
+        table = connection.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='task_usage'"
+        ).fetchone()
+    assert version == "4"
+    assert table is not None
+    with pytest.raises(KeyError):
+        migrated.task_usage("acme", "not-created")
+
+
+def test_registry_refuses_to_guess_quota_for_populated_v3_database(tmp_path):
+    env = _environment(tmp_path)
+    authority_id = env["root"].capability.cap_id
+    database = env["registry"].database
+    with sqlite3.connect(database) as connection:
+        row = connection.execute(
+            "SELECT record_json FROM authority_records WHERE authority_id=?",
+            (authority_id,),
+        ).fetchone()
+        record = json.loads(row[0])
+        record.pop("max_task_calls")
+        connection.execute(
+            "UPDATE authority_records SET record_json=? WHERE authority_id=?",
+            (json.dumps(record, sort_keys=True, separators=(",", ":"), ensure_ascii=False), authority_id),
+        )
+        connection.execute("DROP TABLE task_usage")
+        connection.execute(
+            "UPDATE paca_authority_meta SET value='3' WHERE key='schema_version'"
+        )
+
+    with pytest.raises(AuthorityRegistryError, match="offline migration"):
+        SQLiteAuthorityRegistry(database, clock=env["clock"])
+
+    with sqlite3.connect(database) as connection:
+        version = connection.execute(
+            "SELECT value FROM paca_authority_meta WHERE key='schema_version'"
+        ).fetchone()[0]
+        count = connection.execute(
+            "SELECT COUNT(*) FROM authority_records WHERE authority_id=?",
+            (authority_id,),
+        ).fetchone()[0]
+    assert version == "3"
+    assert count == 1
