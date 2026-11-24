@@ -7,13 +7,15 @@ import urllib.parse
 import httpx
 import pytest
 
+from paca.authority_runtime import HMACCapabilityAuthority, SQLiteAuthorityRegistry
+from paca.durable import SQLiteProvenanceRepository
 from paca.integrations.providers import (
     GmailConnector,
     MicrosoftGraphMailConnector,
     OAuth2RefreshTokenProvider,
     ProviderAuthenticationError,
-    ProviderConnectorError,
     ProviderCapture,
+    ProviderConnectorError,
     ProviderResponseTooLarge,
     ProviderScopeError,
     QdrantVectorConnector,
@@ -25,8 +27,6 @@ from paca.memory import (
     TrustedMemoryAdapter,
     canonical_value_bytes,
 )
-from paca.authority_runtime import HMACCapabilityAuthority, SQLiteAuthorityRegistry
-from paca.durable import SQLiteProvenanceRepository
 
 
 def _oauth_provider(handler, *, scopes, clock=None, on_refresh_token=None):
@@ -72,7 +72,11 @@ def test_oauth_refresh_caches_token_checks_scopes_and_persists_rotation():
                 "token_type": "Bearer",
                 "expires_in": 300,
                 "scope": "scope.read",
-                "refresh_token": "rotated-refresh-secret",
+                "refresh_token": (
+                    "rotated-refresh-secret"
+                    if len(calls) == 1
+                    else "second-rotated-refresh-secret"
+                ),
             },
         )
 
@@ -88,7 +92,7 @@ def test_oauth_refresh_caches_token_checks_scopes_and_persists_rotation():
         assert first.access_token == "access-secret"
         assert second is first
         assert len(calls) == 1
-        assert rotations == ["rotated-refresh-secret", "rotated-refresh-secret"]
+        assert rotations == ["rotated-refresh-secret"]
         assert "access-secret" not in repr(first)
         assert "rotated-refresh-secret" not in repr(provider)
 
@@ -96,7 +100,10 @@ def test_oauth_refresh_caches_token_checks_scopes_and_persists_rotation():
         refreshed = provider.get_access_token({"scope.read"})
         assert refreshed.access_token == "access-secret"
         assert len(calls) == 2
-        # A second refresh rotates the refresh token as well.
+        assert rotations == [
+            "rotated-refresh-secret",
+            "second-rotated-refresh-secret",
+        ]
     finally:
         provider.close()
         client.close()
@@ -409,7 +416,11 @@ def test_slack_history_uses_explicit_history_scope_and_returns_cursor():
             headers={"content-type": "application/json"},
             json={
                 "ok": True,
-                "messages": [{"ts": "1710000000.000001", "text": "untrusted message"}],
+                "messages": [{
+                    "ts": "1710000000.000001",
+                    "text": "untrusted message",
+                    "channel": "C-ATTACKER-SUPPLIED",
+                }],
                 "response_metadata": {"next_cursor": "cursor-next"},
             },
         )
@@ -437,6 +448,7 @@ def test_slack_history_uses_explicit_history_scope_and_returns_cursor():
         page = connector.history("C123", limit=20)
         assert page.next_cursor == "cursor-next"
         assert page.items[0].object_id.endswith("1710000000.000001")
+        assert page.items[0].value["channel"] == "C123"
         assert len(sent) == 1
     finally:
         connector.close()
@@ -538,14 +550,15 @@ def test_provider_capture_persists_only_through_matching_untrusted_ingress(tmp_p
         ),
         clock=clock,
     )
+    provider_object_id = "gmail:account-1:message:message-1"
     root = issuer.issue(
         principal="agent-a",
         tenant="acme",
         task_id="task-provider",
         purpose="review-mail",
         grants={
-            "mem_write": ("mem/*",),
-            "mem_read": ("mem/*",),
+            "mem_write": (provider_object_id,),
+            "mem_read": (provider_object_id,),
         },
         expires_at=2_000,
         max_calls=20,
@@ -568,13 +581,14 @@ def test_provider_capture_persists_only_through_matching_untrusted_ingress(tmp_p
         sensitivity=1,
         integrity="untrusted",
     )
+    capture_value = {"id": "message-1", "snippet": "external prompt injection"}
     capture = ProviderCapture(
         provider="gmail",
         connector_id="gmail:account-1",
-        object_id="gmail:account-1:message:message-1",
-        version_id="digest-version-1",
+        object_id=provider_object_id,
+        version_id=hashlib.sha256(canonical_value_bytes(capture_value)).hexdigest(),
         provider_version="history-77",
-        value={"id": "message-1", "snippet": "external prompt injection"},
+        value=capture_value,
     )
     captured = capture.persist(
         connector,
@@ -597,6 +611,22 @@ def test_provider_capture_persists_only_through_matching_untrusted_ingress(tmp_p
         )
     ).hexdigest()
 
+    mutable_value = {"id": "message-2", "snippet": "original provider text"}
+    mutable_capture = ProviderCapture(
+        provider="gmail",
+        connector_id="gmail:account-1",
+        object_id="gmail:account-1:message:message-2",
+        version_id=hashlib.sha256(canonical_value_bytes(mutable_value)).hexdigest(),
+        provider_version="history-78",
+        value=mutable_value,
+    )
+    mutable_value["snippet"] = "tampered after capture"
+    with pytest.raises(ProviderAuthenticationError, match="changed after capture"):
+        mutable_capture.persist(
+            connector,
+            purpose="review-mail",
+            capability_token=root.token,
+        )
 
     trusted_connector = TrustedConnectorAdapter(
         memory,
@@ -688,3 +718,86 @@ def test_provider_capture_rejects_wrong_or_trusted_ingress_adapter():
 
     with pytest.raises(TypeError, match="TrustedConnectorAdapter"):
         capture.persist(FakeConnector(), purpose="review-mail", capability_token="unused")
+
+
+
+@pytest.mark.parametrize(
+    ("read_body", "expected_scope", "body_selected"),
+    [
+        (False, MicrosoftGraphMailConnector.BASIC_SCOPE, False),
+        (True, MicrosoftGraphMailConnector.READ_SCOPE, True),
+    ],
+)
+def test_microsoft_graph_get_message_uses_the_configured_least_privilege_scope(
+    read_body, expected_scope, body_selected
+):
+    requests = []
+
+    def handler(request):
+        requests.append(request)
+        assert request.method == "GET"
+        assert request.url.path.endswith("/me/messages/message-1")
+        selected = set(request.url.params["$select"].split(","))
+        assert ("body" in selected) is body_selected
+        assert ("uniqueBody" in selected) is body_selected
+        return httpx.Response(
+            200,
+            headers={"content-type": "application/json"},
+            json={"id": "message-1", "subject": "untrusted", "body": {"content": "external"}},
+        )
+
+    client = httpx.Client(transport=httpx.MockTransport(handler), follow_redirects=False)
+    provider, token_client = _oauth_provider(
+        lambda _request: httpx.Response(
+            200,
+            headers={"content-type": "application/json"},
+            json={
+                "access_token": "graph-access",
+                "token_type": "Bearer",
+                "expires_in": 300,
+                "scope": expected_scope,
+            },
+        ),
+        scopes={expected_scope},
+    )
+    connector = MicrosoftGraphMailConnector(
+        provider,
+        tenant_id="tenant-1",
+        user_id="user-1",
+        read_body=read_body,
+        client=client,
+    )
+    try:
+        capture = connector.get_message("message-1")
+        assert capture.object_id == "graph:tenant-1:user-1:message:message-1"
+        assert capture.value["id"] == "message-1"
+        assert len(requests) == 1
+    finally:
+        connector.close()
+        client.close()
+        provider.close()
+        token_client.close()
+
+
+def test_qdrant_api_key_provider_errors_do_not_leak_secret_material():
+    def secret_provider():
+        raise RuntimeError("backend failed while handling api-key=top-secret-value")
+
+    connector = QdrantVectorConnector(
+        "https://qdrant.example.test",
+        cluster_id="cluster-1",
+        api_key_provider=secret_provider,
+        client=httpx.Client(
+            transport=httpx.MockTransport(
+                lambda _request: pytest.fail("request must not run when secret retrieval fails")
+            ),
+            follow_redirects=False,
+        ),
+    )
+    try:
+        with pytest.raises(ProviderAuthenticationError) as error:
+            connector.search("reports", [0.1, 0.2])
+        assert "top-secret-value" not in str(error.value)
+        assert "top-secret-value" not in repr(error.value)
+    finally:
+        connector.close()
