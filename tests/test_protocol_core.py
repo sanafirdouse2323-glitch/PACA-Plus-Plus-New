@@ -4,9 +4,9 @@ import hashlib
 import json
 from pathlib import Path
 
+import pytest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from jsonschema import Draft202012Validator
-import pytest
 
 from paca.contracts import (
     CanonicalizationError,
