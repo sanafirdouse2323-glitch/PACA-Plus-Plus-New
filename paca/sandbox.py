@@ -189,56 +189,11 @@ class DockerSandbox:
             )
         return command
 
-    def implementation_digest(self, argv: Sequence[str]) -> str:
-        """Digest the exact worker image, command and enforced isolation profile.
-
-        Configure this value as Tool.implementation_digest before issuing the
-        capability. A changed image, command or sandbox limit requires a new
-        signed tool pin.
-        """
-        command = self._validate_argv(argv)
-        descriptor = {
-            "profile": "paca-docker-worker-v1",
-            "image": self.image,
-            "platform": self.platform,
-            "argv": list(command),
-            "isolation": {
-                "network": "none",
-                "read_only_root": True,
-                "capabilities_dropped": "ALL",
-                "no_new_privileges": True,
-                "seccomp": "default",
-                "user": "65534:65534",
-                "ipc": "private",
-                "pids_limit": self.pids_limit,
-                "memory_bytes": self.memory_bytes,
-                "cpu_limit": self.cpu_limit,
-                "nofile_limit": 64,
-                "core_limit": 0,
-                "file_size_limit": self.max_output_bytes,
-                "tmpfs_bytes": self.tmpfs_bytes,
-                "timeout_seconds": self.timeout_seconds,
-                "max_input_bytes": self.max_input_bytes,
-                "max_output_bytes": self.max_output_bytes,
-                "docker_cli_environment": dict(sorted(self.docker_env.items())),
-            },
-        }
-        encoded = json.dumps(
-            descriptor,
-            sort_keys=True,
-            separators=(",", ":"),
-            ensure_ascii=False,
-            allow_nan=False,
-        ).encode("utf-8")
-        return hashlib.sha256(encoded).hexdigest()
-
-    def _build_command(self, argv: Sequence[str], cidfile: str) -> tuple[str, ...]:
-        command = self._validate_argv(argv)
+    def _container_options(self, cidfile: str) -> tuple[str, ...]:
+        """Return every fixed Docker run option in the exact order used at launch."""
         if not isinstance(cidfile, str) or not cidfile:
             raise ValueError("cidfile path must be non-empty")
         return (
-            self.docker_binary,
-            "run",
             "--rm",
             "--interactive",
             "--init",
@@ -264,11 +219,49 @@ class DockerSandbox:
             "--env=HOME=/tmp",
             "--env=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
             "--env=LANG=C.UTF-8",
+        )
+
+    def _build_command(self, argv: Sequence[str], cidfile: str) -> tuple[str, ...]:
+        command = self._validate_argv(argv)
+        return (
+            self.docker_binary,
+            "run",
+            *self._container_options(cidfile),
             "--entrypoint",
             command[0],
             self.image,
             *command[1:],
         )
+
+    def _implementation_descriptor(self, argv: Sequence[str]) -> dict[str, Any]:
+        """Describe the same command builder used at runtime with a stable CID file."""
+        command = self._validate_argv(argv)
+        return {
+            "profile": "paca-docker-worker-v1",
+            "docker_cli_executable": self.docker_binary,
+            "docker_cli_environment": dict(sorted(self.docker_env.items())),
+            "docker_invocation": list(
+                self._build_command(command, "<PACA_CIDFILE>")
+            ),
+        }
+
+    def implementation_digest(self, argv: Sequence[str]) -> str:
+        """Digest the exact Docker invocation used for this pinned worker.
+
+        The CID file path is normalized because it is an ephemeral host temporary
+        path. Every other Docker argument, the image reference, platform, worker
+        command, and explicit CLI environment selection is included. The Docker
+        CLI binary and daemon remain trusted deployment components.
+        """
+        descriptor = self._implementation_descriptor(argv)
+        encoded = json.dumps(
+            descriptor,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=False,
+            allow_nan=False,
+        ).encode("utf-8")
+        return hashlib.sha256(encoded).hexdigest()
 
     def _remove_container(self, cidfile: Path) -> None:
         try:
