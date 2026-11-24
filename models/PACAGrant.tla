@@ -2,8 +2,11 @@
 EXTENDS Naturals, FiniteSets, TLC
 
 CONSTANTS
-    Grants, RootGrant, Principals, Tenants, Tasks, Purposes, Actions, Resources, Destinations,
+    Grants, RootGrant, ChildGrant, GrandchildGrant,
+    Principals, Tenants, Tasks, Purposes, Actions, Resources, Destinations,
     IntegrityLevels, MaxSensitivity, MaxBudget, MaxTime,
+    ChildPrincipal, GrandchildPrincipal, UseAction, UseResource, UsePurpose,
+    UseDestination, UseTask, UseSensitivity, UseIntegrity, UseApprovalSatisfied,
     RootPrincipal, RootTenant, RootTaskScope, RootPurposeScope, RootActions, RootResources,
     RootDestinations, RootDelegatees, RootMaxSensitivity, RootIntegrityLevels,
     RootRequiresApproval, RootNotBefore, RootExpiry, RootBudget,
@@ -102,18 +105,17 @@ Delegate(child, parent, recipient, task, actions, resources, purposes, destinati
     /\ grantUseCount' = [grantUseCount EXCEPT ![child] = 0]
     /\ UNCHANGED now
 
-UseGrant(g, action, resource, purpose, destination, task, sensitivity, integrity, approvalSatisfied) ==
+UseGrant(g) ==
     /\ g \in Grants
     /\ GrantChainActive(g)
-    /\ action \in grantActions[g]
-    /\ resource \in grantResources[g]
-    /\ purpose \in grantPurposeScope[g]
-    /\ destination \in grantDestinations[g]
-    /\ task \in grantTaskScope[g]
-    /\ sensitivity \in 0..MaxSensitivity
-    /\ sensitivity <= grantMaxSensitivity[g]
-    /\ integrity \in grantIntegrityLevels[g]
-    /\ (grantRequiresApproval[g] => approvalSatisfied)
+    /\ UseAction \in grantActions[g]
+    /\ UseResource \in grantResources[g]
+    /\ UsePurpose \in grantPurposeScope[g]
+    /\ UseDestination \in grantDestinations[g]
+    /\ UseTask \in grantTaskScope[g]
+    /\ UseSensitivity <= grantMaxSensitivity[g]
+    /\ UseIntegrity \in grantIntegrityLevels[g]
+    /\ (grantRequiresApproval[g] => UseApprovalSatisfied)
     /\ grantRemaining[g] > 0
     /\ grantRemaining' = [grantRemaining EXCEPT ![g] = @ - 1]
     /\ grantSpent' = [grantSpent EXCEPT ![g] = @ + 1]
@@ -124,6 +126,13 @@ UseGrant(g, action, resource, purpose, destination, task, sensitivity, integrity
            grantIntegrityLevels, grantRequiresApproval, grantNotBefore, grantExpiry,
            grantAllocation, now >>
 
+DelegateToChild ==
+    Delegate(ChildGrant, RootGrant, ChildPrincipal, taskB, {read}, {docA}, {report},
+             {mailA}, {agentC}, 2, {"trusted"}, TRUE, 2, 2)
+
+DelegateToGrandchild ==
+    Delegate(GrandchildGrant, ChildGrant, GrandchildPrincipal, taskB, {read}, {docA},
+             {report}, {mailA}, {}, 1, {"trusted"}, TRUE, 1, 1)
 RevokeGrant(g) ==
     /\ g \in Grants
     /\ grantState[g] = "active"
@@ -159,25 +168,12 @@ AdvanceTime ==
            grantAllocation, grantRemaining, grantSpent, grantUseCount >>
 
 Next ==
-    \/ \E child \in Grants, parent \in Grants, recipient \in Principals, task \in Tasks,
-          actions \in SUBSET Actions, resources \in SUBSET Resources,
-          purposes \in SUBSET Purposes, destinations \in SUBSET Destinations,
-          delegatees \in SUBSET Principals, maxSensitivity \in 0..MaxSensitivity,
-          integrityLevels \in SUBSET IntegrityLevels, requiresApproval \in BOOLEAN,
-          expiry \in 0..MaxTime, budget \in 1..MaxBudget:
-          Delegate(child, parent, recipient, task, actions, resources, purposes,
-                   destinations, delegatees, maxSensitivity, integrityLevels,
-                   requiresApproval, expiry, budget)
-    \/ \E g \in Grants, action \in Actions, resource \in Resources,
-          purpose \in Purposes, destination \in Destinations, task \in Tasks,
-          sensitivity \in 0..MaxSensitivity, integrity \in IntegrityLevels,
-          approvalSatisfied \in BOOLEAN:
-          UseGrant(g, action, resource, purpose, destination, task, sensitivity,
-                   integrity, approvalSatisfied)
+    \/ DelegateToChild
+    \/ DelegateToGrandchild
+    \/ \E g \in Grants: UseGrant(g)
     \/ \E g \in Grants: RevokeGrant(g)
     \/ \E g \in Grants: ExpireGrant(g)
     \/ AdvanceTime
-
 Spec == Init /\ [][Next]_vars
 
 TypeOK ==
