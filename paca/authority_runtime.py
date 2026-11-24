@@ -1417,4 +1417,5 @@ __all__ = [
     "HMACCapabilityAuthority",
     "SQLiteAuthorityRegistry",
     "SignedCapability",
+    "VerifiedResourceCommitPermit",
 ]
