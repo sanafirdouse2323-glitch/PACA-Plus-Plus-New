@@ -947,18 +947,14 @@ def test_filesystem_resource_namespace_isolated_by_task_id(tmp_path):
         assert target_one != target_two
         assert target_one.read_bytes() == b"content for task one"
         assert target_two.read_bytes() == b"content for task two"
-        assert (
-            env_one["registry"].get_resource_commit_receipt(
-                result_one["commit_nonce"]
-            )["task_id"]
-            == "task-one"
+        receipt_one = env_one["registry"].get_resource_commit_receipt(
+            result_one["commit_nonce"]
         )
-        assert (
-            env_two["registry"].get_resource_commit_receipt(
-                result_two["commit_nonce"]
-            )["task_id"]
-            == "task-two"
+        receipt_two = env_two["registry"].get_resource_commit_receipt(
+            result_two["commit_nonce"]
         )
+        assert receipt_one is not None and receipt_one["task_id"] == "task-one"
+        assert receipt_two is not None and receipt_two["task_id"] == "task-two"
     finally:
         executor_one.close()
         executor_two.close()
