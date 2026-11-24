@@ -8,14 +8,15 @@ Install the langgraph-postgres extra. The raw PostgresSaver, its connection and
 database credentials must remain inside a trusted process. Python wrappers are not
 a sandbox: direct access to the raw saver or SQL connection bypasses this adapter.
 """
+
 from __future__ import annotations
 
 import asyncio
 import base64
 import copy
 import hashlib
-from collections.abc import Iterable, Iterator, Mapping, Sequence
-from typing import Any, Callable, Optional, Tuple
+from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
+from typing import Any
 
 try:
     from langgraph.checkpoint.base import (
@@ -26,8 +27,7 @@ try:
     from langgraph.checkpoint.postgres import PostgresSaver
 except ImportError as exc:  # pragma: no cover - optional dependency
     raise ImportError(
-        "PostgreSQL checkpoint integration requires "
-        "paca-plus-plus[langgraph-postgres]"
+        "PostgreSQL checkpoint integration requires paca-plus-plus[langgraph-postgres]"
     ) from exc
 
 from ..durable import SQLiteProvenanceRepository
@@ -35,7 +35,9 @@ from ..memory import MemoryAccessDenied, MemoryIntegrityError, TrustedMemoryAdap
 from ..provenance import Arg
 
 
-def _snapshot_thread_arguments(*args: Any, **kwargs: Any) -> Tuple[Tuple[Any, ...], dict[str, Any]]:
+def _snapshot_thread_arguments(
+    *args: Any, **kwargs: Any
+) -> tuple[tuple[Any, ...], dict[str, Any]]:
     """Detach caller-owned checkpoint inputs before handing them to a worker thread."""
     try:
         snapshot_args, snapshot_kwargs = copy.deepcopy((args, kwargs))
@@ -58,8 +60,12 @@ def _provider_thread_id(tenant: str, thread_id: str) -> str:
 
 def _checkpoint_object_id(tenant: str, thread_id: str, checkpoint_ns: str) -> str:
     return (
-        "mem/checkpoints/" + _digest(tenant) + "/"
-        + _digest(thread_id) + "/" + _digest(checkpoint_ns)
+        "mem/checkpoints/"
+        + _digest(tenant)
+        + "/"
+        + _digest(thread_id)
+        + "/"
+        + _digest(checkpoint_ns)
     )
 
 
@@ -68,12 +74,21 @@ def _thread_prefix(tenant: str, thread_id: str) -> str:
 
 
 def _writes_prefix(
-    tenant: str, thread_id: str, checkpoint_ns: str, checkpoint_id: str,
+    tenant: str,
+    thread_id: str,
+    checkpoint_ns: str,
+    checkpoint_id: str,
 ) -> str:
     return (
-        "mem/checkpoint-writes/" + _digest(tenant) + "/"
-        + _digest(thread_id) + "/" + _digest(checkpoint_ns) + "/"
-        + _digest(checkpoint_id) + "/"
+        "mem/checkpoint-writes/"
+        + _digest(tenant)
+        + "/"
+        + _digest(thread_id)
+        + "/"
+        + _digest(checkpoint_ns)
+        + "/"
+        + _digest(checkpoint_id)
+        + "/"
     )
 
 
@@ -86,7 +101,10 @@ def _write_object_id(
     task_path: str,
 ) -> str:
     return _writes_prefix(
-        tenant, thread_id, checkpoint_ns, checkpoint_id,
+        tenant,
+        thread_id,
+        checkpoint_ns,
+        checkpoint_id,
     ) + _digest(task_id, task_path)
 
 
@@ -112,7 +130,7 @@ class PACAProvenancePostgresSaver(BaseCheckpointSaver):
             [Mapping[str, Any], Mapping[str, Any], Mapping[str, Any]], Iterable[Arg]
         ],
         writes_provenance_provider: Callable[
-            [Mapping[str, Any], Sequence[Tuple[str, Any]], str, str], Iterable[Arg]
+            [Mapping[str, Any], Sequence[tuple[str, Any]], str, str], Iterable[Arg]
         ],
         purpose: str,
     ) -> None:
@@ -120,8 +138,12 @@ class PACAProvenancePostgresSaver(BaseCheckpointSaver):
             raise TypeError("delegate must be an official LangGraph PostgresSaver")
         if not callable(capability_token_provider):
             raise TypeError("capability_token_provider must be callable")
-        if not callable(provenance_provider) or not callable(writes_provenance_provider):
-            raise TypeError("checkpoint and pending-write provenance providers are required")
+        if not callable(provenance_provider) or not callable(
+            writes_provenance_provider
+        ):
+            raise TypeError(
+                "checkpoint and pending-write provenance providers are required"
+            )
         if not isinstance(purpose, str) or not purpose:
             raise ValueError("purpose must be a non-empty string")
         super().__init__(serde=delegate.serde)
@@ -138,31 +160,43 @@ class PACAProvenancePostgresSaver(BaseCheckpointSaver):
         self.__delegate.setup()
 
     def _normalized_config(
-        self, config: Optional[Mapping[str, Any]], *, action: str,
-    ) -> Tuple[str, str, str, str, str, dict[str, Any]]:
+        self,
+        config: Mapping[str, Any] | None,
+        *,
+        action: str,
+    ) -> tuple[str, str, str, str, str, dict[str, Any]]:
         if not isinstance(config, Mapping):
-            raise MemoryAccessDenied("checkpoint access requires an explicit thread scope")
+            raise MemoryAccessDenied(
+                "checkpoint access requires an explicit thread scope"
+            )
         configurable = config.get("configurable")
         if not isinstance(configurable, Mapping):
             raise MemoryAccessDenied("checkpoint config has no configurable scope")
         thread_id = configurable.get("thread_id")
         checkpoint_ns = configurable.get("checkpoint_ns", "")
         if (
-            not isinstance(thread_id, str) or not thread_id
+            not isinstance(thread_id, str)
+            or not thread_id
             or not isinstance(checkpoint_ns, str)
         ):
-            raise MemoryAccessDenied("checkpoint thread or namespace identity is invalid")
+            raise MemoryAccessDenied(
+                "checkpoint thread or namespace identity is invalid"
+            )
         token = self._token_provider()
         try:
             signed = self.memory.authority.verify(token)
             authority = signed.capability.authority_lineage
             if authority is None:
-                raise MemoryAccessDenied("checkpoint capability has no authority lineage")
+                raise MemoryAccessDenied(
+                    "checkpoint capability has no authority lineage"
+                )
             tenant = authority.tenant
         except MemoryAccessDenied:
             raise
         except Exception as exc:
-            raise MemoryAccessDenied("checkpoint capability authentication failed") from exc
+            raise MemoryAccessDenied(
+                "checkpoint capability authentication failed"
+            ) from exc
 
         object_id = _checkpoint_object_id(tenant, thread_id, checkpoint_ns)
         self.memory._verified_context(token, action, object_id, self.purpose)
@@ -186,7 +220,9 @@ class PACAProvenancePostgresSaver(BaseCheckpointSaver):
             raw = base64.b64decode(envelope["payload_b64"], validate=True)
             return self.serde.loads_typed((envelope["serializer"], raw))
         except Exception as exc:
-            raise MemoryIntegrityError("checkpoint evidence payload is malformed") from exc
+            raise MemoryIntegrityError(
+                "checkpoint evidence payload is malformed"
+            ) from exc
 
     def _node_arg(self, node: Any, capability_token: str) -> Arg:
         """Return the actual stored checkpoint evidence, not a placeholder value.
@@ -202,7 +238,7 @@ class PACAProvenancePostgresSaver(BaseCheckpointSaver):
             capability_token=capability_token,
         )
 
-    def _checkpoint_node(self, object_id: str, checkpoint_id: Optional[str]) -> Any:
+    def _checkpoint_node(self, object_id: str, checkpoint_id: str | None) -> Any:
         if checkpoint_id:
             return self.repository.get_version(object_id, checkpoint_id)
         # PostgresSaver.get_tuple(config without checkpoint_id) selects
@@ -210,8 +246,10 @@ class PACAProvenancePostgresSaver(BaseCheckpointSaver):
         # insertion sequence: concurrent writes may commit in a different
         # order from checkpoint IDs.
         nodes = [
-            node for node in self.repository.list_nodes(object_id_prefix=object_id)
-            if node.object_id == object_id and not self.repository.is_revoked(node.node_id)
+            node
+            for node in self.repository.list_nodes(object_id_prefix=object_id)
+            if node.object_id == object_id
+            and not self.repository.is_revoked(node.node_id)
         ]
         return max(nodes, key=lambda node: node.version_id, default=None)
 
@@ -221,27 +259,37 @@ class PACAProvenancePostgresSaver(BaseCheckpointSaver):
         *,
         expected_thread_id: str,
         expected_namespace: str,
-        expected_checkpoint_id: Optional[str] = None,
+        expected_checkpoint_id: str | None = None,
     ) -> Mapping[str, Any]:
         if not isinstance(config, Mapping):
-            raise MemoryIntegrityError("PostgreSQL returned a checkpoint config with an invalid shape")
+            raise MemoryIntegrityError(
+                "PostgreSQL returned a checkpoint config with an invalid shape"
+            )
         configurable = config.get("configurable")
         if not isinstance(configurable, Mapping):
-            raise MemoryIntegrityError("PostgreSQL returned a checkpoint config without configurable identity")
+            raise MemoryIntegrityError(
+                "PostgreSQL returned a checkpoint config without configurable identity"
+            )
         if (
             configurable.get("thread_id") != expected_thread_id
             or configurable.get("checkpoint_ns", "") != expected_namespace
         ):
-            raise MemoryIntegrityError("PostgreSQL checkpoint config escaped its authenticated thread namespace")
+            raise MemoryIntegrityError(
+                "PostgreSQL checkpoint config escaped its authenticated thread namespace"
+            )
         if expected_checkpoint_id is not None and (
             configurable.get("checkpoint_id") != expected_checkpoint_id
         ):
-            raise MemoryIntegrityError("PostgreSQL checkpoint ID differs from authorized PACA evidence")
+            raise MemoryIntegrityError(
+                "PostgreSQL checkpoint ID differs from authorized PACA evidence"
+            )
         checkpoint_id = configurable.get("checkpoint_id")
         if checkpoint_id is not None and (
             not isinstance(checkpoint_id, str) or not checkpoint_id
         ):
-            raise MemoryIntegrityError("PostgreSQL returned an invalid checkpoint identifier")
+            raise MemoryIntegrityError(
+                "PostgreSQL returned an invalid checkpoint identifier"
+            )
         return configurable
 
     def _assert_provider_tuple(
@@ -265,20 +313,26 @@ class PACAProvenancePostgresSaver(BaseCheckpointSaver):
             if expected_parent_id is not None and (
                 not isinstance(expected_parent_id, str) or not expected_parent_id
             ):
-                raise MemoryIntegrityError("PACA checkpoint evidence contains an invalid parent checkpoint ID")
+                raise MemoryIntegrityError(
+                    "PACA checkpoint evidence contains an invalid parent checkpoint ID"
+                )
             if expected_parent_id is None:
                 if result.parent_config is not None:
                     raise MemoryIntegrityError(
                         "PostgreSQL returned a parent checkpoint not recorded by the checkpointer transition"
                     )
                 return
-            parent_node = self.repository.get_version(node.object_id, expected_parent_id)
+            parent_node = self.repository.get_version(
+                node.object_id, expected_parent_id
+            )
             if parent_node is None or parent_node.node_id not in node.parent_ids:
                 raise MemoryIntegrityError(
                     "expected parent checkpoint is not a direct immutable PACA lineage dependency"
                 )
             if result.parent_config is None:
-                raise MemoryIntegrityError("PostgreSQL omitted the expected parent checkpoint config")
+                raise MemoryIntegrityError(
+                    "PostgreSQL omitted the expected parent checkpoint config"
+                )
             parent_configurable = self._provider_configurable(
                 result.parent_config,
                 expected_thread_id=provider_thread_id,
@@ -316,18 +370,23 @@ class PACAProvenancePostgresSaver(BaseCheckpointSaver):
                 "PostgreSQL parent checkpoint does not match the immutable PACA parent lineage"
             )
 
-    def _translate_config(self, config: Mapping[str, Any], original_thread_id: str) -> dict[str, Any]:
+    def _translate_config(
+        self, config: Mapping[str, Any], original_thread_id: str
+    ) -> dict[str, Any]:
         value = dict(config)
         configurable = dict(value.get("configurable", {}))
         configurable["thread_id"] = original_thread_id
         value["configurable"] = configurable
         return value
 
-    def _translate_tuple(self, result: CheckpointTuple, original_thread_id: str) -> CheckpointTuple:
+    def _translate_tuple(
+        self, result: CheckpointTuple, original_thread_id: str
+    ) -> CheckpointTuple:
         config = self._translate_config(result.config, original_thread_id)
         parent = (
             self._translate_config(result.parent_config, original_thread_id)
-            if result.parent_config is not None else None
+            if result.parent_config is not None
+            else None
         )
         return result._replace(config=config, parent_config=parent)
 
@@ -338,8 +397,11 @@ class PACAProvenancePostgresSaver(BaseCheckpointSaver):
         metadata: Mapping[str, Any],
         new_versions: Mapping[str, Any],
     ) -> Mapping[str, Any]:
-        token, tenant, thread_id, namespace, object_id, provider_config = self._normalized_config(
-            config, action="mem_write",
+        token, _tenant, thread_id, namespace, object_id, provider_config = (
+            self._normalized_config(
+                config,
+                action="mem_write",
+            )
         )
         checkpoint_id = checkpoint.get("id")
         if not isinstance(checkpoint_id, str) or not checkpoint_id:
@@ -347,31 +409,39 @@ class PACAProvenancePostgresSaver(BaseCheckpointSaver):
 
         dependencies = tuple(self._provenance_provider(config, checkpoint, metadata))
         parent_id = config.get("configurable", {}).get("checkpoint_id")
-        if parent_id is not None and (
-            not isinstance(parent_id, str) or not parent_id
-        ):
+        if parent_id is not None and (not isinstance(parent_id, str) or not parent_id):
             raise MemoryAccessDenied("parent checkpoint identifier is invalid")
         if parent_id:
             parent = self.repository.get_version(object_id, parent_id)
             if parent is None:
-                raise MemoryAccessDenied("parent checkpoint is missing from PACA provenance")
+                raise MemoryAccessDenied(
+                    "parent checkpoint is missing from PACA provenance"
+                )
             dependencies += (self._node_arg(parent, token),)
         if not dependencies or any(
-            not isinstance(item, Arg) or not item.lineage_refs or item.lineage_incomplete
+            not isinstance(item, Arg)
+            or not item.lineage_refs
+            or item.lineage_incomplete
             for item in dependencies
         ):
-            raise MemoryAccessDenied("checkpoint write requires complete trusted provenance")
+            raise MemoryAccessDenied(
+                "checkpoint write requires complete trusted provenance"
+            )
 
-        persisted_metadata = get_serializable_checkpoint_metadata(provider_config, metadata)
+        persisted_metadata = get_serializable_checkpoint_metadata(
+            provider_config, metadata
+        )
         # Store only the checkpoint saver serializer envelope in the JSON value
         # store. Checkpoint channel values may include MessagePack/JsonPlus objects
         # that are not JSON serialisable on their own.
-        evidence = self._typed_payload({
-            "evidence_schema_version": 2,
-            "parent_checkpoint_id": parent_id,
-            "checkpoint": dict(checkpoint),
-            "metadata": persisted_metadata,
-        })
+        evidence = self._typed_payload(
+            {
+                "evidence_schema_version": 2,
+                "parent_checkpoint_id": parent_id,
+                "checkpoint": dict(checkpoint),
+                "metadata": persisted_metadata,
+            }
+        )
         self.memory.write_derived(
             evidence,
             *dependencies,
@@ -392,7 +462,10 @@ class PACAProvenancePostgresSaver(BaseCheckpointSaver):
             expected_checkpoint_id=checkpoint_id,
         )
         self.memory._verified_context(
-            token, "mem_write", object_id, self.purpose,
+            token,
+            "mem_write",
+            object_id,
+            self.purpose,
         )
         signed_after_write = self.memory.authority.verify(token)
         self.memory.registry.assert_active(signed_after_write.capability.cap_id)
@@ -406,7 +479,9 @@ class PACAProvenancePostgresSaver(BaseCheckpointSaver):
             for node_id in dependency.lineage_refs:
                 source_node = self.repository.get_node(node_id)
                 if source_node is None:
-                    raise MemoryAccessDenied("checkpoint source lineage disappeared after provider persistence")
+                    raise MemoryAccessDenied(
+                        "checkpoint source lineage disappeared after provider persistence"
+                    )
                 self.memory.revalidate_read_access(
                     source_node.object_id,
                     source_node.version_id,
@@ -416,7 +491,10 @@ class PACAProvenancePostgresSaver(BaseCheckpointSaver):
         return self._translate_config(saved, thread_id)
 
     def _checkpoint_for_write(
-        self, token: str, object_id: str, checkpoint_id: str,
+        self,
+        token: str,
+        object_id: str,
+        checkpoint_id: str,
     ) -> Any:
         node = self.repository.get_version(object_id, checkpoint_id)
         if node is None:
@@ -429,20 +507,31 @@ class PACAProvenancePostgresSaver(BaseCheckpointSaver):
                 raise MemoryAccessDenied("checkpoint ancestry is revoked")
             for ancestor in ancestry:
                 if ancestor.purpose is not None and ancestor.purpose != self.purpose:
-                    raise MemoryAccessDenied("checkpoint ancestry has a different purpose")
-                for authority_id in self.repository.authority_ids_for_node(ancestor.node_id):
+                    raise MemoryAccessDenied(
+                        "checkpoint ancestry has a different purpose"
+                    )
+                for authority_id in self.repository.authority_ids_for_node(
+                    ancestor.node_id
+                ):
                     self.memory.registry.assert_active(authority_id)
             self.memory.registry.assert_active(
-                self.memory.authority.verify(token).capability.authority_lineage.authority_id
+                self.memory.authority.verify(
+                    token
+                ).capability.authority_lineage.authority_id
             )
         except MemoryAccessDenied:
             raise
         except Exception as exc:
-            raise MemoryAccessDenied("checkpoint authority or lineage is no longer active") from exc
+            raise MemoryAccessDenied(
+                "checkpoint authority or lineage is no longer active"
+            ) from exc
         return node
 
     def _pending_write_payload(
-        self, task_id: str, task_path: str, writes: Sequence[Tuple[str, Any]],
+        self,
+        task_id: str,
+        task_path: str,
+        writes: Sequence[tuple[str, Any]],
     ) -> dict[str, Any]:
         return {
             "task_id": task_id,
@@ -451,18 +540,25 @@ class PACAProvenancePostgresSaver(BaseCheckpointSaver):
         }
 
     def _pending_write_args(
-        self, pending: Iterable[Any],
-    ) -> list[Tuple[str, str, Any]]:
+        self,
+        pending: Iterable[Any],
+    ) -> list[tuple[str, str, Any]]:
         output = []
         for item in pending or ():
             if not isinstance(item, (tuple, list)) or len(item) != 3:
-                raise MemoryIntegrityError("PostgreSQL returned an unsupported pending-write tuple")
+                raise MemoryIntegrityError(
+                    "PostgreSQL returned an unsupported pending-write tuple"
+                )
             task_id, channel, value = item
             if (
-                not isinstance(task_id, str) or not task_id
-                or not isinstance(channel, str) or not channel
+                not isinstance(task_id, str)
+                or not task_id
+                or not isinstance(channel, str)
+                or not channel
             ):
-                raise MemoryIntegrityError("PostgreSQL returned an invalid pending-write identity")
+                raise MemoryIntegrityError(
+                    "PostgreSQL returned an invalid pending-write identity"
+                )
             output.append((task_id, channel, value))
         return output
 
@@ -473,11 +569,11 @@ class PACAProvenancePostgresSaver(BaseCheckpointSaver):
         thread_id: str,
         namespace: str,
         checkpoint_id: str,
-    ) -> list[Tuple[str, str, Any]]:
+    ) -> list[tuple[str, str, Any]]:
         prefix = _writes_prefix(tenant, thread_id, namespace, checkpoint_id)
         nodes = self.repository.list_nodes(object_id_prefix=prefix)
-        records: dict[str, Tuple[str, list[Tuple[str, Any]]]] = {}
-        seen_tasks: set[Tuple[str, str]] = set()
+        records: dict[str, tuple[str, list[tuple[str, Any]]]] = {}
+        seen_tasks: set[tuple[str, str]] = set()
         for node in nodes:
             envelope = self.memory.read(
                 node.object_id,
@@ -486,22 +582,31 @@ class PACAProvenancePostgresSaver(BaseCheckpointSaver):
                 capability_token=token,
             ).value
             if not isinstance(envelope, Mapping):
-                raise MemoryIntegrityError("pending-write provenance envelope is not a mapping")
+                raise MemoryIntegrityError(
+                    "pending-write provenance envelope is not a mapping"
+                )
             value = self._decode_payload(envelope)
             if not isinstance(value, Mapping):
-                raise MemoryIntegrityError("pending-write provenance record is not a mapping")
+                raise MemoryIntegrityError(
+                    "pending-write provenance record is not a mapping"
+                )
             task_id = value.get("task_id")
             task_path = value.get("task_path")
             writes = value.get("writes")
             if (
-                not isinstance(task_id, str) or not task_id
+                not isinstance(task_id, str)
+                or not task_id
                 or not isinstance(task_path, str)
                 or not isinstance(writes, (tuple, list))
             ):
-                raise MemoryIntegrityError("pending-write provenance record has invalid fields")
+                raise MemoryIntegrityError(
+                    "pending-write provenance record has invalid fields"
+                )
             identity = (task_id, task_path)
             if identity in seen_tasks:
-                raise MemoryIntegrityError("duplicate pending-write provenance identity")
+                raise MemoryIntegrityError(
+                    "duplicate pending-write provenance identity"
+                )
             seen_tasks.add(identity)
             if any(
                 previous_task == task_id and previous_path != task_path
@@ -510,13 +615,17 @@ class PACAProvenancePostgresSaver(BaseCheckpointSaver):
                 raise MemoryIntegrityError(
                     "provider pending-write return type cannot disambiguate one task ID across paths"
                 )
-            normalized_writes: list[Tuple[str, Any]] = []
+            normalized_writes: list[tuple[str, Any]] = []
             for write in writes:
                 if (
-                    not isinstance(write, (tuple, list)) or len(write) != 2
-                    or not isinstance(write[0], str) or not write[0]
+                    not isinstance(write, (tuple, list))
+                    or len(write) != 2
+                    or not isinstance(write[0], str)
+                    or not write[0]
                 ):
-                    raise MemoryIntegrityError("pending-write provenance contains an invalid channel")
+                    raise MemoryIntegrityError(
+                        "pending-write provenance contains an invalid channel"
+                    )
                 normalized_writes.append((write[0], write[1]))
             records[task_id] = (task_path, normalized_writes)
         # The PostgreSQL saver exposes pending writes as (task_id, channel, value)
@@ -539,7 +648,11 @@ class PACAProvenancePostgresSaver(BaseCheckpointSaver):
         provider_pending: Iterable[Any],
     ) -> None:
         expected = self._expected_pending_writes(
-            token, tenant, thread_id, namespace, checkpoint_id,
+            token,
+            tenant,
+            thread_id,
+            namespace,
+            checkpoint_id,
         )
         actual = self._pending_write_args(provider_pending)
         if self._typed_payload(expected) != self._typed_payload(actual):
@@ -550,18 +663,25 @@ class PACAProvenancePostgresSaver(BaseCheckpointSaver):
     def put_writes(
         self,
         config: Mapping[str, Any],
-        writes: Sequence[Tuple[str, Any]],
+        writes: Sequence[tuple[str, Any]],
         task_id: str,
         task_path: str = "",
     ) -> None:
-        token, tenant, thread_id, namespace, object_id, provider_config = self._normalized_config(
-            config, action="mem_write",
+        token, tenant, thread_id, namespace, object_id, provider_config = (
+            self._normalized_config(
+                config,
+                action="mem_write",
+            )
         )
         checkpoint_id = config.get("configurable", {}).get("checkpoint_id")
         if not isinstance(checkpoint_id, str) or not checkpoint_id:
             raise MemoryAccessDenied("pending writes require an explicit checkpoint id")
         checkpoint_node = self._checkpoint_for_write(token, object_id, checkpoint_id)
-        if not isinstance(task_id, str) or not task_id or not isinstance(task_path, str):
+        if (
+            not isinstance(task_id, str)
+            or not task_id
+            or not isinstance(task_path, str)
+        ):
             raise MemoryAccessDenied("pending-write task identity is invalid")
         clean_writes = tuple((channel, value) for channel, value in writes)
         if not clean_writes or any(
@@ -569,44 +689,73 @@ class PACAProvenancePostgresSaver(BaseCheckpointSaver):
         ):
             raise MemoryAccessDenied("pending-write batch must contain valid channels")
         write_object = _write_object_id(
-            tenant, thread_id, namespace, checkpoint_id, task_id, task_path,
+            tenant,
+            thread_id,
+            namespace,
+            checkpoint_id,
+            task_id,
+            task_path,
         )
         # Read through the full PACA boundary before using provider state.
         current = self.get_tuple(config)
         if current is None:
-            raise MemoryAccessDenied("provider checkpoint is absent while writing pending state")
+            raise MemoryAccessDenied(
+                "provider checkpoint is absent while writing pending state"
+            )
 
         existing = self.repository.latest_node(write_object)
         if existing is not None:
             existing_record = self.memory.read(
-                write_object, existing.version_id, purpose=self.purpose,
+                write_object,
+                existing.version_id,
+                purpose=self.purpose,
                 capability_token=token,
             ).value
             expected_record = self._typed_payload(
                 self._pending_write_payload(task_id, task_path, clean_writes)
             )
             if existing_record != expected_record:
-                raise MemoryAccessDenied("pending-write task identity is immutable within a checkpoint")
+                raise MemoryAccessDenied(
+                    "pending-write task identity is immutable within a checkpoint"
+                )
             actual_for_task = [
-                item for item in self._pending_write_args(current.pending_writes)
+                item
+                for item in self._pending_write_args(current.pending_writes)
                 if item[0] == task_id
             ]
-            expected_for_task = [(task_id, channel, value) for channel, value in clean_writes]
-            if self._typed_payload(actual_for_task) == self._typed_payload(expected_for_task):
+            expected_for_task = [
+                (task_id, channel, value) for channel, value in clean_writes
+            ]
+            if self._typed_payload(actual_for_task) == self._typed_payload(
+                expected_for_task
+            ):
                 return
             if actual_for_task:
-                raise MemoryIntegrityError("provider has conflicting pending writes for an existing task")
+                raise MemoryIntegrityError(
+                    "provider has conflicting pending writes for an existing task"
+                )
             # Evidence may have committed before a provider failure. A retry can
             # safely complete the missing provider write.
-            self.__delegate.put_writes(provider_config, clean_writes, task_id, task_path)
+            self.__delegate.put_writes(
+                provider_config, clean_writes, task_id, task_path
+            )
         else:
-            if any(item[0] == task_id for item in self._pending_write_args(current.pending_writes)):
-                raise MemoryIntegrityError("provider contains pending writes with no PACA evidence")
+            if any(
+                item[0] == task_id
+                for item in self._pending_write_args(current.pending_writes)
+            ):
+                raise MemoryIntegrityError(
+                    "provider contains pending writes with no PACA evidence"
+                )
             dependencies = (self._node_arg(checkpoint_node, token),) + tuple(
-                self._writes_provenance_provider(config, clean_writes, task_id, task_path)
+                self._writes_provenance_provider(
+                    config, clean_writes, task_id, task_path
+                )
             )
             if any(
-                not isinstance(item, Arg) or not item.lineage_refs or item.lineage_incomplete
+                not isinstance(item, Arg)
+                or not item.lineage_refs
+                or item.lineage_incomplete
                 for item in dependencies
             ):
                 raise MemoryAccessDenied("pending-write provenance is incomplete")
@@ -623,50 +772,73 @@ class PACAProvenancePostgresSaver(BaseCheckpointSaver):
                 purpose=self.purpose,
                 capability_token=token,
             )
-            self.__delegate.put_writes(provider_config, clean_writes, task_id, task_path)
+            self.__delegate.put_writes(
+                provider_config, clean_writes, task_id, task_path
+            )
 
         # Re-enter the full mediated read path after the provider mutation:
         # this validates the returned tuple identity/body/pending writes and
         # rechecks current authority, lineage and application policy.
         persisted = self.get_tuple(config)
         if persisted is None:
-            raise MemoryIntegrityError("provider checkpoint disappeared after pending-write persistence")
+            raise MemoryIntegrityError(
+                "provider checkpoint disappeared after pending-write persistence"
+            )
 
-    def get_tuple(self, config: Mapping[str, Any]) -> Optional[CheckpointTuple]:
-        token, tenant, thread_id, namespace, object_id, provider_config = self._normalized_config(
-            config, action="mem_read",
+    def get_tuple(self, config: Mapping[str, Any]) -> CheckpointTuple | None:
+        token, tenant, thread_id, namespace, object_id, provider_config = (
+            self._normalized_config(
+                config,
+                action="mem_read",
+            )
         )
         requested_id = config.get("configurable", {}).get("checkpoint_id")
         node = self._checkpoint_node(object_id, requested_id)
         if node is None:
             if requested_id:
-                raise MemoryAccessDenied("requested checkpoint is absent from PACA provenance")
+                raise MemoryAccessDenied(
+                    "requested checkpoint is absent from PACA provenance"
+                )
             return None
 
         expected = self.memory.read(
-            object_id, node.version_id, purpose=self.purpose,
+            object_id,
+            node.version_id,
+            purpose=self.purpose,
             capability_token=token,
         ).value
         provider_config["configurable"]["checkpoint_id"] = node.version_id
         result = self.__delegate.get_tuple(provider_config)
         if result is None:
-            raise MemoryIntegrityError("PACA checkpoint evidence exists but PostgreSQL has no matching row")
+            raise MemoryIntegrityError(
+                "PACA checkpoint evidence exists but PostgreSQL has no matching row"
+            )
         if not isinstance(expected, Mapping):
             raise MemoryIntegrityError("PACA checkpoint evidence envelope is invalid")
         stored = self._decode_payload(expected)
-        if not isinstance(stored, Mapping) or "checkpoint" not in stored or "metadata" not in stored:
-            raise MemoryIntegrityError("PACA checkpoint evidence has an invalid structure")
+        if (
+            not isinstance(stored, Mapping)
+            or "checkpoint" not in stored
+            or "metadata" not in stored
+        ):
+            raise MemoryIntegrityError(
+                "PACA checkpoint evidence has an invalid structure"
+            )
         evidence_version = stored.get("evidence_schema_version", 1)
         if evidence_version == 2:
             expected_parent_id = stored.get("parent_checkpoint_id")
             if expected_parent_id is not None and (
                 not isinstance(expected_parent_id, str) or not expected_parent_id
             ):
-                raise MemoryIntegrityError("PACA checkpoint parent identity is malformed")
+                raise MemoryIntegrityError(
+                    "PACA checkpoint parent identity is malformed"
+                )
         elif evidence_version == 1:
             expected_parent_id = _INFER_PROVIDER_PARENT
         else:
-            raise MemoryIntegrityError("PACA checkpoint evidence version is unsupported")
+            raise MemoryIntegrityError(
+                "PACA checkpoint evidence version is unsupported"
+            )
         self._assert_provider_tuple(
             result,
             tenant=tenant,
@@ -679,11 +851,20 @@ class PACAProvenancePostgresSaver(BaseCheckpointSaver):
         # Checkpoint savers may normalize mapping order or reconstruct blob-backed
         # channel values while preserving the logical checkpoint content.
         if result.checkpoint != stored["checkpoint"]:
-            raise MemoryIntegrityError("PostgreSQL checkpoint body differs from authorized PACA evidence")
+            raise MemoryIntegrityError(
+                "PostgreSQL checkpoint body differs from authorized PACA evidence"
+            )
         if result.metadata != stored["metadata"]:
-            raise MemoryIntegrityError("PostgreSQL checkpoint metadata differs from authorized PACA evidence")
+            raise MemoryIntegrityError(
+                "PostgreSQL checkpoint metadata differs from authorized PACA evidence"
+            )
         self._assert_pending_writes_match(
-            token, tenant, thread_id, namespace, node.version_id, result.pending_writes,
+            token,
+            tenant,
+            thread_id,
+            namespace,
+            node.version_id,
+            result.pending_writes,
         )
         self.memory.revalidate_read_access(
             object_id,
@@ -695,16 +876,21 @@ class PACAProvenancePostgresSaver(BaseCheckpointSaver):
 
     def list(
         self,
-        config: Optional[Mapping[str, Any]],
+        config: Mapping[str, Any] | None,
         *,
-        filter: Optional[Mapping[str, Any]] = None,
-        before: Optional[Mapping[str, Any]] = None,
-        limit: Optional[int] = None,
+        filter: Mapping[str, Any] | None = None,
+        before: Mapping[str, Any] | None = None,
+        limit: int | None = None,
     ) -> Iterator[CheckpointTuple]:
         if config is None:
-            raise MemoryAccessDenied("global checkpoint listing is not available without explicit tenant and thread scope")
-        _token, _tenant, _thread_id, _namespace, object_id, _provider = self._normalized_config(
-            config, action="mem_read",
+            raise MemoryAccessDenied(
+                "global checkpoint listing is not available without explicit tenant and thread scope"
+            )
+        _token, _tenant, _thread_id, _namespace, object_id, _provider = (
+            self._normalized_config(
+                config,
+                action="mem_read",
+            )
         )
         before_id = None
         if before is not None:
@@ -712,12 +898,16 @@ class PACAProvenancePostgresSaver(BaseCheckpointSaver):
                 raise MemoryAccessDenied("checkpoint list cursor is invalid")
             before_configurable = before.get("configurable")
             if not isinstance(before_configurable, Mapping):
-                raise MemoryAccessDenied("checkpoint list cursor has no configurable scope")
+                raise MemoryAccessDenied(
+                    "checkpoint list cursor has no configurable scope"
+                )
             if (
                 before_configurable.get("thread_id") != _thread_id
                 or before_configurable.get("checkpoint_ns", "") != _namespace
             ):
-                raise MemoryAccessDenied("checkpoint list cursor belongs to another thread or namespace")
+                raise MemoryAccessDenied(
+                    "checkpoint list cursor belongs to another thread or namespace"
+                )
             before_id = before_configurable.get("checkpoint_id")
             if not isinstance(before_id, str) or not before_id:
                 raise MemoryAccessDenied("checkpoint list cursor is invalid")
@@ -726,8 +916,10 @@ class PACAProvenancePostgresSaver(BaseCheckpointSaver):
         # The provider's ordering is not SQLite insertion order; concurrent
         # evidence/provider commits can occur in a different order.
         nodes = [
-            node for node in self.repository.list_nodes(object_id_prefix=object_id)
-            if node.object_id == object_id and not self.repository.is_revoked(node.node_id)
+            node
+            for node in self.repository.list_nodes(object_id_prefix=object_id)
+            if node.object_id == object_id
+            and not self.repository.is_revoked(node.node_id)
         ]
         nodes.sort(key=lambda item: item.version_id, reverse=True)
         if before_id:
@@ -735,21 +927,27 @@ class PACAProvenancePostgresSaver(BaseCheckpointSaver):
         if limit is not None and (
             isinstance(limit, bool) or not isinstance(limit, int) or limit < 0
         ):
-            raise ValueError("checkpoint list limit must be a non-negative integer or None")
+            raise ValueError(
+                "checkpoint list limit must be a non-negative integer or None"
+            )
         if limit == 0:
             return
         emitted = 0
         for node in nodes:
-            result = self.get_tuple({
-                **dict(config),
-                "configurable": {
-                    **dict(config.get("configurable", {})),
-                    "checkpoint_id": node.version_id,
-                },
-            })
+            result = self.get_tuple(
+                {
+                    **dict(config),
+                    "configurable": {
+                        **dict(config.get("configurable", {})),
+                        "checkpoint_id": node.version_id,
+                    },
+                }
+            )
             if result is None:
                 continue
-            if filter and any(result.metadata.get(key) != value for key, value in filter.items()):
+            if filter and any(
+                result.metadata.get(key) != value for key, value in filter.items()
+            ):
                 continue
             yield result
             emitted += 1
@@ -764,35 +962,49 @@ class PACAProvenancePostgresSaver(BaseCheckpointSaver):
             signed = self.memory.authority.verify(token)
             authority = signed.capability.authority_lineage
             if authority is None:
-                raise MemoryAccessDenied("checkpoint capability has no authority lineage")
+                raise MemoryAccessDenied(
+                    "checkpoint capability has no authority lineage"
+                )
             checkpoint_prefix = _thread_prefix(authority.tenant, thread_id)
             writes_prefix = (
-                "mem/checkpoint-writes/" + _digest(authority.tenant) + "/"
-                + _digest(thread_id) + "/"
+                "mem/checkpoint-writes/"
+                + _digest(authority.tenant)
+                + "/"
+                + _digest(thread_id)
+                + "/"
             )
             scope = self.memory._verified_context(
-                token, "mem_delete", checkpoint_prefix, self.purpose,
+                token,
+                "mem_delete",
+                checkpoint_prefix,
+                self.purpose,
             )
             # Pending-write evidence lives under a separate object namespace and
             # must have its own explicit deletion grant as well.
             self.memory._verified_context(
-                token, "mem_delete", writes_prefix, self.purpose,
+                token,
+                "mem_delete",
+                writes_prefix,
+                self.purpose,
             )
             self.memory._consume_budget(scope)
             for prefix in (checkpoint_prefix, writes_prefix):
                 for node in self.repository.list_nodes(object_id_prefix=prefix):
                     if not self.repository.is_revoked(node.node_id):
                         self.repository.revoke_lineage(
-                            node.node_id, "LangGraph checkpoint thread deleted",
+                            node.node_id,
+                            "LangGraph checkpoint thread deleted",
                         )
             self.memory.registry.assert_active(authority.authority_id)
         except MemoryAccessDenied:
             raise
         except Exception as exc:
-            raise MemoryAccessDenied("checkpoint deletion authority validation failed") from exc
+            raise MemoryAccessDenied(
+                "checkpoint deletion authority validation failed"
+            ) from exc
         self.__delegate.delete_thread(_provider_thread_id(authority.tenant, thread_id))
 
-    def get_next_version(self, current: Optional[str], channel: Optional[str]) -> str:
+    def get_next_version(self, current: str | None, channel: str | None) -> str:
         return self.__delegate.get_next_version(current, channel)
 
     async def aput(self, *args: Any, **kwargs: Any) -> Mapping[str, Any]:
@@ -803,20 +1015,25 @@ class PACAProvenancePostgresSaver(BaseCheckpointSaver):
         snapshot_args, snapshot_kwargs = _snapshot_thread_arguments(*args, **kwargs)
         await asyncio.to_thread(self.put_writes, *snapshot_args, **snapshot_kwargs)
 
-    async def aget_tuple(self, config: Mapping[str, Any]) -> Optional[CheckpointTuple]:
+    async def aget_tuple(self, config: Mapping[str, Any]) -> CheckpointTuple | None:
         snapshot_args, snapshot_kwargs = _snapshot_thread_arguments(config)
-        return await asyncio.to_thread(self.get_tuple, *snapshot_args, **snapshot_kwargs)
+        return await asyncio.to_thread(
+            self.get_tuple, *snapshot_args, **snapshot_kwargs
+        )
 
     async def alist(
         self,
-        config: Optional[Mapping[str, Any]],
+        config: Mapping[str, Any] | None,
         *,
-        filter: Optional[Mapping[str, Any]] = None,
-        before: Optional[Mapping[str, Any]] = None,
-        limit: Optional[int] = None,
+        filter: Mapping[str, Any] | None = None,
+        before: Mapping[str, Any] | None = None,
+        limit: int | None = None,
     ):
         snapshot_args, snapshot_kwargs = _snapshot_thread_arguments(
-            config, filter=filter, before=before, limit=limit,
+            config,
+            filter=filter,
+            before=before,
+            limit=limit,
         )
         results = await asyncio.to_thread(
             lambda: list(self.list(*snapshot_args, **snapshot_kwargs))

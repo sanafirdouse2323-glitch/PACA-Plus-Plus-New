@@ -5,7 +5,6 @@ from fastapi.testclient import TestClient
 import paca
 from paca_executor import app
 
-
 client = TestClient(app)
 
 

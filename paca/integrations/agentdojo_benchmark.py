@@ -8,21 +8,21 @@ It uses AgentDojo's own task/attack result checkers and logger. It does not clai
 full workspace-suite coverage, and it does not run until an operator explicitly
 selects tasks, attack tasks, a model, and a configured provider.
 """
+
 from __future__ import annotations
 
 import argparse
 import importlib.metadata
 import json
 import statistics
-import sys
-from types import SimpleNamespace
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
-from ..runtime import ACTIONS, Capability
 from ..provenance import Label
+from ..runtime import ACTIONS, Capability
 from .agentdojo import PacaToolsExecutor
 from .agentdojo_workspace import (
     SUPPORTED_WORKSPACE_READ_TOOLS,
@@ -51,8 +51,14 @@ class TaskPolicy:
 def _agentdojo_imports():
     """Import optional AgentDojo APIs only when the benchmark runner is invoked."""
     try:
-        from agentdojo.agent_pipeline.agent_pipeline import AgentPipeline, PipelineConfig
-        from agentdojo.agent_pipeline.tool_execution import ToolsExecutionLoop, ToolsExecutor
+        from agentdojo.agent_pipeline.agent_pipeline import (
+            AgentPipeline,
+            PipelineConfig,
+        )
+        from agentdojo.agent_pipeline.tool_execution import (
+            ToolsExecutionLoop,
+            ToolsExecutor,
+        )
         from agentdojo.attacks import load_attack
         from agentdojo.benchmark import (
             load_task_results,
@@ -103,7 +109,9 @@ def _resource_labeler_for_tenant(tenant: str):
     return label_resource
 
 
-def derive_task_policy(user_task: Any, suite: Any, *, episode_id: str = "task") -> TaskPolicy:
+def derive_task_policy(
+    user_task: Any, suite: Any, *, episode_id: str = "task"
+) -> TaskPolicy:
     """Derive exact action/target grants from the suite's trusted user-task ground truth.
 
     The environment is loaded without attack injections. Only the user task's
@@ -124,7 +132,9 @@ def derive_task_policy(user_task: Any, suite: Any, *, episode_id: str = "task") 
         ) from exc
 
     if not ground_truth_calls:
-        raise UnsupportedWorkspaceTask(f"{user_task.ID}: ground truth contains no tool calls")
+        raise UnsupportedWorkspaceTask(
+            f"{user_task.ID}: ground truth contains no tool calls"
+        )
 
     labeler = _resource_labeler_for_tenant(TENANT)
     bootstrap_capability = Capability(
@@ -170,8 +180,14 @@ def derive_task_policy(user_task: Any, suite: Any, *, episode_id: str = "task") 
             )
             target_name = ACTIONS[request.action]["target"]
             target_arg = request.args.get(target_name)
-            if target_arg is None or not isinstance(target_arg.value, str) or not target_arg.value:
-                raise ValueError("mapped target is missing or is not a non-empty string")
+            if (
+                target_arg is None
+                or not isinstance(target_arg.value, str)
+                or not target_arg.value
+            ):
+                raise ValueError(
+                    "mapped target is missing or is not a non-empty string"
+                )
         except Exception as exc:
             raise UnsupportedWorkspaceTask(
                 f"{user_task.ID}: cannot map ground-truth call {function_name!r} "
@@ -188,16 +204,22 @@ def derive_task_policy(user_task: Any, suite: Any, *, episode_id: str = "task") 
         )
 
     if not grants:
-        raise UnsupportedWorkspaceTask(f"{user_task.ID}: no PACA++ grants could be derived")
+        raise UnsupportedWorkspaceTask(
+            f"{user_task.ID}: no PACA++ grants could be derived"
+        )
 
-    episode_suffix = "".join(ch if ch.isalnum() or ch in "-_" else "-" for ch in episode_id)
+    episode_suffix = "".join(
+        ch if ch.isalnum() or ch in "-_" else "-" for ch in episode_id
+    )
     capability = Capability(
         cap_id=f"agentdojo:{user_task.ID}:{episode_suffix}",
         principal="agentdojo-user",
         tenant=TENANT,
         task_id=f"agentdojo:{DEFAULT_SUITE_VERSION}:{user_task.ID}:{episode_suffix}",
         role="assistant",
-        grants={action: tuple(sorted(targets)) for action, targets in sorted(grants.items())},
+        grants={
+            action: tuple(sorted(targets)) for action, targets in sorted(grants.items())
+        },
         expires=100,
         max_calls=40,
     )
@@ -213,7 +235,9 @@ def derive_task_policy(user_task: Any, suite: Any, *, episode_id: str = "task") 
     )
 
 
-def list_supported_workspace_tasks(suite: Any) -> tuple[list[dict[str, Any]], list[dict[str, str]]]:
+def list_supported_workspace_tasks(
+    suite: Any,
+) -> tuple[list[dict[str, Any]], list[dict[str, str]]]:
     """Return supported tasks and explicit exclusion reasons using task ground truth."""
     supported: list[dict[str, Any]] = []
     excluded: list[dict[str, str]] = []
@@ -301,9 +325,15 @@ def _distribution_version(name: str) -> str | None:
         return None
 
 
-def _load_saved_result(api: dict[str, Any], pipeline_name: str, suite_name: str,
-                       user_task_id: str, attack_name: str, injection_task_id: str,
-                       log_dir: Path):
+def _load_saved_result(
+    api: dict[str, Any],
+    pipeline_name: str,
+    suite_name: str,
+    user_task_id: str,
+    attack_name: str,
+    injection_task_id: str,
+    log_dir: Path,
+):
     return api["load_task_results"](
         pipeline_name,
         suite_name,
@@ -356,11 +386,13 @@ def _preflight_attack_pairs(
             try:
                 attack.attack(user_task, suite.injection_tasks[injection_task_id])
             except ValueError as exc:
-                skipped.append({
-                    "user_task_id": user_task_id,
-                    "injection_task_id": injection_task_id,
-                    "reason": f"{type(exc).__name__}: {exc}",
-                })
+                skipped.append(
+                    {
+                        "user_task_id": user_task_id,
+                        "injection_task_id": injection_task_id,
+                        "reason": f"{type(exc).__name__}: {exc}",
+                    }
+                )
                 continue
             applicable[user_task_id].append(injection_task_id)
     return applicable, skipped
@@ -404,8 +436,12 @@ def run_workspace_benchmark(
     if max_iters < 1 or max_iters > 100:
         raise ValueError("max_iters must be between 1 and 100")
     if not user_task_ids or not injection_task_ids:
-        raise ValueError("at least one user task and one injection task must be selected")
-    if len(set(user_task_ids)) != len(user_task_ids) or len(set(injection_task_ids)) != len(injection_task_ids):
+        raise ValueError(
+            "at least one user task and one injection task must be selected"
+        )
+    if len(set(user_task_ids)) != len(user_task_ids) or len(
+        set(injection_task_ids)
+    ) != len(injection_task_ids):
         raise ValueError("duplicate user-task or injection-task IDs are not allowed")
 
     available_users = suite.user_tasks
@@ -424,8 +460,12 @@ def run_workspace_benchmark(
         for task_id in user_task_ids
     }
     applicable_by_task, skipped_pairs = _preflight_attack_pairs(
-        api, suite, user_task_ids=user_task_ids, injection_task_ids=injection_task_ids,
-        model=model, attack_name=attack_name,
+        api,
+        suite,
+        user_task_ids=user_task_ids,
+        injection_task_ids=injection_task_ids,
+        model=model,
+        attack_name=attack_name,
     )
     applicable_pair_count = sum(len(values) for values in applicable_by_task.values())
     if applicable_pair_count == 0:
@@ -452,7 +492,11 @@ def run_workspace_benchmark(
             "injection_task_ids": injection_task_ids,
             "applicable_attack_pairs": applicable_pair_count,
             "max_iters": max_iters,
-            "conditions": ["agentdojo_no_defense", "agentdojo_tool_filter", "paca_plus_plus"],
+            "conditions": [
+                "agentdojo_no_defense",
+                "agentdojo_tool_filter",
+                "paca_plus_plus",
+            ],
             "workspace_mapper_scope": sorted(SUPPORTED_WORKSPACE_READ_TOOLS),
             "resource_label_policy": "untrusted integrity; sensitivity 3 (maximum); benchmark tenant",
         },
@@ -461,9 +505,21 @@ def run_workspace_benchmark(
         "skipped_attack_pairs": skipped_pairs,
     }
 
-    benign_values = {"agentdojo_no_defense": [], "agentdojo_tool_filter": [], "paca_plus_plus": []}
-    attacked_utility = {"agentdojo_no_defense": [], "agentdojo_tool_filter": [], "paca_plus_plus": []}
-    attacked_success = {"agentdojo_no_defense": [], "agentdojo_tool_filter": [], "paca_plus_plus": []}
+    benign_values = {
+        "agentdojo_no_defense": [],
+        "agentdojo_tool_filter": [],
+        "paca_plus_plus": [],
+    }
+    attacked_utility = {
+        "agentdojo_no_defense": [],
+        "agentdojo_tool_filter": [],
+        "paca_plus_plus": [],
+    }
+    attacked_success = {
+        "agentdojo_no_defense": [],
+        "agentdojo_tool_filter": [],
+        "paca_plus_plus": [],
+    }
     paca_benign_metrics: list[dict[str, int]] = []
     paca_attacked_metrics: list[dict[str, int]] = []
 
@@ -478,7 +534,10 @@ def run_workspace_benchmark(
         user_task = available_users[user_task_id]
         policy = policies[user_task_id]
         results["task_policies"][user_task_id] = {
-            "grants": {action: list(patterns) for action, patterns in policy.capability.grants.items()},
+            "grants": {
+                action: list(patterns)
+                for action, patterns in policy.capability.grants.items()
+            },
             "ground_truth_tool_calls": list(policy.manifest),
             "applicable_injection_task_ids": applicable_by_task[user_task_id],
         }
@@ -489,11 +548,18 @@ def run_workspace_benchmark(
 
         # Benign no-defense condition.
         baseline_pipeline, _, _ = _build_pipeline(
-            api, model=model, model_id=model_id, pipeline_name=baseline_name,
+            api,
+            model=model,
+            model_id=model_id,
+            pipeline_name=baseline_name,
             max_iters=max_iters,
         )
         baseline_utility_value, _ = api["run_task_without_injection_tasks"](
-            suite, baseline_pipeline, user_task, log_dir, True,
+            suite,
+            baseline_pipeline,
+            user_task,
+            log_dir,
+            True,
             benchmark_version=DEFAULT_SUITE_VERSION,
         )
         baseline_result = _load_saved_result(
@@ -502,11 +568,19 @@ def run_workspace_benchmark(
 
         # Benign official AgentDojo tool-filter condition.
         filter_pipeline, _, _ = _build_pipeline(
-            api, model=model, model_id=model_id, pipeline_name=filter_name,
-            max_iters=max_iters, defense="tool_filter",
+            api,
+            model=model,
+            model_id=model_id,
+            pipeline_name=filter_name,
+            max_iters=max_iters,
+            defense="tool_filter",
         )
         filter_utility_value, _ = api["run_task_without_injection_tasks"](
-            suite, filter_pipeline, user_task, log_dir, True,
+            suite,
+            filter_pipeline,
+            user_task,
+            log_dir,
+            True,
             benchmark_version=DEFAULT_SUITE_VERSION,
         )
         filter_result = _load_saved_result(
@@ -516,11 +590,19 @@ def run_workspace_benchmark(
         # Benign PACA++ condition with a fresh task capability.
         paca_policy = derive_task_policy(user_task, suite, episode_id="benign")
         paca_pipeline, paca_executor, paca_monitor = _build_pipeline(
-            api, model=model, model_id=model_id, pipeline_name=paca_name,
-            max_iters=max_iters, task_policy=paca_policy,
+            api,
+            model=model,
+            model_id=model_id,
+            pipeline_name=paca_name,
+            max_iters=max_iters,
+            task_policy=paca_policy,
         )
         paca_utility_value, _ = api["run_task_without_injection_tasks"](
-            suite, paca_pipeline, user_task, log_dir, True,
+            suite,
+            paca_pipeline,
+            user_task,
+            log_dir,
+            True,
             benchmark_version=DEFAULT_SUITE_VERSION,
         )
         paca_result = _load_saved_result(
@@ -558,53 +640,117 @@ def run_workspace_benchmark(
         save_checkpoint()
 
         for injection_task_id in applicable_by_task[user_task_id]:
-            injection_task = available_injections[injection_task_id]
+            if injection_task_id not in available_injections:
+                raise ValueError(
+                    f"unknown compatible injection task: {injection_task_id}"
+                )
             pair = (user_task_id, injection_task_id)
 
             # No-defense attacked episode.
             baseline_attack_pipeline, _, _ = _build_pipeline(
-                api, model=model, model_id=model_id, pipeline_name=baseline_name,
+                api,
+                model=model,
+                model_id=model_id,
+                pipeline_name=baseline_name,
                 max_iters=max_iters,
             )
-            baseline_attack = api["load_attack"](attack_name, suite, baseline_attack_pipeline)
-            baseline_utility_results, baseline_security_results = api["run_task_with_injection_tasks"](
-                suite, baseline_attack_pipeline, user_task, baseline_attack, log_dir, True,
-                injection_tasks=[injection_task_id], benchmark_version=DEFAULT_SUITE_VERSION,
+            baseline_attack = api["load_attack"](
+                attack_name, suite, baseline_attack_pipeline
+            )
+            baseline_utility_results, baseline_security_results = api[
+                "run_task_with_injection_tasks"
+            ](
+                suite,
+                baseline_attack_pipeline,
+                user_task,
+                baseline_attack,
+                log_dir,
+                True,
+                injection_tasks=[injection_task_id],
+                benchmark_version=DEFAULT_SUITE_VERSION,
             )
             baseline_pair_result = _load_saved_result(
-                api, baseline_name, suite.name, user_task_id, attack_name, injection_task_id, log_dir
+                api,
+                baseline_name,
+                suite.name,
+                user_task_id,
+                attack_name,
+                injection_task_id,
+                log_dir,
             )
 
             # AgentDojo's official tool_filter defense, same task and attack.
             filter_attack_pipeline, _, _ = _build_pipeline(
-                api, model=model, model_id=model_id, pipeline_name=filter_name,
-                max_iters=max_iters, defense="tool_filter",
+                api,
+                model=model,
+                model_id=model_id,
+                pipeline_name=filter_name,
+                max_iters=max_iters,
+                defense="tool_filter",
             )
-            filter_attack = api["load_attack"](attack_name, suite, filter_attack_pipeline)
-            filter_utility_results, filter_security_results = api["run_task_with_injection_tasks"](
-                suite, filter_attack_pipeline, user_task, filter_attack, log_dir, True,
-                injection_tasks=[injection_task_id], benchmark_version=DEFAULT_SUITE_VERSION,
+            filter_attack = api["load_attack"](
+                attack_name, suite, filter_attack_pipeline
+            )
+            filter_utility_results, filter_security_results = api[
+                "run_task_with_injection_tasks"
+            ](
+                suite,
+                filter_attack_pipeline,
+                user_task,
+                filter_attack,
+                log_dir,
+                True,
+                injection_tasks=[injection_task_id],
+                benchmark_version=DEFAULT_SUITE_VERSION,
             )
             filter_pair_result = _load_saved_result(
-                api, filter_name, suite.name, user_task_id, attack_name, injection_task_id, log_dir
+                api,
+                filter_name,
+                suite.name,
+                user_task_id,
+                attack_name,
+                injection_task_id,
+                log_dir,
             )
 
             # PACA++ attacked episode gets a fresh exact capability; attack data
             # is never used to expand the capability.
             paca_pair_policy = derive_task_policy(
-                user_task, suite, episode_id=injection_task_id,
+                user_task,
+                suite,
+                episode_id=injection_task_id,
             )
-            paca_attack_pipeline, paca_pair_executor, paca_pair_monitor = _build_pipeline(
-                api, model=model, model_id=model_id, pipeline_name=paca_name,
-                max_iters=max_iters, task_policy=paca_pair_policy,
+            paca_attack_pipeline, paca_pair_executor, paca_pair_monitor = (
+                _build_pipeline(
+                    api,
+                    model=model,
+                    model_id=model_id,
+                    pipeline_name=paca_name,
+                    max_iters=max_iters,
+                    task_policy=paca_pair_policy,
+                )
             )
             paca_attack = api["load_attack"](attack_name, suite, paca_attack_pipeline)
-            paca_utility_results, paca_security_results = api["run_task_with_injection_tasks"](
-                suite, paca_attack_pipeline, user_task, paca_attack, log_dir, True,
-                injection_tasks=[injection_task_id], benchmark_version=DEFAULT_SUITE_VERSION,
+            paca_utility_results, paca_security_results = api[
+                "run_task_with_injection_tasks"
+            ](
+                suite,
+                paca_attack_pipeline,
+                user_task,
+                paca_attack,
+                log_dir,
+                True,
+                injection_tasks=[injection_task_id],
+                benchmark_version=DEFAULT_SUITE_VERSION,
             )
             paca_pair_result = _load_saved_result(
-                api, paca_name, suite.name, user_task_id, attack_name, injection_task_id, log_dir
+                api,
+                paca_name,
+                suite.name,
+                user_task_id,
+                attack_name,
+                injection_task_id,
+                log_dir,
             )
 
             condition_results = {
@@ -633,10 +779,12 @@ def run_workspace_benchmark(
                 attacked_utility[condition].append(record["utility"])
                 attacked_success[condition].append(record["attack_success"])
             paca_attacked_metrics.append(dict(paca_pair_executor.metrics))
-            task_result["attacked_pairs"].append({
-                "injection_task_id": injection_task_id,
-                "conditions": condition_results,
-            })
+            task_result["attacked_pairs"].append(
+                {
+                    "injection_task_id": injection_task_id,
+                    "conditions": condition_results,
+                }
+            )
             save_checkpoint()
 
     benign_policy_metrics = _sum_metrics(paca_benign_metrics)
@@ -653,9 +801,14 @@ def run_workspace_benchmark(
         }
 
     def error_counts(scope: str) -> dict[str, int]:
-        counts = {condition: 0 for condition in (
-            "agentdojo_no_defense", "agentdojo_tool_filter", "paca_plus_plus"
-        )}
+        counts = {
+            condition: 0
+            for condition in (
+                "agentdojo_no_defense",
+                "agentdojo_tool_filter",
+                "paca_plus_plus",
+            )
+        }
         if scope == "benign":
             for item in results["task_results"]:
                 for condition, error in item["benign"]["error"].items():
@@ -671,23 +824,35 @@ def run_workspace_benchmark(
         "benign_task_count": len(user_task_ids),
         "attack_pair_count": applicable_pair_count,
         "skipped_attack_pair_count": len(skipped_pairs),
-        "benign_utility": {condition: _mean(values) for condition, values in benign_values.items()},
-        "utility_under_attack": {condition: _mean(values) for condition, values in attacked_utility.items()},
-        "attack_success_rate": {condition: _mean(values) for condition, values in attacked_success.items()},
+        "benign_utility": {
+            condition: _mean(values) for condition, values in benign_values.items()
+        },
+        "utility_under_attack": {
+            condition: _mean(values) for condition, values in attacked_utility.items()
+        },
+        "attack_success_rate": {
+            condition: _mean(values) for condition, values in attacked_success.items()
+        },
         "paca_tool_metrics": {
             "benign": policy_metric_summary(benign_policy_metrics),
             "attacked": policy_metric_summary(attacked_policy_metrics),
             "combined": policy_metric_summary(all_policy_metrics),
         },
         "denied_tool_calls_during_benign_tasks": benign_policy_metrics["denied_calls"],
-        "denied_tool_calls_during_attacked_tasks": attacked_policy_metrics["denied_calls"],
+        "denied_tool_calls_during_attacked_tasks": attacked_policy_metrics[
+            "denied_calls"
+        ],
         "benign_utility_regressions_vs_no_defense": sum(
             baseline and not defended
-            for baseline, defended in zip(benign_values["agentdojo_no_defense"], benign_values["paca_plus_plus"])
+            for baseline, defended in zip(
+                benign_values["agentdojo_no_defense"], benign_values["paca_plus_plus"]
+            )
         ),
         "benign_utility_regressions_vs_tool_filter": sum(
             baseline and not defended
-            for baseline, defended in zip(benign_values["agentdojo_tool_filter"], benign_values["paca_plus_plus"])
+            for baseline, defended in zip(
+                benign_values["agentdojo_tool_filter"], benign_values["paca_plus_plus"]
+            )
         ),
         "error_sample_counts": {
             "benign": error_counts("benign"),
@@ -703,6 +868,7 @@ def run_workspace_benchmark(
     save_checkpoint()
     return results
 
+
 def _csv_ids(value: str) -> list[str]:
     values = [item.strip() for item in value.split(",") if item.strip()]
     if not values:
@@ -717,7 +883,9 @@ def main(argv: list[str] | None = None) -> int:
         description="Run matched AgentDojo workspace baseline and PACA++ benchmark episodes."
     )
     parser.add_argument("--suite-version", default=DEFAULT_SUITE_VERSION)
-    parser.add_argument("--suite", default=DEFAULT_SUITE_NAME, choices=[DEFAULT_SUITE_NAME])
+    parser.add_argument(
+        "--suite", default=DEFAULT_SUITE_NAME, choices=[DEFAULT_SUITE_NAME]
+    )
     parser.add_argument("--list-supported-tasks", action="store_true")
     parser.add_argument("--list-injection-tasks", action="store_true")
     parser.add_argument("--user-tasks", type=_csv_ids)
@@ -726,7 +894,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--model-id")
     parser.add_argument("--attack", default="tool_knowledge")
     parser.add_argument("--log-dir", type=Path, default=Path("runs/agentdojo"))
-    parser.add_argument("--output", type=Path, default=Path("runs/agentdojo/paca-comparison.json"))
+    parser.add_argument(
+        "--output", type=Path, default=Path("runs/agentdojo/paca-comparison.json")
+    )
     parser.add_argument("--max-iters", type=int, default=15)
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args(argv)
@@ -746,13 +916,19 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.list_supported_tasks:
         supported, excluded = list_supported_workspace_tasks(suite)
-        print(json.dumps({"supported_tasks": supported, "excluded_tasks": excluded}, indent=2))
+        print(
+            json.dumps(
+                {"supported_tasks": supported, "excluded_tasks": excluded}, indent=2
+            )
+        )
         return 0
 
     if not args.user_tasks:
         parser.error("--user-tasks is required unless --list-supported-tasks is used")
     if not args.injection_tasks:
-        parser.error("--injection-tasks is required so the attack denominator is explicit")
+        parser.error(
+            "--injection-tasks is required so the attack denominator is explicit"
+        )
     if not args.model:
         parser.error("--model is required for an actual or dry-run experiment")
 
@@ -781,34 +957,36 @@ def main(argv: list[str] | None = None) -> int:
                 model=args.model,
                 attack_name=args.attack,
             )
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - AgentDojo preflight errors are surfaced as a CLI failure before any model run.
             parser.error(
                 f"could not preflight the selected AgentDojo attack/task matrix "
                 f"({type(exc).__name__}): {exc}"
             )
-        print(json.dumps(
-            {
-                "status": "dry_run",
-                "suite": args.suite,
-                "suite_version": args.suite_version,
-                "model": args.model,
-                "attack": args.attack,
-                "injection_task_ids": args.injection_tasks,
-                "applicable_injection_task_ids_by_user_task": applicable_by_task,
-                "skipped_attack_pairs": skipped_pairs,
-                "task_policies": {
-                    task_id: {
-                        "ground_truth_tool_calls": list(policy.manifest),
-                        "grants": {
-                            action: list(patterns)
-                            for action, patterns in policy.capability.grants.items()
-                        },
-                    }
-                    for task_id, _, policy in selected_tasks
+        print(
+            json.dumps(
+                {
+                    "status": "dry_run",
+                    "suite": args.suite,
+                    "suite_version": args.suite_version,
+                    "model": args.model,
+                    "attack": args.attack,
+                    "injection_task_ids": args.injection_tasks,
+                    "applicable_injection_task_ids_by_user_task": applicable_by_task,
+                    "skipped_attack_pairs": skipped_pairs,
+                    "task_policies": {
+                        task_id: {
+                            "ground_truth_tool_calls": list(policy.manifest),
+                            "grants": {
+                                action: list(patterns)
+                                for action, patterns in policy.capability.grants.items()
+                            },
+                        }
+                        for task_id, _, policy in selected_tasks
+                    },
                 },
-            },
-            indent=2,
-        ))
+                indent=2,
+            )
+        )
         return 0
 
     try:
@@ -823,7 +1001,7 @@ def main(argv: list[str] | None = None) -> int:
             output_path=args.output,
             max_iters=args.max_iters,
         )
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - all benchmark failures must mark partial results and terminate the CLI.
         if args.output.exists():
             try:
                 partial = json.loads(args.output.read_text(encoding="utf-8"))
@@ -838,8 +1016,11 @@ def main(argv: list[str] | None = None) -> int:
                     encoding="utf-8",
                 )
                 temporary_path.replace(args.output)
-            except Exception:
-                pass
+            except (OSError, UnicodeError, TypeError, ValueError) as persist_error:
+                parser._print_message(
+                    "warning: could not update partial benchmark results "
+                    f"({type(persist_error).__name__})\\n"
+                )
         parser.exit(2, f"benchmark failed ({type(exc).__name__}): {exc}\n")
 
     print(json.dumps(result["summary"], indent=2))

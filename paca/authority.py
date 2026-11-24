@@ -6,16 +6,16 @@ scope associated with a capability. It is not a credential issuer, signature
 verification service, persistent revocation registry or production authority
 store.
 """
+
 from __future__ import annotations
 
 import hashlib
 import json
 import re
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
-from typing import Dict, Iterable, List, Mapping, Optional, Tuple
 
-
-GrantScope = Tuple[Tuple[str, Tuple[str, ...]], ...]
+GrantScope = tuple[tuple[str, tuple[str, ...]], ...]
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 
 
@@ -24,16 +24,20 @@ def normalise_grants(grants: Mapping[str, Iterable[str]]) -> GrantScope:
     if not isinstance(grants, Mapping):
         raise TypeError("grants must be a mapping of action names to target patterns")
 
-    normalized: List[Tuple[str, Tuple[str, ...]]] = []
+    normalized: list[tuple[str, tuple[str, ...]]] = []
     for action, patterns in grants.items():
         if not isinstance(action, str) or not action:
             raise ValueError("grant action names must be non-empty strings")
         if isinstance(patterns, (str, bytes)):
-            raise TypeError("grant patterns must be an iterable of strings, not a string")
+            raise TypeError(
+                "grant patterns must be an iterable of strings, not a string"
+            )
         try:
             values = tuple(sorted(set(patterns)))
         except TypeError as exc:
-            raise TypeError("grant patterns must be an iterable of hashable strings") from exc
+            raise TypeError(
+                "grant patterns must be an iterable of hashable strings"
+            ) from exc
         if any(not isinstance(pattern, str) or not pattern for pattern in values):
             raise ValueError("grant target patterns must be non-empty strings")
         normalized.append((action, values))
@@ -57,7 +61,12 @@ def grant_pattern_is_subset(child: str, parent: str) -> bool:
         import fnmatch
 
         return fnmatch.fnmatchcase(child, parent)
-    if parent.endswith("*") and parent.count("*") == 1 and "?" not in parent and "[" not in parent:
+    if (
+        parent.endswith("*")
+        and parent.count("*") == 1
+        and "?" not in parent
+        and "[" not in parent
+    ):
         return child.startswith(parent[:-1])
     return False
 
@@ -75,14 +84,21 @@ class AuthorityLineage:
     policy_epoch: int
     expires: int
     grants: GrantScope
-    parent_id: Optional[str] = None
+    parent_id: str | None = None
     # Parent-chain digest makes this node transitively bind the entire grant chain.
-    parent_digest: Optional[str] = None
+    parent_digest: str | None = None
     # All capabilities for one tenant/task share this immutable aggregate call ceiling.
     max_task_calls: int = 100
 
     def __post_init__(self) -> None:
-        for field_name in ("authority_id", "issuer", "principal", "tenant", "task_id", "purpose"):
+        for field_name in (
+            "authority_id",
+            "issuer",
+            "principal",
+            "tenant",
+            "task_id",
+            "purpose",
+        ):
             value = getattr(self, field_name)
             if not isinstance(value, str) or not value:
                 raise ValueError(f"{field_name} must be a non-empty string")
@@ -103,20 +119,25 @@ class AuthorityLineage:
         if self.parent_id is None and self.parent_digest is not None:
             raise ValueError("a root authority record cannot have a parent digest")
         if self.parent_id is not None and (
-            not isinstance(self.parent_digest, str) or not _SHA256_RE.fullmatch(self.parent_digest)
+            not isinstance(self.parent_digest, str)
+            or not _SHA256_RE.fullmatch(self.parent_digest)
         ):
-            raise ValueError("a delegated authority record requires its parent's SHA-256 chain digest")
+            raise ValueError(
+                "a delegated authority record requires its parent's SHA-256 chain digest"
+            )
 
         if not isinstance(self.grants, tuple):
             raise TypeError("grants must be created with AuthorityLineage.create()")
         seen_actions = set()
-        normalized: List[Tuple[str, Tuple[str, ...]]] = []
+        normalized: list[tuple[str, tuple[str, ...]]] = []
         for entry in self.grants:
             if not isinstance(entry, tuple) or len(entry) != 2:
                 raise TypeError("each grant entry must be an (action, patterns) tuple")
             action, patterns = entry
             if not isinstance(action, str) or not action or action in seen_actions:
-                raise ValueError("authority grant actions must be unique non-empty strings")
+                raise ValueError(
+                    "authority grant actions must be unique non-empty strings"
+                )
             seen_actions.add(action)
             if not isinstance(patterns, tuple):
                 raise TypeError("authority grant patterns must be tuples")
@@ -138,10 +159,10 @@ class AuthorityLineage:
         policy_epoch: int,
         expires: int,
         grants: Mapping[str, Iterable[str]],
-        parent_id: Optional[str] = None,
-        parent_digest: Optional[str] = None,
+        parent_id: str | None = None,
+        parent_digest: str | None = None,
         max_task_calls: int = 100,
-    ) -> "AuthorityLineage":
+    ) -> AuthorityLineage:
         return cls(
             authority_id=authority_id,
             issuer=issuer,
@@ -157,7 +178,7 @@ class AuthorityLineage:
             max_task_calls=max_task_calls,
         )
 
-    def as_dict(self) -> Dict[str, object]:
+    def as_dict(self) -> dict[str, object]:
         return {
             "authority_id": self.authority_id,
             "issuer": self.issuer,
@@ -175,7 +196,9 @@ class AuthorityLineage:
 
     @property
     def digest(self) -> str:
-        blob = json.dumps(self.as_dict(), sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+        blob = json.dumps(
+            self.as_dict(), sort_keys=True, separators=(",", ":"), ensure_ascii=False
+        )
         return hashlib.sha256(blob.encode("utf-8")).hexdigest()
 
     def validate_capability(
@@ -187,7 +210,7 @@ class AuthorityLineage:
         task_id: str,
         grants: Mapping[str, Iterable[str]],
         expires: int,
-        parent_id: Optional[str],
+        parent_id: str | None,
     ) -> None:
         """Fail if a mutable Capability has drifted from this immutable grant record."""
         if (
@@ -199,14 +222,18 @@ class AuthorityLineage:
             or parent_id != self.parent_id
             or normalise_grants(grants) != self.grants
         ):
-            raise ValueError("capability fields do not match their authority-lineage record")
+            raise ValueError(
+                "capability fields do not match their authority-lineage record"
+            )
 
 
 @dataclass
 class AuthorityLineageGraph:
     """Append-only in-memory authority DAG with conservative delegation checks."""
 
-    _nodes: Dict[str, AuthorityLineage] = field(default_factory=dict, init=False, repr=False)
+    _nodes: dict[str, AuthorityLineage] = field(
+        default_factory=dict, init=False, repr=False
+    )
 
     def add(self, record: AuthorityLineage) -> AuthorityLineage:
         if not isinstance(record, AuthorityLineage):
@@ -215,7 +242,9 @@ class AuthorityLineageGraph:
         existing = self._nodes.get(record.authority_id)
         if existing is not None:
             if existing != record:
-                raise ValueError("authority_id already exists with different immutable contents")
+                raise ValueError(
+                    "authority_id already exists with different immutable contents"
+                )
             return existing
 
         if record.parent_id is not None:
@@ -223,48 +252,65 @@ class AuthorityLineageGraph:
             if parent is None:
                 raise ValueError("authority parent must be recorded before its child")
             if record.parent_digest != self.digest(record.parent_id):
-                raise ValueError("authority record does not bind the exact parent chain")
+                raise ValueError(
+                    "authority record does not bind the exact parent chain"
+                )
             if record.tenant != parent.tenant or record.task_id != parent.task_id:
                 raise ValueError("delegated authority cannot change tenant or task")
             if record.purpose != parent.purpose:
                 raise ValueError("delegated authority cannot broaden or change purpose")
             if record.max_task_calls != parent.max_task_calls:
-                raise ValueError("delegated authority must preserve the task-wide call quota")
+                raise ValueError(
+                    "delegated authority must preserve the task-wide call quota"
+                )
             if record.policy_epoch < parent.policy_epoch:
-                raise ValueError("delegated authority cannot move to an older policy epoch")
+                raise ValueError(
+                    "delegated authority cannot move to an older policy epoch"
+                )
             if record.expires > parent.expires:
                 raise ValueError("delegated authority cannot outlive its parent")
             parent_grants = dict(parent.grants)
             for action, child_patterns in record.grants:
                 allowed_patterns = parent_grants.get(action)
                 if allowed_patterns is None or not all(
-                    any(grant_pattern_is_subset(child, allowed) for allowed in allowed_patterns)
+                    any(
+                        grant_pattern_is_subset(child, allowed)
+                        for allowed in allowed_patterns
+                    )
                     for child in child_patterns
                 ):
-                    raise ValueError("delegated grant scope exceeds or is not provably within its parent")
+                    raise ValueError(
+                        "delegated grant scope exceeds or is not provably within its parent"
+                    )
 
         # Parents must already exist, so a cycle cannot be introduced by add().
         self._nodes[record.authority_id] = record
         return record
 
-    def get(self, authority_id: str) -> Optional[AuthorityLineage]:
+    def get(self, authority_id: str) -> AuthorityLineage | None:
         return self._nodes.get(authority_id)
 
-    def ancestors(self, authority_id: str) -> Tuple[AuthorityLineage, ...]:
+    def ancestors(self, authority_id: str) -> tuple[AuthorityLineage, ...]:
         """Return the root-to-record chain, including the requested record."""
-        current: Optional[AuthorityLineage] = self._nodes.get(authority_id)
+        current: AuthorityLineage | None = self._nodes.get(authority_id)
         if current is None:
             raise KeyError(authority_id)
-        chain: List[AuthorityLineage] = []
+        chain: list[AuthorityLineage] = []
         while current is not None:
             chain.append(current)
-            current = self._nodes.get(current.parent_id) if current.parent_id is not None else None
+            current = (
+                self._nodes.get(current.parent_id)
+                if current.parent_id is not None
+                else None
+            )
         chain.reverse()
         return tuple(chain)
 
     def digest(self, authority_id: str) -> str:
         chain = [record.as_dict() for record in self.ancestors(authority_id)]
-        blob = json.dumps(chain, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+        blob = json.dumps(
+            chain, sort_keys=True, separators=(",", ":"), ensure_ascii=False
+        )
         return hashlib.sha256(blob.encode("utf-8")).hexdigest()
 
     def __len__(self) -> int:

@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass, field
-from typing import Any, Dict, Iterable, List, Optional
+from typing import Any
 
 
 @dataclass(frozen=True)
@@ -21,7 +22,7 @@ class Obligation:
 
     name: str
     parameter: str = ""
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -43,13 +44,19 @@ class EvaluationResult:
     passed: bool
     matched_conditions: int
     total_conditions: int
-    details: List[str] = field(default_factory=list)
-    provenance: List[ProvenanceRecord] = field(default_factory=list)
-    policy_id: Optional[str] = None
-    obligations: List[str] = field(default_factory=list)
-    matched_policies: List[str] = field(default_factory=list)  # all applicable rule names
-    fired: List[tuple] = field(default_factory=list)          # effective (effect, policy_name) rules after conflict resolution
-    obligation_map: Dict[str, List[str]] = field(default_factory=dict)  # effective policy_name -> obligation names
+    details: list[str] = field(default_factory=list)
+    provenance: list[ProvenanceRecord] = field(default_factory=list)
+    policy_id: str | None = None
+    obligations: list[str] = field(default_factory=list)
+    matched_policies: list[str] = field(
+        default_factory=list
+    )  # all applicable rule names
+    fired: list[tuple] = field(
+        default_factory=list
+    )  # effective (effect, policy_name) rules after conflict resolution
+    obligation_map: dict[str, list[str]] = field(
+        default_factory=dict
+    )  # effective policy_name -> obligation names
 
 
 @dataclass(frozen=True)
@@ -62,14 +69,14 @@ class Policy:
 
     name: str
     action: str
-    expressions: List[Expression] = field(default_factory=list)
-    obligation: Optional[Obligation] = None
-    obligations: List[Obligation] = field(default_factory=list)
+    expressions: list[Expression] = field(default_factory=list)
+    obligation: Obligation | None = None
+    obligations: list[Obligation] = field(default_factory=list)
     effect: str = "deny"
     description: str = ""
     priority: int = 0
-    metadata: Dict[str, Any] = field(default_factory=dict)
-    connectors: List[str] = field(default_factory=list)
+    metadata: dict[str, Any] = field(default_factory=dict)
+    connectors: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -77,10 +84,10 @@ class PolicySet:
     """A named collection of policies evaluated together."""
 
     name: str = "default"
-    policies: List[Policy] = field(default_factory=list)
+    policies: list[Policy] = field(default_factory=list)
     strategy: str = "deny_overrides"
     default_decision: str = "deny"
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
     def add_policy(self, policy: Policy) -> None:
         self.policies.append(policy)

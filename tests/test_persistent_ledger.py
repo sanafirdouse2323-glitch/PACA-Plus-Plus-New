@@ -127,7 +127,9 @@ def test_pending_approval_is_durable_but_does_not_add_a_quarantine_strike(tmp_pa
         "send_email",
         {
             "to": Arg("person@partner.example", Label("untrusted")),
-            "body": Arg("public update", Label("trusted", sensitivity=0, tenant="tenant-a")),
+            "body": Arg(
+                "public update", Label("trusted", sensitivity=0, tenant="tenant-a")
+            ),
         },
         capability,
         1,
@@ -157,7 +159,11 @@ def test_ledger_token_expiry_is_enforced(tmp_path):
 
     now[0] = 106.0
     assert not ledger.consume_token(decision.token, request.digest)
-    assert ledger.operations("persistent-task", tenant="tenant-a")[-1]["execution_state"] == "expired"
+    assert (
+        ledger.operations("persistent-task", tenant="tenant-a")[-1]["execution_state"]
+        == "expired"
+    )
+
 
 def test_persistent_task_state_is_scoped_by_tenant_when_task_ids_collide(tmp_path):
     ledger = SQLiteOperationLedger(tmp_path / "tenant-scoped.sqlite3")
@@ -177,19 +183,32 @@ def test_persistent_task_state_is_scoped_by_tenant_when_task_ids_collide(tmp_pat
     )
 
     ledger.record_decision(
-        tenant_a, "run_command", "denied-a", "deny", ("C1",), True,
+        tenant_a,
+        "run_command",
+        "denied-a",
+        "deny",
+        ("C1",),
+        True,
     )
     first_token, failure = ledger.issue_authorization(
-        tenant_a, "fetch_url", "allowed-a", destination="a.example",
-        consequential=True, quarantine_after=3,
+        tenant_a,
+        "fetch_url",
+        "allowed-a",
+        destination="a.example",
+        consequential=True,
+        quarantine_after=3,
     )
     assert first_token and failure is None
 
     # A new destination for tenant A exceeds its own fan-out limit and records
     # another strike. These counters must not be visible to tenant B.
     denied_token, failure = ledger.issue_authorization(
-        tenant_a, "fetch_url", "denied-fanout-a", destination="another.example",
-        consequential=True, quarantine_after=3,
+        tenant_a,
+        "fetch_url",
+        "denied-fanout-a",
+        destination="another.example",
+        consequential=True,
+        quarantine_after=3,
     )
     assert denied_token is None and failure == "C8"
 
@@ -205,8 +224,12 @@ def test_persistent_task_state_is_scoped_by_tenant_when_task_ids_collide(tmp_pat
 
     # Tenant B can use its own fan-out slot despite the colliding task ID.
     token_b, failure_b = ledger.issue_authorization(
-        tenant_b, "fetch_url", "allowed-b", destination="b.example",
-        consequential=True, quarantine_after=3,
+        tenant_b,
+        "fetch_url",
+        "allowed-b",
+        destination="b.example",
+        consequential=True,
+        quarantine_after=3,
     )
     assert token_b and failure_b is None
     state_b = ledger.register_capability(tenant_b)
@@ -230,21 +253,25 @@ def test_monitor_local_quarantine_is_scoped_by_tenant_and_task(tmp_path):
         grants={"run_command": ("echo *",)},
     )
 
-    denied = monitor.decide(Request(
-        "run_command",
-        {"command": Arg("echo safe", Label("trusted", tenant="tenant-a"))},
-        tenant_a,
-        1,
-    ))
+    denied = monitor.decide(
+        Request(
+            "run_command",
+            {"command": Arg("echo safe", Label("trusted", tenant="tenant-a"))},
+            tenant_a,
+            1,
+        )
+    )
     assert denied.verdict == "deny"
     assert "C1" in denied.checks
 
-    allowed = monitor.decide(Request(
-        "run_command",
-        {"command": Arg("echo safe", Label("trusted", tenant="tenant-b"))},
-        tenant_b,
-        1,
-    ))
+    allowed = monitor.decide(
+        Request(
+            "run_command",
+            {"command": Arg("echo safe", Label("trusted", tenant="tenant-b"))},
+            tenant_b,
+            1,
+        )
+    )
     assert allowed.verdict == "allow"
     assert "C12" not in allowed.checks
 
@@ -266,24 +293,30 @@ def test_monitor_local_egress_fanout_is_scoped_by_tenant_and_task():
         max_fanout=1,
     )
 
-    first = monitor.decide(Request(
-        "fetch_url",
-        {"url": Arg("https://a.example/path", Label("trusted", tenant="tenant-a"))},
-        tenant_a,
-        1,
-    ))
-    second = monitor.decide(Request(
-        "fetch_url",
-        {"url": Arg("https://b.example/path", Label("trusted", tenant="tenant-b"))},
-        tenant_b,
-        1,
-    ))
+    first = monitor.decide(
+        Request(
+            "fetch_url",
+            {"url": Arg("https://a.example/path", Label("trusted", tenant="tenant-a"))},
+            tenant_a,
+            1,
+        )
+    )
+    second = monitor.decide(
+        Request(
+            "fetch_url",
+            {"url": Arg("https://b.example/path", Label("trusted", tenant="tenant-b"))},
+            tenant_b,
+            1,
+        )
+    )
     assert first.verdict == "allow"
     assert second.verdict == "allow"
     assert "C8" not in second.checks
 
 
-def test_unscoped_populated_legacy_ledger_fails_closed_without_resetting_state(tmp_path):
+def test_unscoped_populated_legacy_ledger_fails_closed_without_resetting_state(
+    tmp_path,
+):
     database = tmp_path / "legacy.sqlite3"
     with sqlite3.connect(database) as connection:
         connection.execute(
@@ -339,6 +372,7 @@ def test_empty_unscoped_ledger_schema_is_reinitialized_with_tenant_scope(tmp_pat
     assert version == ("3",)
     assert ledger.register_capability(make_capability()).strikes == 0
 
+
 def test_capability_id_cannot_be_reused_with_changed_authority_lineage(tmp_path):
     ledger = SQLiteOperationLedger(tmp_path / "lineage-binding.sqlite3")
     capability = make_capability(cap_id="lineage-bound-capability", max_calls=10)
@@ -367,6 +401,7 @@ def test_capability_id_cannot_be_reused_with_changed_authority_lineage(tmp_path)
     with pytest.raises(CapabilityConflict):
         ledger.register_capability(changed)
 
+
 def test_operation_history_is_scoped_by_tenant_and_task(tmp_path):
     ledger = SQLiteOperationLedger(tmp_path / "history-scope.sqlite3")
     tenant_a = make_capability(
@@ -380,10 +415,20 @@ def test_operation_history_is_scoped_by_tenant_and_task(tmp_path):
         task_id="same-task",
     )
     ledger.record_decision(
-        tenant_a, "read_file", "digest-a", "deny", ("C1",), True,
+        tenant_a,
+        "read_file",
+        "digest-a",
+        "deny",
+        ("C1",),
+        True,
     )
     ledger.record_decision(
-        tenant_b, "read_file", "digest-b", "deny", ("C1",), True,
+        tenant_b,
+        "read_file",
+        "digest-b",
+        "deny",
+        ("C1",),
+        True,
     )
 
     with pytest.raises(ValueError, match="tenant is required"):
@@ -401,7 +446,9 @@ def test_operation_history_is_scoped_by_tenant_and_task(tmp_path):
     assert len(ledger.operations()) == 2
 
 
-def test_populated_legacy_operation_history_fails_closed_without_tenant_mapping(tmp_path):
+def test_populated_legacy_operation_history_fails_closed_without_tenant_mapping(
+    tmp_path,
+):
     database = tmp_path / "legacy-history.sqlite3"
     with sqlite3.connect(database) as connection:
         connection.execute(
@@ -426,6 +473,7 @@ def test_populated_legacy_operation_history_fails_closed_without_tenant_mapping(
         ).fetchone()
     assert row == ("legacy-cap", "same-task", "old-digest")
 
+
 def test_operation_history_rejects_tenant_task_scope_tampering(tmp_path):
     database = tmp_path / "tampered-history.sqlite3"
     ledger = SQLiteOperationLedger(database)
@@ -435,7 +483,12 @@ def test_operation_history_rejects_tenant_task_scope_tampering(tmp_path):
         task_id="task-a",
     )
     ledger.record_decision(
-        capability, "read_file", "digest-a", "deny", ("C1",), True,
+        capability,
+        "read_file",
+        "digest-a",
+        "deny",
+        ("C1",),
+        True,
     )
     with sqlite3.connect(database) as connection:
         connection.execute(

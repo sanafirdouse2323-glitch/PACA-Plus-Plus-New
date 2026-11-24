@@ -32,6 +32,7 @@ def test_direct_python_tool_function_is_outside_langchain_middleware(tmp_path):
     def write_report(path: str, body: str) -> str:
         """Write report content directly to a local path for the bypass test."""
         from pathlib import Path
+
         Path(path).write_text(body, encoding="utf-8")
         calls.append(path)
         return "written"

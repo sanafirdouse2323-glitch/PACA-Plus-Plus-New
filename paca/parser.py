@@ -2,9 +2,8 @@ from __future__ import annotations
 
 import random
 import re
-from typing import Any, Dict, List, Optional, Tuple
-
 from dataclasses import replace
+from typing import Any
 
 from .ast import Expression, Obligation, Policy, PolicySet
 
@@ -55,13 +54,13 @@ def _clean_value(raw: str):
     return value
 
 
-def _split_top_level(expr: str) -> Tuple[List[str], List[str]]:
+def _split_top_level(expr: str) -> tuple[list[str], list[str]]:
     """Split conditions and connectors in one quote-aware pass."""
-    fragments: List[str] = []
-    connectors: List[str] = []
-    current: List[str] = []
+    fragments: list[str] = []
+    connectors: list[str] = []
+    current: list[str] = []
     depth = 0
-    quote: Optional[str] = None
+    quote: str | None = None
     i = 0
     while i < len(expr):
         ch = expr[i]
@@ -126,7 +125,7 @@ def _parse_condition(fragment: str) -> Expression:
     )
 
 
-def _parse_conditions(raw: str) -> Tuple[List[Expression], List[str]]:
+def _parse_conditions(raw: str) -> tuple[list[Expression], list[str]]:
     if not raw or not raw.strip():
         return [], []
 
@@ -137,7 +136,7 @@ def _parse_conditions(raw: str) -> Tuple[List[Expression], List[str]]:
     return conditions, connectors
 
 
-def _parse_obligation(raw: Optional[str]) -> Optional[Obligation]:
+def _parse_obligation(raw: str | None) -> Obligation | None:
     if raw is None or not raw.strip():
         return None
 
@@ -155,12 +154,12 @@ def _parse_obligation(raw: Optional[str]) -> Optional[Obligation]:
     return Obligation(name=name, parameter=parameter)
 
 
-def _parse_obligations(raw: Optional[str]) -> List[Obligation]:
+def _parse_obligations(raw: str | None) -> list[Obligation]:
     if raw is None or not raw.strip():
         return []
 
     fragments = [part.strip() for part in raw.split(",") if part.strip()]
-    obligations: List[Obligation] = []
+    obligations: list[Obligation] = []
     for fragment in fragments:
         obligation = _parse_obligation(fragment)
         if obligation is not None:
@@ -199,13 +198,13 @@ def parse_policy(source: str) -> Policy:
 
 
 def parse_policy_file(path: str) -> Policy:
-    with open(path, "r", encoding="utf-8") as handle:
+    with open(path, encoding="utf-8") as handle:
         return parse_policy(handle.read())
 
 
-def _split_comment(line: str) -> Tuple[str, str]:
+def _split_comment(line: str) -> tuple[str, str]:
     """Split a policy line at the first unquoted comment marker."""
-    quote: Optional[str] = None
+    quote: str | None = None
     escaped = False
     for index, char in enumerate(line):
         if quote is not None:
@@ -219,15 +218,22 @@ def _split_comment(line: str) -> Tuple[str, str]:
         if char in ("'", '"'):
             quote = char
         elif char == "#":
-            return line[:index], line[index + 1:]
+            return line[:index], line[index + 1 :]
     return line, ""
 
 
-_NAMED_RE = re.compile(r"^(?P<name>[A-Za-z][A-Za-z0-9_.-]*)\s*:\s+(?P<rest>(?:permit|deny)\b.*)$", re.I | re.S)
+_NAMED_RE = re.compile(
+    r"^(?P<name>[A-Za-z][A-Za-z0-9_.-]*)\s*:\s+(?P<rest>(?:permit|deny)\b.*)$",
+    re.IGNORECASE | re.DOTALL,
+)
 
 
-def parse_policy_set(text: str, name: str = "default", strategy: str = "deny_overrides",
-                     default_decision: str = "deny") -> PolicySet:
+def parse_policy_set(
+    text: str,
+    name: str = "default",
+    strategy: str = "deny_overrides",
+    default_decision: str = "deny",
+) -> PolicySet:
     """Parse a multi-rule policy file: one rule per line.
 
     Syntax per line:  ``[ID:] permit|deny ACTION [when ...] [with obligation ...]  [# note]``
@@ -247,8 +253,12 @@ def parse_policy_set(text: str, name: str = "default", strategy: str = "deny_ove
             pol = parse_policy(line)
         except ValueError as exc:  # keep the line number for authors
             raise ValueError(f"line {lineno}: {exc}") from None
-        pol = replace(pol, name=rule_id or f"{pol.name}_{lineno}", description=note.strip(),
-                      metadata={"note": note.strip(), "line": lineno})
+        pol = replace(
+            pol,
+            name=rule_id or f"{pol.name}_{lineno}",
+            description=note.strip(),
+            metadata={"note": note.strip(), "line": lineno},
+        )
         pset.add_policy(pol)
     return pset
 
@@ -257,22 +267,39 @@ def generate_random_policy(seed: int | None = None) -> Policy:
     """Create a deterministic, valid policy for testing and fuzzing."""
     rng = random.Random(seed)
     effects = ["permit", "deny"]
-    actions = ["readFile", "writeFile", "deleteFile", "sshAccess", "deploy", "viewReport"]
+    actions = [
+        "readFile",
+        "writeFile",
+        "deleteFile",
+        "sshAccess",
+        "deploy",
+        "viewReport",
+    ]
     entities = ["user", "resource", "context", "session"]
-    attributes = ["role", "department", "clearance", "trust", "risk", "source", "region"]
+    attributes = [
+        "role",
+        "department",
+        "clearance",
+        "trust",
+        "risk",
+        "source",
+        "region",
+    ]
     operators = ["==", "!=", ">=", "<=", ">", "<"]
 
     action = rng.choice(actions)
     effect = rng.choice(effects)
     count = rng.randint(1, 3)
-    expressions: List[Expression] = []
+    expressions: list[Expression] = []
     for _ in range(count):
         expressions.append(
             Expression(
                 entity=rng.choice(entities),
                 attribute=rng.choice(attributes),
                 operator=rng.choice(operators),
-                value=rng.choice(["admin", "user", "engineering", "prod", "low", "high", 3, 7, 9]),
+                value=rng.choice(
+                    ["admin", "user", "engineering", "prod", "low", "high", 3, 7, 9]
+                ),
             )
         )
 
@@ -284,7 +311,7 @@ def generate_random_policy(seed: int | None = None) -> Policy:
     )
 
 
-def generate_random_context(seed: int | None = None) -> Dict[str, Any]:
+def generate_random_context(seed: int | None = None) -> dict[str, Any]:
     """Create a realistic runtime context for evaluating generated policies."""
     rng = random.Random(seed)
     return {
@@ -307,9 +334,9 @@ def generate_random_context(seed: int | None = None) -> Dict[str, Any]:
 
 
 __all__ = [
-    "parse_policy_set",
     "generate_random_context",
     "generate_random_policy",
     "parse_policy",
     "parse_policy_file",
+    "parse_policy_set",
 ]

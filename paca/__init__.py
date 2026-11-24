@@ -1,5 +1,13 @@
 """PACA++ - Provenance-Anchored Continuous Authorization for autonomous LLM agents."""
-from .ast import EvaluationResult, Expression, Obligation, Policy, PolicySet, ProvenanceRecord
+
+from .ast import (
+    EvaluationResult,
+    Expression,
+    Obligation,
+    Policy,
+    PolicySet,
+    ProvenanceRecord,
+)
 from .authority import AuthorityLineage, AuthorityLineageGraph
 from .authority_runtime import (
     AuthorityRegistryError,
@@ -7,20 +15,18 @@ from .authority_runtime import (
     Ed25519CapabilityAuthority,
     HMACCapabilityAuthority,
     SignedCapability,
-    VerifiedResourceCommitPermit,
     SQLiteAuthorityRegistry,
+    VerifiedResourceCommitPermit,
 )
+from .compiler import compile_policy, compile_policy_source
 from .durable import (
     ImmutableLineageConflict,
     LineageIntegrityError,
     ProvenanceStoreError,
     SQLiteProvenanceRepository,
 )
-from .compiler import compile_policy, compile_policy_source
 from .engine import PolicyEngine
 from .evaluator import evaluate_policy, evaluate_policy_set
-from .parser import parse_policy, parse_policy_file, parse_policy_set
-from .provenance import Arg, Label, LineageNode, ProvenanceGraph, derive
 from .memory import (
     HMACAgentMessageCodec,
     MemoryAccessContext,
@@ -31,7 +37,10 @@ from .memory import (
     TrustedConnectorAdapter,
     TrustedMemoryAdapter,
 )
+from .parser import parse_policy, parse_policy_file, parse_policy_set
 from .postgres_authority import PostgresAuthorityRegistry
+from .provenance import Arg, Label, LineageNode, ProvenanceGraph, derive
+from .resource_commit import ResourceCommitDenied, SQLiteFencedResourceExecutor
 from .sandbox import (
     DockerSandbox,
     DockerSandboxExecutor,
@@ -42,7 +51,59 @@ from .sandbox import (
     SandboxTimeout,
     SandboxUnavailable,
 )
-from .resource_commit import ResourceCommitDenied, SQLiteFencedResourceExecutor
 
 __version__ = "0.3.2"
-__all__ = [n for n in dir() if not n.startswith("_")]
+__all__ = [
+    "Arg",
+    "AuthorityLineage",
+    "AuthorityLineageGraph",
+    "AuthorityRegistryError",
+    "CapabilityAuthenticationError",
+    "DockerSandbox",
+    "DockerSandboxExecutor",
+    "Ed25519CapabilityAuthority",
+    "EvaluationResult",
+    "Expression",
+    "HMACAgentMessageCodec",
+    "HMACCapabilityAuthority",
+    "ImmutableLineageConflict",
+    "Label",
+    "LineageIntegrityError",
+    "LineageNode",
+    "MemoryAccessContext",
+    "MemoryAccessDenied",
+    "MemoryIntegrityError",
+    "Obligation",
+    "PACAAgentRuntime",
+    "Policy",
+    "PolicyEngine",
+    "PolicySet",
+    "PostgresAuthorityRegistry",
+    "ProvenanceGraph",
+    "ProvenanceRecord",
+    "ProvenanceStoreError",
+    "ResourceCommitDenied",
+    "SQLiteAuthorityRegistry",
+    "SQLiteFencedResourceExecutor",
+    "SQLiteMemoryValueStore",
+    "SQLiteProvenanceRepository",
+    "SandboxError",
+    "SandboxExecutionError",
+    "SandboxOutputLimitExceeded",
+    "SandboxResult",
+    "SandboxTimeout",
+    "SandboxUnavailable",
+    "SignedCapability",
+    "TrustedConnectorAdapter",
+    "TrustedMemoryAdapter",
+    "VerifiedResourceCommitPermit",
+    "__version__",
+    "compile_policy",
+    "compile_policy_source",
+    "derive",
+    "evaluate_policy",
+    "evaluate_policy_set",
+    "parse_policy",
+    "parse_policy_file",
+    "parse_policy_set",
+]

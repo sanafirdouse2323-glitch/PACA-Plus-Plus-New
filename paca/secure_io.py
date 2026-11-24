@@ -4,6 +4,7 @@ This module intentionally fails closed when the kernel lacks openat2. It does
 not silently fall back to path-based checks that can reintroduce symlink or
 time-of-check/time-of-use races.
 """
+
 from __future__ import annotations
 
 import ctypes
@@ -12,7 +13,6 @@ import os
 import stat
 import struct
 import threading
-from typing import Union
 
 
 class SecurePathError(OSError):
@@ -34,12 +34,10 @@ _OPENAT2_SYSCALL = {
 _RESOLVE_NO_MAGICLINKS = 0x02
 _RESOLVE_NO_SYMLINKS = 0x04
 _RESOLVE_BENEATH = 0x08
-_RESOLVE_FLAGS = (
-    _RESOLVE_BENEATH | _RESOLVE_NO_SYMLINKS | _RESOLVE_NO_MAGICLINKS
-)
+_RESOLVE_FLAGS = _RESOLVE_BENEATH | _RESOLVE_NO_SYMLINKS | _RESOLVE_NO_MAGICLINKS
 
 
-def _relative_path(value: Union[str, os.PathLike[str]]) -> str:
+def _relative_path(value: str | os.PathLike[str]) -> str:
     raw = os.fspath(value)
     if not isinstance(raw, str):
         raise SecurePathError(errno.EINVAL, "path must be text")
@@ -66,8 +64,12 @@ class SecureRoot:
     enforce PACA++ policy grants before asking this class to open a path.
     """
 
-    def __init__(self, root: Union[str, os.PathLike[str]]) -> None:
-        if os.name != "posix" or not hasattr(os, "O_PATH") or not hasattr(os, "O_NOFOLLOW"):
+    def __init__(self, root: str | os.PathLike[str]) -> None:
+        if (
+            os.name != "posix"
+            or not hasattr(os, "O_PATH")
+            or not hasattr(os, "O_NOFOLLOW")
+        ):
             raise SecurePathUnavailable("SecureRoot requires Linux openat2 support")
         machine = os.uname().machine.lower()
         syscall_number = _OPENAT2_SYSCALL.get(machine)
@@ -81,7 +83,9 @@ class SecureRoot:
         try:
             self._root_fd = os.open(os.fspath(root), root_flags)
         except OSError as exc:
-            raise SecurePathError(exc.errno, "could not open trusted filesystem root") from exc
+            raise SecurePathError(
+                exc.errno, "could not open trusted filesystem root"
+            ) from exc
         self._closed = False
 
     def _openat2(
@@ -114,7 +118,9 @@ class SecureRoot:
     def _validate_regular_file(fd: int, relative: str) -> os.stat_result:
         metadata = os.fstat(fd)
         if not stat.S_ISREG(metadata.st_mode):
-            raise SecurePathError(errno.EINVAL, "target is not a regular file", relative)
+            raise SecurePathError(
+                errno.EINVAL, "target is not a regular file", relative
+            )
         # Hard links can expose the same inode through a path outside the trusted
         # root. This check assumes untrusted users cannot modify the root directory
         # concurrently; host ACLs must enforce that assumption.
@@ -128,7 +134,7 @@ class SecureRoot:
 
     def open_fd(
         self,
-        relative_path: Union[str, os.PathLike[str]],
+        relative_path: str | os.PathLike[str],
         flags: int = os.O_RDONLY,
         mode: int = 0o600,
     ) -> int:
@@ -139,7 +145,7 @@ class SecureRoot:
 
     def _open_fd_locked(
         self,
-        relative_path: Union[str, os.PathLike[str]],
+        relative_path: str | os.PathLike[str],
         flags: int,
         mode: int,
     ) -> int:
@@ -156,18 +162,32 @@ class SecureRoot:
             raise SecurePathError(errno.EBADF, "SecureRoot is closed")
         relative = _relative_path(relative_path)
         allowed = (
-            os.O_RDONLY | os.O_WRONLY | os.O_RDWR | os.O_CREAT | os.O_EXCL
-            | os.O_TRUNC | os.O_APPEND | os.O_CLOEXEC
+            os.O_RDONLY
+            | os.O_WRONLY
+            | os.O_RDWR
+            | os.O_CREAT
+            | os.O_EXCL
+            | os.O_TRUNC
+            | os.O_APPEND
+            | os.O_CLOEXEC
         )
         if isinstance(flags, bool) or not isinstance(flags, int) or flags & ~allowed:
             raise SecurePathError(errno.EINVAL, "unsupported open flags")
-        if isinstance(mode, bool) or not isinstance(mode, int) or not 0 <= mode <= 0o777:
+        if (
+            isinstance(mode, bool)
+            or not isinstance(mode, int)
+            or not 0 <= mode <= 0o777
+        ):
             raise SecurePathError(errno.EINVAL, "file mode must be between 000 and 777")
         access_mode = flags & os.O_ACCMODE
         if access_mode not in {os.O_RDONLY, os.O_WRONLY, os.O_RDWR}:
-            raise SecurePathError(errno.EINVAL, "open flags contain conflicting access modes")
+            raise SecurePathError(
+                errno.EINVAL, "open flags contain conflicting access modes"
+            )
         if flags & (os.O_TRUNC | os.O_APPEND) and access_mode == os.O_RDONLY:
-            raise SecurePathError(errno.EINVAL, "O_TRUNC and O_APPEND require a writable descriptor")
+            raise SecurePathError(
+                errno.EINVAL, "O_TRUNC and O_APPEND require a writable descriptor"
+            )
         if flags & os.O_EXCL and not flags & os.O_CREAT:
             raise SecurePathError(errno.EINVAL, "O_EXCL requires O_CREAT")
         if flags & os.O_CREAT and not flags & os.O_EXCL:
@@ -229,7 +249,7 @@ class SecureRoot:
                 os.close(self._root_fd)
                 self._closed = True
 
-    def __enter__(self) -> "SecureRoot":
+    def __enter__(self) -> SecureRoot:  # noqa: PYI034 - the concrete annotation keeps Python 3.10 support without a typing_extensions dependency.
         with self._lock:
             if self._closed:
                 raise SecurePathError(errno.EBADF, "SecureRoot is closed")

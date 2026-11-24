@@ -18,3 +18,19 @@ from .providers import (
     QdrantVectorConnector,
     SlackHistoryConnector,
 )
+
+__all__ = [
+    "GmailConnector",
+    "MicrosoftGraphMailConnector",
+    "OAuth2RefreshTokenProvider",
+    "OAuthAccessToken",
+    "ProviderAuthenticationError",
+    "ProviderCapture",
+    "ProviderConnectorError",
+    "ProviderPage",
+    "ProviderProtocolError",
+    "ProviderResponseTooLarge",
+    "ProviderScopeError",
+    "QdrantVectorConnector",
+    "SlackHistoryConnector",
+]

@@ -9,7 +9,8 @@ import pytest
 
 DSN = os.environ.get("PACA_TEST_POSTGRES_DSN")
 pytestmark = pytest.mark.skipif(
-    not DSN, reason="PACA_TEST_POSTGRES_DSN is not configured",
+    not DSN,
+    reason="PACA_TEST_POSTGRES_DSN is not configured",
 )
 
 
@@ -22,7 +23,9 @@ def _environment(tmp_path):
         TrustedMemoryAdapter,
     )
 
-    clock = lambda: 1_000
+    def clock():
+        return 1_000
+
     registry = SQLiteAuthorityRegistry(tmp_path / "authority.sqlite3", clock=clock)
     issuer = HMACCapabilityAuthority(
         registry,
@@ -30,9 +33,13 @@ def _environment(tmp_path):
         key_id="postgres-checkpoint-key",
         key=b"P" * 32,
         audience="postgres-checkpoint-runtime",
-        identity_verifier=lambda principal, tenant: bool(principal and tenant == "acme"),
+        identity_verifier=lambda principal, tenant: bool(
+            principal and tenant == "acme"
+        ),
         task_context_verifier=lambda principal, tenant, task_id, purpose: bool(
-            principal and tenant == "acme" and task_id == "task-postgres"
+            principal
+            and tenant == "acme"
+            and task_id == "task-postgres"
             and purpose == "resume-agent"
         ),
         clock=clock,
@@ -108,8 +115,11 @@ def _checkpoint(
     }
 
 
-def test_postgres_checkpoint_and_pending_write_paths_are_mediated(tmp_path, monkeypatch):
+def test_postgres_checkpoint_and_pending_write_paths_are_mediated(
+    tmp_path, monkeypatch
+):
     from langgraph.checkpoint.postgres import PostgresSaver
+
     from paca.integrations.langgraph_checkpoint import _provider_thread_id
     from paca.memory import MemoryAccessDenied
 
@@ -124,7 +134,9 @@ def test_postgres_checkpoint_and_pending_write_paths_are_mediated(tmp_path, monk
         config = {"configurable": {"thread_id": thread_id, "checkpoint_ns": ""}}
         first_config = saver.put(
             config,
-            _checkpoint(checkpoint_id, "safe-to-resume", timestamp, channel_version="1"),
+            _checkpoint(
+                checkpoint_id, "safe-to-resume", timestamp, channel_version="1"
+            ),
             {"source": "input", "step": -1},
             {"created_at": "1"},
         )
@@ -156,10 +168,17 @@ def test_postgres_checkpoint_and_pending_write_paths_are_mediated(tmp_path, monk
             {"created_at": "2"},
         )
         checkpoint_nodes = repository.list_nodes(object_id_prefix="mem/checkpoints/")
-        second_node = next(node for node in checkpoint_nodes if node.version_id == second_id)
-        first_node = next(node for node in checkpoint_nodes if node.version_id == checkpoint_id)
+        second_node = next(
+            node for node in checkpoint_nodes if node.version_id == second_id
+        )
+        first_node = next(
+            node for node in checkpoint_nodes if node.version_id == checkpoint_id
+        )
         assert first_node.node_id in second_node.parent_ids
-        assert saver.get_tuple(second_config).checkpoint["channel_values"]["answer"] == "next-step"
+        assert (
+            saver.get_tuple(second_config).checkpoint["channel_values"]["answer"]
+            == "next-step"
+        )
 
         # A revoked source must block before the raw PostgreSQL provider is called.
         source_id = next(iter(source.lineage_refs))
@@ -193,6 +212,7 @@ def test_postgres_checkpoint_and_pending_write_paths_are_mediated(tmp_path, monk
 
 def test_postgres_checkpoint_list_and_async_contracts(tmp_path):
     from langgraph.checkpoint.postgres import PostgresSaver
+
     from paca.integrations.langgraph_checkpoint import _provider_thread_id
 
     root, repository, memory, source = _environment(tmp_path)
@@ -231,8 +251,7 @@ def test_postgres_checkpoint_list_and_async_contracts(tmp_path):
             "configurable": {"thread_id": provider_thread, "checkpoint_ns": ""},
         }
         wrapped_ids = [
-            item.config["configurable"]["checkpoint_id"]
-            for item in saver.list(config)
+            item.config["configurable"]["checkpoint_id"] for item in saver.list(config)
         ]
         provider_ids = [
             item.config["configurable"]["checkpoint_id"]
@@ -282,6 +301,7 @@ def test_postgres_checkpoint_list_and_async_contracts(tmp_path):
         assert (task_id, "answer", "pending-safe") in result.pending_writes
 
         from paca.integrations.langgraph_checkpoint import _writes_prefix
+
         writes_prefix = _writes_prefix("acme", thread_id, "", second_id)
         pending_nodes = repository.list_nodes(object_id_prefix=writes_prefix)
         assert pending_nodes
@@ -292,12 +312,14 @@ def test_postgres_checkpoint_list_and_async_contracts(tmp_path):
 
         assert len(asyncio.run(collect_async_list())) == 2
         saver.delete_thread(thread_id)
-        assert all(
-            repository.is_revoked(node.node_id) for node in pending_nodes
-        )
+        assert all(repository.is_revoked(node.node_id) for node in pending_nodes)
 
-def test_checkpoint_source_revocation_during_provider_write_fails_closed(tmp_path, monkeypatch):
+
+def test_checkpoint_source_revocation_during_provider_write_fails_closed(
+    tmp_path, monkeypatch
+):
     from langgraph.checkpoint.postgres import PostgresSaver
+
     from paca.integrations.langgraph_checkpoint import _provider_thread_id
     from paca.memory import MemoryAccessDenied
 
@@ -351,12 +373,14 @@ def test_checkpoint_source_revocation_during_provider_write_fails_closed(tmp_pat
             lambda cfg: (calls.append(cfg), original_get_tuple(cfg))[1],
         )
         with pytest.raises(MemoryAccessDenied, match="revoked"):
-            saver.get_tuple({
-                "configurable": {
-                    "thread_id": thread_id,
-                    "checkpoint_ns": "",
-                    "checkpoint_id": checkpoint_id,
+            saver.get_tuple(
+                {
+                    "configurable": {
+                        "thread_id": thread_id,
+                        "checkpoint_ns": "",
+                        "checkpoint_id": checkpoint_id,
+                    }
                 }
-            })
+            )
         assert calls == []
         saver.delete_thread(thread_id)

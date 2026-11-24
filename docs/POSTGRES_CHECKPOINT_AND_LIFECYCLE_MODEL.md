@@ -35,4 +35,4 @@ The finite state space is deliberately small. TLC checking establishes only that
 
 ## Known omissions
 
-No Gmail, Microsoft Graph, Slack or production vector-database connectors are implemented by this integration. The local fixture connector in the CI test is only a deterministic provenance source. The six security gates described in the lifecycle roadmap remain separate work items.
+This PostgreSQL checkpoint adapter does not itself implement provider connectors. The repository has separate read-only Gmail, Microsoft Graph, Slack and Qdrant ingress adapters, documented in [the durable lifecycle record](DURABLE_LIFECYCLE_SECURITY.md); those adapters are not part of this checkpoint wrapper. The local fixture connector in the checkpoint CI test is only a deterministic provenance source. Current project-wide engineering gates are listed in [the implementation roadmap](security-roadmap.md).

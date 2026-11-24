@@ -47,15 +47,21 @@ def _capability(grants: dict[str, tuple[str, ...]]) -> Capability:
 def _labeler(source: str, arguments: dict[str, Any], env: Any) -> Label:
     return {
         "mail": Label(
-            "untrusted", sensitivity=2, tenant="workspace-tenant",
+            "untrusted",
+            sensitivity=2,
+            tenant="workspace-tenant",
             origins=frozenset({"fixture:mail"}),
         ),
         "calendar": Label(
-            "untrusted", sensitivity=1, tenant="workspace-tenant",
+            "untrusted",
+            sensitivity=1,
+            tenant="workspace-tenant",
             origins=frozenset({"fixture:calendar"}),
         ),
         "drive": Label(
-            "untrusted", sensitivity=3, tenant="workspace-tenant",
+            "untrusted",
+            sensitivity=3,
+            tenant="workspace-tenant",
             origins=frozenset({"fixture:drive"}),
         ),
     }[source]
@@ -87,12 +93,12 @@ def test_supported_tool_names_exist_in_agentdojo_v1_2_2_workspace_suite():
     registered_names = {tool.name for tool in suite.tools}
 
     assert SUPPORTED_WORKSPACE_READ_TOOLS
-    assert SUPPORTED_WORKSPACE_READ_TOOLS <= registered_names
+    assert registered_names >= SUPPORTED_WORKSPACE_READ_TOOLS
     assert len(SUPPORTED_WORKSPACE_READ_TOOLS) == 14
 
 
 def test_workspace_mapper_authorizes_mail_read_and_labels_output():
-    (query, runtime_result, env, messages, state), runtime, monitor = _executor(
+    (_, _, _, messages, state), runtime, monitor = _executor(
         "get_unread_emails",
         {},
         {"mark_mail_read": ("mail:inbox:unread",)},
@@ -178,19 +184,40 @@ def test_workspace_mapper_denies_cross_tenant_resource_label():
 @pytest.mark.parametrize(
     ("function_name", "arguments"),
     [
-        ("send_email", {"recipients": ["attacker@example.test"], "subject": "x", "body": "y"}),
+        (
+            "send_email",
+            {"recipients": ["attacker@example.test"], "subject": "x", "body": "y"},
+        ),
         ("delete_email", {"email_id": "1"}),
-        ("create_calendar_event", {"title": "x", "start_time": "2024-05-15 10:00", "end_time": "2024-05-15 11:00"}),
+        (
+            "create_calendar_event",
+            {
+                "title": "x",
+                "start_time": "2024-05-15 10:00",
+                "end_time": "2024-05-15 11:00",
+            },
+        ),
         ("cancel_calendar_event", {"event_id": "1"}),
-        ("reschedule_calendar_event", {"event_id": "1", "new_start_time": "2024-05-15 10:00"}),
-        ("add_calendar_event_participants", {"event_id": "1", "participants": ["attacker@example.test"]}),
+        (
+            "reschedule_calendar_event",
+            {"event_id": "1", "new_start_time": "2024-05-15 10:00"},
+        ),
+        (
+            "add_calendar_event_participants",
+            {"event_id": "1", "participants": ["attacker@example.test"]},
+        ),
         ("create_file", {"filename": "x.txt", "content": "x"}),
         ("append_to_file", {"file_id": "1", "content": "x"}),
         ("delete_file", {"file_id": "1"}),
-        ("share_file", {"file_id": "1", "email": "attacker@example.test", "permission": "read"}),
+        (
+            "share_file",
+            {"file_id": "1", "email": "attacker@example.test", "permission": "read"},
+        ),
     ],
 )
-def test_workspace_mapper_fails_closed_for_mutating_workspace_tools(function_name, arguments):
+def test_workspace_mapper_fails_closed_for_mutating_workspace_tools(
+    function_name, arguments
+):
     (_, _, _, messages, _), runtime, _ = _executor(
         function_name,
         arguments,
@@ -220,9 +247,7 @@ def test_workspace_mapper_fails_closed_for_mutating_workspace_tools(function_nam
 def test_workspace_mapper_rejects_invalid_required_arguments(function_name, arguments):
     action = (
         "read_mail"
-        if function_name in {
-            "search_emails", "search_contacts_by_name"
-        }
+        if function_name in {"search_emails", "search_contacts_by_name"}
         else "read_calendar"
         if function_name in {"get_day_calendar_events", "search_calendar_events"}
         else "read_drive"
@@ -278,7 +303,6 @@ def test_workspace_mapper_requires_trusted_resource_labeler():
         )
 
 
-
 def test_workspace_mapper_argument_contracts_match_agentdojo_v1_2_2_schemas():
     suite = get_suite("v1.2.2", "workspace")
     actual_tools = {tool.name: tool for tool in suite.tools}
@@ -302,7 +326,9 @@ def test_workspace_mapper_argument_contracts_match_agentdojo_v1_2_2_schemas():
     for tool_name, expected in expected_arguments.items():
         assert tool_name in actual_tools
         actual = set(actual_tools[tool_name].parameters.model_fields)
-        assert actual == expected, f"{tool_name} schema changed: {actual!r} != {expected!r}"
+        assert actual == expected, (
+            f"{tool_name} schema changed: {actual!r} != {expected!r}"
+        )
 
 
 def test_unread_mail_read_receipt_needs_separate_capability_action():
@@ -382,4 +408,3 @@ def test_search_target_is_bound_to_exact_query_selector():
     assert original_target.startswith("mail:search:")
     assert alternate_target.startswith("mail:search:")
     assert original_target != alternate_target
-

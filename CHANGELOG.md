@@ -1,20 +1,25 @@
 # Changelog
 
+## Unreleased — 2026-11-24
+
+This section records changes merged to `main` after the 0.3.2 packaging release. It does not claim production readiness or improved real-agent attack resistance.
+
+- Adds durable provenance and memory reference components, signed capability envelopes, policy epochs, revocation, per-capability and tenant/task aggregate quotas, and persistent message replay receipts.
+- Adds an optional PostgreSQL shared-primary authority registry and an Ed25519 issuer/verifier separation primitive.
+- Adds read-only Gmail, Microsoft Graph, Slack and Qdrant provider adapters with bounded response handling and provenance capture; CI uses mocked provider HTTP.
+- Adds AgentDojo, LangGraph, LangChain and PostgreSQL checkpoint integrations, plus opt-in Docker worker and local resource-commit reference components.
+- Hardens the consequential monitor profile and Qdrant tenant filtering; reconciles project documentation and security boundaries.
+- Expands repository checks and documents remaining bypass, identity, key-management, remote-commit and evaluation gaps.
+
+These are reference implementations. They do not establish complete lifecycle mediation or independently measured real-world security effectiveness.
+
 ## 0.3.2 — 2026-11-09
 
-This is a packaging and release-process update. It does not claim a new security
-guarantee or a measured improvement in real-agent attack resistance.
+This was a packaging and release-process update. It did not claim a new security guarantee or a measured improvement in real-agent attack resistance.
 
-- Synchronises the project version in `pyproject.toml` and `paca.__version__`.
-- Adds a tag-driven GitHub Release workflow that verifies the tag against package
-  metadata, runs the test suite and static checks, builds both a wheel and source
-  distribution, and checks installation of the built artifacts in clean environments.
-- Attaches the Python distribution files and their SHA-256 checksums to the GitHub
-  Release, and publishes versioned GitHub Container Registry images from the existing
-  Python 3.13 multi-stage Dockerfile.
-- Adds a regression test to keep the runtime and installed distribution versions aligned.
+- Synchronised the project version in `pyproject.toml` and `paca.__version__`.
+- Added a tag-driven GitHub Release workflow with version/tag validation, tests, static checks, wheel and source-distribution builds, and clean-install smoke tests.
+- Added SHA-256 checksums and versioned GitHub Container Registry images.
+- Added a regression test to keep the runtime and installed distribution versions aligned.
 
-The PACA++ reference API remains a local demonstration/reference interface. It does
-not execute external effects and is not a production authorization executor. The
-repository's deterministic and AgentDojo adapter tests must not be interpreted as
-independent real-agent security-effectiveness measurements.
+The PACA++ reference API remains a local demonstration interface. It does not execute external effects and is not a production authorization executor.

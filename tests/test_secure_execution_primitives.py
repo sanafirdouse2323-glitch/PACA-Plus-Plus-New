@@ -1,21 +1,19 @@
 from __future__ import annotations
 
-import errno
 import os
-import ssl
 import socket
+import ssl
 import sys
 
 import pytest
 
-import paca.secure_network as secure_network
+from paca import secure_network
 from paca.secure_io import SecurePathError, SecurePathUnavailable, SecureRoot
 from paca.secure_network import (
     UnsafeNetworkDestination,
     connect_pinned,
     resolve_public_endpoints,
 )
-
 
 pytestmark = pytest.mark.skipif(
     sys.platform != "linux",
@@ -81,9 +79,16 @@ def test_secure_root_creates_file_with_exclusive_open(tmp_path):
 def _resolver_for(*addresses):
     def resolver(host, port, type):
         return [
-            (socket.AF_INET, socket.SOCK_STREAM, socket.IPPROTO_TCP, "", (address, port))
+            (
+                socket.AF_INET,
+                socket.SOCK_STREAM,
+                socket.IPPROTO_TCP,
+                "",
+                (address, port),
+            )
             for address in addresses
         ]
+
     return resolver
 
 
@@ -103,7 +108,9 @@ def test_network_resolver_rejects_non_public_addresses(address):
     family = socket.AF_INET6 if ":" in address else socket.AF_INET
 
     def resolver(host, port, type):
-        sockaddr = (address, port, 0, 0) if family == socket.AF_INET6 else (address, port)
+        sockaddr = (
+            (address, port, 0, 0) if family == socket.AF_INET6 else (address, port)
+        )
         return [(family, socket.SOCK_STREAM, socket.IPPROTO_TCP, "", sockaddr)]
 
     with pytest.raises(UnsafeNetworkDestination):
@@ -119,7 +126,9 @@ def test_network_resolver_rejects_mixed_public_and_private_answers():
         )
 
 
-def test_connect_pinned_uses_the_validated_numeric_address_without_second_dns(monkeypatch):
+def test_connect_pinned_uses_the_validated_numeric_address_without_second_dns(
+    monkeypatch,
+):
     calls = []
     connected = []
 
@@ -151,7 +160,10 @@ def test_connect_pinned_uses_the_validated_numeric_address_without_second_dns(mo
     assert calls == [("example.com", 443)]
     assert connected == [("93.184.216.34", 443)]
 
-def test_tls_pinned_rejects_context_without_chain_and_hostname_verification(monkeypatch):
+
+def test_tls_pinned_rejects_context_without_chain_and_hostname_verification(
+    monkeypatch,
+):
     context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
     context.check_hostname = False
     context.verify_mode = ssl.CERT_NONE
@@ -162,7 +174,9 @@ def test_tls_pinned_rejects_context_without_chain_and_hostname_verification(monk
         lambda *args, **kwargs: connections.append((args, kwargs)),
     )
 
-    with pytest.raises(UnsafeNetworkDestination, match="certificate-chain and hostname"):
+    with pytest.raises(
+        UnsafeNetworkDestination, match="certificate-chain and hostname"
+    ):
         secure_network.connect_tls_pinned(
             "example.com",
             context=context,
@@ -181,6 +195,7 @@ def test_connect_pinned_rejects_invalid_timeout(timeout):
             resolver=_resolver_for("93.184.216.34"),
         )
 
+
 def test_secure_root_rejects_hard_link_to_file_outside_root(tmp_path):
     root = tmp_path / "workspace"
     root.mkdir()
@@ -188,9 +203,11 @@ def test_secure_root_rejects_hard_link_to_file_outside_root(tmp_path):
     outside.write_text("outside data", encoding="utf-8")
     os.link(outside, root / "linked-secret.txt")
 
-    with _open_root(root) as secure:
-        with pytest.raises(SecurePathError, match="hard-linked"):
-            secure.open_fd("linked-secret.txt", os.O_RDONLY)
+    with (
+        _open_root(root) as secure,
+        pytest.raises(SecurePathError, match="hard-linked"),
+    ):
+        secure.open_fd("linked-secret.txt", os.O_RDONLY)
 
 
 def test_secure_root_rejects_fifo_without_blocking(tmp_path):
@@ -198,9 +215,12 @@ def test_secure_root_rejects_fifo_without_blocking(tmp_path):
     root.mkdir()
     os.mkfifo(root / "blocked-pipe")
 
-    with _open_root(root) as secure:
-        with pytest.raises(SecurePathError, match="regular file"):
-            secure.open_fd("blocked-pipe", os.O_RDONLY)
+    with (
+        _open_root(root) as secure,
+        pytest.raises(SecurePathError, match="regular file"),
+    ):
+        secure.open_fd("blocked-pipe", os.O_RDONLY)
+
 
 def test_secure_root_rejects_ambiguous_create_and_access_flags(tmp_path):
     root = tmp_path / "workspace"
@@ -246,4 +266,6 @@ def test_network_host_normalization_rejects_ambiguous_or_reserved_names(host):
 def test_network_host_normalization_canonicalizes_idna_and_fqdn():
     assert secure_network._normalise_host("Example.COM.") == "example.com"
     assert secure_network._normalise_host("bücher.example") == "xn--bcher-kva.example"
-    assert secure_network._normalise_host("2606:4700:4700::1111") == "2606:4700:4700::1111"
+    assert (
+        secure_network._normalise_host("2606:4700:4700::1111") == "2606:4700:4700::1111"
+    )

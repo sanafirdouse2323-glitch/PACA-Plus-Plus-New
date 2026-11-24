@@ -8,6 +8,7 @@ memory through persist(), which requires a fixed-identity untrusted connector.
 No provider write method is included: remote mutations require a separate
 destination-side commit-fencing/idempotency protocol.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -17,8 +18,9 @@ import math
 import re
 import threading
 import time
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, Iterable, Mapping, Optional, Sequence, Tuple
+from typing import Any
 from urllib.parse import quote, urlparse
 
 from ..memory import TrustedConnectorAdapter
@@ -74,11 +76,11 @@ class OAuth2RefreshTokenProvider:
         token_url: str,
         *,
         client_id: str,
-        client_secret: Optional[str],
+        client_secret: str | None,
         refresh_token: str,
         granted_scopes: Iterable[str],
         include_scope_parameter: bool = False,
-        on_refresh_token: Optional[Callable[[str], None]] = None,
+        on_refresh_token: Callable[[str], None] | None = None,
         client: Any = None,
         timeout_seconds: float = 15.0,
         refresh_skew_seconds: float = 60.0,
@@ -93,17 +95,25 @@ class OAuth2RefreshTokenProvider:
             or parsed.password is not None
             or parsed.fragment
         ):
-            raise ValueError("OAuth token endpoint must be a fixed HTTPS URL without userinfo or fragment")
+            raise ValueError(
+                "OAuth token endpoint must be a fixed HTTPS URL without userinfo or fragment"
+            )
         if not isinstance(client_id, str) or not client_id:
             raise ValueError("OAuth client_id must be non-empty")
-        if client_secret is not None and (not isinstance(client_secret, str) or not client_secret):
+        if client_secret is not None and (
+            not isinstance(client_secret, str) or not client_secret
+        ):
             raise ValueError("OAuth client_secret must be non-empty when supplied")
         if not isinstance(refresh_token, str) or not refresh_token:
             raise ValueError("OAuth refresh_token must be non-empty")
         if isinstance(granted_scopes, (str, bytes)):
-            raise TypeError("granted_scopes must be an iterable of complete scope strings")
+            raise TypeError(
+                "granted_scopes must be an iterable of complete scope strings"
+            )
         scopes = frozenset(granted_scopes)
-        if not scopes or any(not isinstance(scope, str) or not scope.strip() for scope in scopes):
+        if not scopes or any(
+            not isinstance(scope, str) or not scope.strip() for scope in scopes
+        ):
             raise ValueError("granted_scopes must contain non-empty scope names")
         for name, value in (
             ("timeout_seconds", timeout_seconds),
@@ -140,7 +150,7 @@ class OAuth2RefreshTokenProvider:
         self._refresh_skew = float(refresh_skew_seconds)
         self._clock = clock
         self._lock = threading.RLock()
-        self._cached: Optional[OAuthAccessToken] = None
+        self._cached: OAuthAccessToken | None = None
 
     def __repr__(self) -> str:
         return (
@@ -161,7 +171,8 @@ class OAuth2RefreshTokenProvider:
         if not requested.issubset(self._granted_scopes):
             missing = sorted(requested - self._granted_scopes)
             raise ProviderScopeError(
-                "configured OAuth consent does not include required scopes: " + ", ".join(missing)
+                "configured OAuth consent does not include required scopes: "
+                + ", ".join(missing)
             )
         now = float(self._clock())
         with self._lock:
@@ -173,7 +184,7 @@ class OAuth2RefreshTokenProvider:
             ):
                 return cached
 
-            form: Dict[str, str] = {
+            form: dict[str, str] = {
                 "client_id": self._client_id,
                 "refresh_token": self._refresh_token,
                 "grant_type": "refresh_token",
@@ -191,7 +202,9 @@ class OAuth2RefreshTokenProvider:
                     follow_redirects=False,
                 ) as response:
                     if 300 <= response.status_code < 400:
-                        raise ProviderAuthenticationError("OAuth token endpoint redirects are refused")
+                        raise ProviderAuthenticationError(
+                            "OAuth token endpoint redirects are refused"
+                        )
                     if response.status_code != 200:
                         raise ProviderAuthenticationError(
                             f"OAuth token endpoint rejected refresh (HTTP {response.status_code})"
@@ -205,16 +218,20 @@ class OAuth2RefreshTokenProvider:
                         token_body.extend(chunk)
             except ProviderConnectorError:
                 raise
-            except Exception:
+            except Exception:  # noqa: BLE001 - normalize all optional HTTP transport failures without exposing response details.
                 raise ProviderAuthenticationError(
                     "OAuth token endpoint request failed"
                 ) from None
             try:
                 payload = json.loads(bytes(token_body))
             except (UnicodeDecodeError, json.JSONDecodeError):
-                raise ProviderProtocolError("OAuth token endpoint returned invalid JSON") from None
+                raise ProviderProtocolError(
+                    "OAuth token endpoint returned invalid JSON"
+                ) from None
             if not isinstance(payload, dict):
-                raise ProviderProtocolError("OAuth token endpoint returned an invalid object")
+                raise ProviderProtocolError(
+                    "OAuth token endpoint returned an invalid object"
+                )
             token = payload.get("access_token")
             token_type = payload.get("token_type", "Bearer")
             expires_in = payload.get("expires_in")
@@ -228,14 +245,18 @@ class OAuth2RefreshTokenProvider:
                 or not math.isfinite(expires_in)
                 or expires_in <= 0
             ):
-                raise ProviderProtocolError("OAuth token response is missing valid bearer-token fields")
+                raise ProviderProtocolError(
+                    "OAuth token response is missing valid bearer-token fields"
+                )
             returned_scopes = payload.get("scope")
             if returned_scopes is None:
                 scopes = self._granted_scopes
             elif isinstance(returned_scopes, str):
                 scopes = frozenset(returned_scopes.split())
             else:
-                raise ProviderProtocolError("OAuth token response has invalid scope metadata")
+                raise ProviderProtocolError(
+                    "OAuth token response has invalid scope metadata"
+                )
             if not scopes.issubset(self._granted_scopes):
                 raise ProviderScopeError(
                     "OAuth token response claims scopes outside the configured consent grant"
@@ -248,14 +269,16 @@ class OAuth2RefreshTokenProvider:
             rotated = payload.get("refresh_token")
             if rotated is not None:
                 if not isinstance(rotated, str) or not rotated:
-                    raise ProviderProtocolError("OAuth token response contains an invalid rotated refresh token")
+                    raise ProviderProtocolError(
+                        "OAuth token response contains an invalid rotated refresh token"
+                    )
                 if self._on_refresh_token is None:
                     raise ProviderAuthenticationError(
                         "OAuth server rotated the refresh token but no secure persistence callback is configured"
                     )
                 try:
                     self._on_refresh_token(rotated)
-                except Exception:
+                except Exception:  # noqa: BLE001 - application secret-store callbacks may raise custom errors; rotation must fail closed.
                     raise ProviderAuthenticationError(
                         "rotated OAuth refresh token could not be persisted securely"
                     ) from None
@@ -292,7 +315,9 @@ class ProviderCapture:
                 raise ValueError(f"{name} must be a non-empty string")
         if not isinstance(self.provider_version, str):
             raise TypeError("provider_version must be a string")
-        if not isinstance(self.version_id, str) or not re.fullmatch(r"[0-9a-f]{64}", self.version_id):
+        if not isinstance(self.version_id, str) or not re.fullmatch(
+            r"[0-9a-f]{64}", self.version_id
+        ):
             raise ValueError("version_id must be a lowercase SHA-256 digest")
         if not isinstance(self.value, Mapping):
             raise TypeError("provider capture value must be a mapping")
@@ -322,7 +347,10 @@ class ProviderCapture:
             raise ProviderAuthenticationError(
                 "provider capture must use its fixed-identity untrusted external-content connector"
             )
-        if self.provider == "qdrant" and self.value.get("tenant_id") != connector.tenant:
+        if (
+            self.provider == "qdrant"
+            and self.value.get("tenant_id") != connector.tenant
+        ):
             raise ProviderAuthenticationError(
                 "Qdrant capture tenant does not match the authenticated memory connector tenant"
             )
@@ -339,7 +367,9 @@ class ProviderCapture:
                 allow_nan=False,
             ).encode("utf-8")
         except (TypeError, ValueError):
-            raise ProviderProtocolError("provider capture is not canonical JSON") from None
+            raise ProviderProtocolError(
+                "provider capture is not canonical JSON"
+            ) from None
         record_digest = hashlib.sha256(record_bytes).hexdigest()
         if not hmac.compare_digest(record_digest, self.version_id):
             raise ProviderAuthenticationError(
@@ -362,8 +392,8 @@ class ProviderCapture:
 
 @dataclass(frozen=True)
 class ProviderPage:
-    items: Tuple[ProviderCapture, ...]
-    next_cursor: Optional[str]
+    items: tuple[ProviderCapture, ...]
+    next_cursor: str | None
 
 
 class _ProviderHTTPClient:
@@ -419,7 +449,9 @@ class _ProviderHTTPClient:
             or parsed.password is not None
             or parsed.fragment
         ):
-            raise ProviderConnectorError("provider request URL must use an approved HTTPS origin")
+            raise ProviderConnectorError(
+                "provider request URL must use an approved HTTPS origin"
+            )
 
     def request_json(
         self,
@@ -427,9 +459,9 @@ class _ProviderHTTPClient:
         url: str,
         *,
         headers: Mapping[str, str],
-        params: Optional[Mapping[str, Any]] = None,
-        json_body: Optional[Mapping[str, Any]] = None,
-    ) -> Dict[str, Any]:
+        params: Mapping[str, Any] | None = None,
+        json_body: Mapping[str, Any] | None = None,
+    ) -> dict[str, Any]:
         self._validate_url(url)
         try:
             with self._client.stream(
@@ -447,21 +479,28 @@ class _ProviderHTTPClient:
                         f"provider request failed (HTTP {response.status_code})"
                     )
                 content_type = response.headers.get("content-type", "").lower()
-                if "application/json" not in content_type and "+json" not in content_type:
+                if (
+                    "application/json" not in content_type
+                    and "+json" not in content_type
+                ):
                     raise ProviderProtocolError("provider response was not JSON")
                 chunks = bytearray()
                 for chunk in response.iter_bytes():
                     if len(chunks) + len(chunk) > self.max_response_bytes:
-                        raise ProviderResponseTooLarge("provider response exceeded the configured byte limit")
+                        raise ProviderResponseTooLarge(
+                            "provider response exceeded the configured byte limit"
+                        )
                     chunks.extend(chunk)
         except ProviderConnectorError:
             raise
-        except Exception:
+        except Exception:  # noqa: BLE001 - normalize optional HTTP transport failures and keep provider details private.
             raise ProviderConnectorError("provider HTTP request failed") from None
         try:
             payload = json.loads(bytes(chunks))
         except (UnicodeDecodeError, json.JSONDecodeError):
-            raise ProviderProtocolError("provider response contained invalid JSON") from None
+            raise ProviderProtocolError(
+                "provider response contained invalid JSON"
+            ) from None
         if not isinstance(payload, dict):
             raise ProviderProtocolError("provider response JSON must be an object")
         return payload
@@ -507,43 +546,61 @@ class GmailConnector:
         self.token_provider = token_provider
         self.account_id = account_id
         self.connector_id = "gmail:" + account_id
-        self.http = _ProviderHTTPClient(client=client, max_response_bytes=max_response_bytes)
+        self.http = _ProviderHTTPClient(
+            client=client, max_response_bytes=max_response_bytes
+        )
 
-    def _headers(self) -> Dict[str, str]:
-        return {"Authorization": "Bearer " + _require_scope(self.token_provider, self.SCOPE)}
+    def _headers(self) -> dict[str, str]:
+        return {
+            "Authorization": "Bearer " + _require_scope(self.token_provider, self.SCOPE)
+        }
 
     def list_messages(
         self,
         *,
-        query: Optional[str] = None,
+        query: str | None = None,
         max_results: int = 100,
-        page_token: Optional[str] = None,
+        page_token: str | None = None,
         label_ids: Sequence[str] = (),
     ) -> ProviderPage:
-        if isinstance(max_results, bool) or not isinstance(max_results, int) or not 1 <= max_results <= 500:
+        if (
+            isinstance(max_results, bool)
+            or not isinstance(max_results, int)
+            or not 1 <= max_results <= 500
+        ):
             raise ValueError("Gmail max_results must be between 1 and 500")
-        params: Dict[str, Any] = {"maxResults": max_results}
+        params: dict[str, Any] = {"maxResults": max_results}
         if query is not None:
             if not isinstance(query, str) or len(query) > 2_048:
                 raise ValueError("Gmail query must be a bounded string")
             params["q"] = query
         if page_token is not None:
-            if not isinstance(page_token, str) or not page_token or len(page_token) > 4_096:
+            if (
+                not isinstance(page_token, str)
+                or not page_token
+                or len(page_token) > 4_096
+            ):
                 raise ValueError("Gmail page_token must be a bounded non-empty string")
             params["pageToken"] = page_token
         labels = tuple(label_ids)
-        if len(labels) > 50 or any(not isinstance(x, str) or not x or len(x) > 256 for x in labels):
+        if len(labels) > 50 or any(
+            not isinstance(x, str) or not x or len(x) > 256 for x in labels
+        ):
             raise ValueError("Gmail label_ids must be bounded non-empty strings")
         if labels:
             params["labelIds"] = list(labels)
-        response = self.http.request_json("GET", self.BASE_URL + "/messages", headers=self._headers(), params=params)
+        response = self.http.request_json(
+            "GET", self.BASE_URL + "/messages", headers=self._headers(), params=params
+        )
         messages = response.get("messages", [])
         if not isinstance(messages, list):
             raise ProviderProtocolError("Gmail messages field was not a list")
         captures = []
         for item in messages:
             if not isinstance(item, dict) or not isinstance(item.get("id"), str):
-                raise ProviderProtocolError("Gmail returned a message without a valid identifier")
+                raise ProviderProtocolError(
+                    "Gmail returned a message without a valid identifier"
+                )
             message_id = item["id"]
             captures.append(
                 ProviderCapture(
@@ -556,7 +613,9 @@ class GmailConnector:
                 )
             )
         next_cursor = response.get("nextPageToken")
-        if next_cursor is not None and (not isinstance(next_cursor, str) or len(next_cursor) > 4_096):
+        if next_cursor is not None and (
+            not isinstance(next_cursor, str) or len(next_cursor) > 4_096
+        ):
             raise ProviderProtocolError("Gmail returned an invalid nextPageToken")
         return ProviderPage(tuple(captures), next_cursor)
 
@@ -593,10 +652,20 @@ class MicrosoftGraphMailConnector:
     BASIC_SCOPE = "Mail.ReadBasic"
     READ_SCOPE = "Mail.Read"
     SELECT_BASIC = (
-        "id", "conversationId", "subject", "from", "toRecipients",
-        "receivedDateTime", "sentDateTime", "internetMessageId",
-        "parentFolderId", "categories", "hasAttachments",
-        "importance", "isRead", "changeKey",
+        "id",
+        "conversationId",
+        "subject",
+        "from",
+        "toRecipients",
+        "receivedDateTime",
+        "sentDateTime",
+        "internetMessageId",
+        "parentFolderId",
+        "categories",
+        "hasAttachments",
+        "importance",
+        "isRead",
+        "changeKey",
     )
     SELECT_FULL = SELECT_BASIC + ("body", "uniqueBody")
 
@@ -624,9 +693,11 @@ class MicrosoftGraphMailConnector:
         self.required_scope = self.READ_SCOPE if read_body else self.BASIC_SCOPE
         self.selected_fields = self.SELECT_FULL if read_body else self.SELECT_BASIC
         self.connector_id = f"microsoft-graph:{tenant_id}:{user_id}"
-        self.http = _ProviderHTTPClient(client=client, max_response_bytes=max_response_bytes)
+        self.http = _ProviderHTTPClient(
+            client=client, max_response_bytes=max_response_bytes
+        )
 
-    def _headers(self) -> Dict[str, str]:
+    def _headers(self) -> dict[str, str]:
         token = _require_scope(self.token_provider, self.required_scope)
         return {"Authorization": "Bearer " + token}
 
@@ -646,20 +717,22 @@ class MicrosoftGraphMailConnector:
             or parsed.fragment
             or parsed.path != "/v1.0/me/messages"
         ):
-            raise ProviderProtocolError("Microsoft Graph returned an unsafe @odata.nextLink")
+            raise ProviderProtocolError(
+                "Microsoft Graph returned an unsafe @odata.nextLink"
+            )
         return next_link
 
     def list_messages(
         self,
         *,
         top: int = 50,
-        skip_token_url: Optional[str] = None,
-        filter_query: Optional[str] = None,
+        skip_token_url: str | None = None,
+        filter_query: str | None = None,
     ) -> ProviderPage:
         if isinstance(top, bool) or not isinstance(top, int) or not 1 <= top <= 1_000:
             raise ValueError("Microsoft Graph top must be between 1 and 1000")
         url = self._messages_url()
-        params: Optional[Dict[str, Any]]
+        params: dict[str, Any] | None
         if skip_token_url is not None:
             url = self._validate_next_link(skip_token_url)
             params = None
@@ -670,16 +743,22 @@ class MicrosoftGraphMailConnector:
             }
             if filter_query is not None:
                 if not isinstance(filter_query, str) or len(filter_query) > 2_048:
-                    raise ValueError("Microsoft Graph filter_query must be a bounded string")
+                    raise ValueError(
+                        "Microsoft Graph filter_query must be a bounded string"
+                    )
                 params["$filter"] = filter_query
-        response = self.http.request_json("GET", url, headers=self._headers(), params=params)
+        response = self.http.request_json(
+            "GET", url, headers=self._headers(), params=params
+        )
         items = response.get("value", [])
         if not isinstance(items, list):
             raise ProviderProtocolError("Microsoft Graph value field was not a list")
         captures = []
         for item in items:
             if not isinstance(item, dict) or not isinstance(item.get("id"), str):
-                raise ProviderProtocolError("Microsoft Graph returned a message without an identifier")
+                raise ProviderProtocolError(
+                    "Microsoft Graph returned a message without an identifier"
+                )
             msg_id = item["id"]
             captures.append(
                 ProviderCapture(
@@ -687,7 +766,9 @@ class MicrosoftGraphMailConnector:
                     connector_id=self.connector_id,
                     object_id=f"graph:{self.tenant_id}:{self.user_id}:message:{msg_id}",
                     version_id=_version_id(item),
-                    provider_version=str(item.get("@odata.etag") or item.get("changeKey") or ""),
+                    provider_version=str(
+                        item.get("@odata.etag") or item.get("changeKey") or ""
+                    ),
                     value=item,
                 )
             )
@@ -698,7 +779,9 @@ class MicrosoftGraphMailConnector:
 
     def get_message(self, message_id: str) -> ProviderCapture:
         if not isinstance(message_id, str) or not message_id or len(message_id) > 512:
-            raise ValueError("Microsoft Graph message_id must be a bounded non-empty string")
+            raise ValueError(
+                "Microsoft Graph message_id must be a bounded non-empty string"
+            )
         url = self._messages_url() + "/" + quote(message_id, safe="")
         response = self.http.request_json(
             "GET",
@@ -707,13 +790,17 @@ class MicrosoftGraphMailConnector:
             params={"$select": ",".join(self.selected_fields)},
         )
         if response.get("id") != message_id:
-            raise ProviderProtocolError("Microsoft Graph returned a different message identifier")
+            raise ProviderProtocolError(
+                "Microsoft Graph returned a different message identifier"
+            )
         return ProviderCapture(
             provider="microsoft_graph",
             connector_id=self.connector_id,
             object_id=f"graph:{self.tenant_id}:{self.user_id}:message:{message_id}",
             version_id=_version_id(response),
-            provider_version=str(response.get("@odata.etag") or response.get("changeKey") or ""),
+            provider_version=str(
+                response.get("@odata.etag") or response.get("changeKey") or ""
+            ),
             value=response,
         )
 
@@ -725,9 +812,14 @@ class SlackHistoryConnector:
     """Read-only Slack conversations.history connector."""
 
     BASE_URL = "https://slack.com/api/conversations.history"
-    HISTORY_SCOPES = frozenset({
-        "channels:history", "groups:history", "im:history", "mpim:history",
-    })
+    HISTORY_SCOPES = frozenset(
+        {
+            "channels:history",
+            "groups:history",
+            "im:history",
+            "mpim:history",
+        }
+    )
 
     def __init__(
         self,
@@ -741,32 +833,44 @@ class SlackHistoryConnector:
         if not isinstance(workspace_id, str) or not workspace_id:
             raise ValueError("workspace_id must be non-empty")
         if history_scope not in self.HISTORY_SCOPES:
-            raise ValueError("history_scope must be one of the approved Slack history scopes")
+            raise ValueError(
+                "history_scope must be one of the approved Slack history scopes"
+            )
         if not isinstance(token_provider, OAuth2RefreshTokenProvider):
             raise TypeError("Slack history requires an OAuth2RefreshTokenProvider")
         self.token_provider = token_provider
         self.workspace_id = workspace_id
         self.history_scope = history_scope
         self.connector_id = "slack:" + workspace_id
-        self.http = _ProviderHTTPClient(client=client, max_response_bytes=max_response_bytes)
+        self.http = _ProviderHTTPClient(
+            client=client, max_response_bytes=max_response_bytes
+        )
 
     def history(
         self,
         channel_id: str,
         *,
         limit: int = 100,
-        cursor: Optional[str] = None,
-        oldest: Optional[str] = None,
-        latest: Optional[str] = None,
+        cursor: str | None = None,
+        oldest: str | None = None,
+        latest: str | None = None,
         inclusive: bool = False,
     ) -> ProviderPage:
         if not isinstance(channel_id, str) or not channel_id or len(channel_id) > 256:
             raise ValueError("Slack channel_id must be bounded and non-empty")
-        if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 200:
+        if (
+            isinstance(limit, bool)
+            or not isinstance(limit, int)
+            or not 1 <= limit <= 200
+        ):
             raise ValueError("Slack history limit must be between 1 and 200")
         if not isinstance(inclusive, bool):
             raise TypeError("inclusive must be a boolean")
-        body: Dict[str, Any] = {"channel": channel_id, "limit": limit, "inclusive": inclusive}
+        body: dict[str, Any] = {
+            "channel": channel_id,
+            "limit": limit,
+            "inclusive": inclusive,
+        }
         for name, value in (("cursor", cursor), ("oldest", oldest), ("latest", latest)):
             if value is not None:
                 if not isinstance(value, str) or not value or len(value) > 4_096:
@@ -786,15 +890,23 @@ class SlackHistoryConnector:
             # Slack returns a provider error string; do not include arbitrary
             # response payloads or request credentials in exception text.
             error = response.get("error")
-            safe_error = error if isinstance(error, str) and re.fullmatch(r"[a-z0-9_]{1,80}", error) else "provider_error"
-            raise ProviderConnectorError("Slack conversations.history failed: " + safe_error)
+            safe_error = (
+                error
+                if isinstance(error, str) and re.fullmatch(r"[a-z0-9_]{1,80}", error)
+                else "provider_error"
+            )
+            raise ProviderConnectorError(
+                "Slack conversations.history failed: " + safe_error
+            )
         messages = response.get("messages", [])
         if not isinstance(messages, list):
             raise ProviderProtocolError("Slack messages field was not a list")
         captures = []
         for item in messages:
             if not isinstance(item, dict) or not isinstance(item.get("ts"), str):
-                raise ProviderProtocolError("Slack returned a message without a timestamp")
+                raise ProviderProtocolError(
+                    "Slack returned a message without a timestamp"
+                )
             ts = item["ts"]
             captured_value = {**item, "channel": channel_id}
             captures.append(
@@ -803,14 +915,18 @@ class SlackHistoryConnector:
                     connector_id=self.connector_id,
                     object_id=f"slack:{self.workspace_id}:{channel_id}:{ts}",
                     version_id=_version_id(captured_value),
-                    provider_version=str(item.get("edited", {}).get("ts", ts)) if isinstance(item.get("edited"), dict) else ts,
+                    provider_version=str(item.get("edited", {}).get("ts", ts))
+                    if isinstance(item.get("edited"), dict)
+                    else ts,
                     value=captured_value,
                 )
             )
         metadata = response.get("response_metadata", {})
         if metadata is not None and not isinstance(metadata, dict):
             raise ProviderProtocolError("Slack response_metadata was malformed")
-        next_cursor = metadata.get("next_cursor") if isinstance(metadata, dict) else None
+        next_cursor = (
+            metadata.get("next_cursor") if isinstance(metadata, dict) else None
+        )
         if next_cursor is not None and (
             not isinstance(next_cursor, str) or len(next_cursor) > 4_096
         ):
@@ -856,12 +972,17 @@ class QdrantVectorConnector:
         if not isinstance(cluster_id, str) or not cluster_id:
             raise ValueError("cluster_id must be non-empty")
         if not isinstance(tenant_id, str) or not tenant_id or len(tenant_id) > 256:
-            raise ValueError("tenant_id must be a bounded non-empty trusted tenant identifier")
+            raise ValueError(
+                "tenant_id must be a bounded non-empty trusted tenant identifier"
+            )
         if (
             not isinstance(tenant_payload_key, str)
-            or re.fullmatch(r"[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*", tenant_payload_key) is None
+            or re.fullmatch(r"[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*", tenant_payload_key)
+            is None
         ):
-            raise ValueError("tenant_payload_key must be a simple or dotted Qdrant payload field path")
+            raise ValueError(
+                "tenant_payload_key must be a simple or dotted Qdrant payload field path"
+            )
         if not callable(api_key_provider):
             raise TypeError("api_key_provider must be a callable secret provider")
         self.base_url = base_url.rstrip("/")
@@ -882,12 +1003,16 @@ class QdrantVectorConnector:
         vector: Sequence[float],
         *,
         limit: int = 10,
-        query_filter: Optional[Mapping[str, Any]] = None,
+        query_filter: Mapping[str, Any] | None = None,
         with_payload: bool = True,
     ) -> ProviderPage:
         if not isinstance(collection, str) or not collection or len(collection) > 256:
             raise ValueError("Qdrant collection must be bounded and non-empty")
-        if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 200:
+        if (
+            isinstance(limit, bool)
+            or not isinstance(limit, int)
+            or not 1 <= limit <= 200
+        ):
             raise ValueError("Qdrant search limit must be between 1 and 200")
         if not isinstance(with_payload, bool):
             raise TypeError("with_payload must be a boolean")
@@ -895,14 +1020,23 @@ class QdrantVectorConnector:
             raise ValueError(
                 "Qdrant tenant isolation requires with_payload=True so every result can be verified"
             )
-        if not isinstance(vector, Sequence) or isinstance(vector, (str, bytes)) or not vector or len(vector) > 65_536:
+        if (
+            not isinstance(vector, Sequence)
+            or isinstance(vector, (str, bytes))
+            or not vector
+            or len(vector) > 65_536
+        ):
             raise ValueError("Qdrant vector must be a bounded non-empty sequence")
         values = []
         for value in vector:
-            if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+            if (
+                isinstance(value, bool)
+                or not isinstance(value, (int, float))
+                or not math.isfinite(value)
+            ):
                 raise ValueError("Qdrant vector entries must be finite numbers")
             values.append(float(value))
-        body: Dict[str, Any] = {
+        body: dict[str, Any] = {
             "vector": values,
             "limit": limit,
             "with_payload": True,
@@ -912,14 +1046,17 @@ class QdrantVectorConnector:
             "key": self.tenant_payload_key,
             "match": {"value": self.tenant_id},
         }
-        mandatory_filter: Dict[str, Any] = {"must": [tenant_condition]}
+        mandatory_filter: dict[str, Any] = {"must": [tenant_condition]}
         if query_filter is not None:
             if not isinstance(query_filter, Mapping):
                 raise TypeError("Qdrant query_filter must be a mapping")
             try:
                 encoded_filter = json.dumps(
-                    query_filter, sort_keys=True, separators=(",", ":"),
-                    ensure_ascii=False, allow_nan=False,
+                    query_filter,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                    ensure_ascii=False,
+                    allow_nan=False,
                 ).encode("utf-8")
             except (TypeError, ValueError):
                 raise ValueError("Qdrant filter must be canonical JSON") from None
@@ -934,13 +1071,20 @@ class QdrantVectorConnector:
         body["filter"] = mandatory_filter
         try:
             key = self.api_key_provider()
-        except Exception:
+        except Exception:  # noqa: BLE001 - secret-provider callbacks are trusted extensions; never expose their errors.
             # Secret-provider exceptions can contain backend details or secret
             # material. Do not propagate them into logs or API responses.
-            raise ProviderAuthenticationError("Qdrant API key provider failed") from None
+            raise ProviderAuthenticationError(
+                "Qdrant API key provider failed"
+            ) from None
         if not isinstance(key, str) or not key:
             raise ProviderAuthenticationError("Qdrant API key provider returned no key")
-        url = self.base_url + "/collections/" + quote(collection, safe="") + "/points/search"
+        url = (
+            self.base_url
+            + "/collections/"
+            + quote(collection, safe="")
+            + "/points/search"
+        )
         response = self.http.request_json(
             "POST",
             url,
@@ -953,7 +1097,9 @@ class QdrantVectorConnector:
         captures = []
         for item in result:
             if not isinstance(item, dict) or "id" not in item:
-                raise ProviderProtocolError("Qdrant returned a point without an identifier")
+                raise ProviderProtocolError(
+                    "Qdrant returned a point without an identifier"
+                )
             payload = item.get("payload")
             if not isinstance(payload, Mapping):
                 raise ProviderProtocolError(
@@ -961,7 +1107,10 @@ class QdrantVectorConnector:
                 )
             tenant_value: Any = payload
             for component in self.tenant_payload_key.split("."):
-                if not isinstance(tenant_value, Mapping) or component not in tenant_value:
+                if (
+                    not isinstance(tenant_value, Mapping)
+                    or component not in tenant_value
+                ):
                     tenant_value = None
                     break
                 tenant_value = tenant_value[component]
@@ -970,7 +1119,11 @@ class QdrantVectorConnector:
                     "Qdrant returned a point outside the connector's authenticated tenant"
                 )
             point_id = str(item["id"])
-            captured_value = {**item, "collection": collection, "tenant_id": self.tenant_id}
+            captured_value = {
+                **item,
+                "collection": collection,
+                "tenant_id": self.tenant_id,
+            }
             captures.append(
                 ProviderCapture(
                     provider="qdrant",

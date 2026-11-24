@@ -235,10 +235,11 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -e ".[dev,api,crypto,providers]"
-      - name: Lint API and security tests (ruff)
-        run: ruff check paca_executor.py tests/test_asymmetric_authority.py tests/test_provider_connectors.py
-      - name: Check imports and undefined names in security modules (ruff)
-        run: ruff check --select F paca/authority_runtime.py paca/resource_commit.py paca/integrations/providers.py
+      - name: Lint all Python source and tests (ruff)
+        run: ruff check .
+      - name: Verify repository-wide Python formatting (ruff)
+        run: ruff format --check .
+
       - name: Type check (mypy)
         run: mypy --follow-imports=silent paca_executor.py
 

@@ -8,7 +8,6 @@ import threading
 from concurrent.futures import ThreadPoolExecutor
 
 import pytest
-
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
@@ -33,15 +32,22 @@ from paca.runtime import Decision, Request, Tool
 
 
 def _write_tool() -> Tool:
-    return Tool("write_file", "1.0", "Write a file to the workspace", ("path", "content"))
+    return Tool(
+        "write_file", "1.0", "Write a file to the workspace", ("path", "content")
+    )
 
 
 def _environment(tmp_path, *, max_calls=40, asymmetric=False):
     now = [1_000]
-    clock = lambda: now[0]
+
+    def clock():
+        return now[0]
+
     registry = SQLiteAuthorityRegistry(tmp_path / "authority.sqlite3", clock=clock)
     callbacks = {
-        "identity_verifier": lambda principal, tenant: bool(principal and tenant == "acme"),
+        "identity_verifier": lambda principal, tenant: bool(
+            principal and tenant == "acme"
+        ),
         "task_context_verifier": lambda principal, tenant, task_id, purpose: (
             principal == "agent-a"
             and tenant == "acme"
@@ -111,7 +117,11 @@ def _environment(tmp_path, *, max_calls=40, asymmetric=False):
         clock=clock,
     )
     messages = HMACAgentMessageCodec(
-        b"S" * 32, issuer, repository, memory=memory, clock=clock,
+        b"S" * 32,
+        issuer,
+        repository,
+        memory=memory,
+        clock=clock,
     )
     connector = TrustedConnectorAdapter(
         memory,
@@ -198,9 +208,12 @@ def test_resource_write_and_effect_budget_commit_in_one_authority_transaction(tm
     stored = _stored_resource(env["registry"])
     assert stored is not None
     assert json.loads(stored[0]) == {"content": "approved report body"}
-    assert stored[1] == hashlib.sha256(
-        canonical_value_bytes({"content": "approved report body"})
-    ).hexdigest()
+    assert (
+        stored[1]
+        == hashlib.sha256(
+            canonical_value_bytes({"content": "approved report body"})
+        ).hexdigest()
+    )
     assert stored[2] == 1
     assert stored[3] == env["signed"].capability.cap_id
     # Two source-argument reads and the actual effect commit were charged.
@@ -208,7 +221,9 @@ def test_resource_write_and_effect_budget_commit_in_one_authority_transaction(tm
     assert env["registry"].task_usage("acme", "task-fence")[0] == 5
 
 
-def test_strict_ed25519_runtime_rejects_non_public_only_or_mismatched_verifier(tmp_path):
+def test_strict_ed25519_runtime_rejects_non_public_only_or_mismatched_verifier(
+    tmp_path,
+):
     env = _environment(tmp_path, asymmetric=True)
     issuer = env["issuer"]
     verifier = env["verifier"]
@@ -232,7 +247,9 @@ def test_strict_ed25519_runtime_rejects_non_public_only_or_mismatched_verifier(t
         key_id="different-key-id",
         audience="fenced-test-runtime",
         public_key=b"\x31" * 32,
-        identity_verifier=lambda principal, tenant: bool(principal and tenant == "acme"),
+        identity_verifier=lambda principal, tenant: bool(
+            principal and tenant == "acme"
+        ),
         task_context_verifier=lambda principal, tenant, task_id, purpose: (
             principal == "agent-a"
             and tenant == "acme"
@@ -252,7 +269,9 @@ def test_strict_ed25519_runtime_rejects_non_public_only_or_mismatched_verifier(t
         )
 
 
-def test_ed25519_private_issuer_and_public_only_resource_verifier_commit_write(tmp_path):
+def test_ed25519_private_issuer_and_public_only_resource_verifier_commit_write(
+    tmp_path,
+):
     env = _environment(tmp_path, asymmetric=True)
     verifier = env["verifier"]
     assert verifier is not None
@@ -283,7 +302,9 @@ def test_ed25519_private_issuer_and_public_only_resource_verifier_commit_write(t
         )
 
 
-def test_strict_runtime_rejects_in_process_executor_before_any_budget_or_effect(tmp_path):
+def test_strict_runtime_rejects_in_process_executor_before_any_budget_or_effect(
+    tmp_path,
+):
     env = _environment(tmp_path)
     executed = []
     with pytest.raises(MemoryAccessDenied, match="requires the runtime-bound"):
@@ -297,7 +318,9 @@ def test_strict_runtime_rejects_in_process_executor_before_any_budget_or_effect(
     assert _stored_resource(env["registry"]) is None
 
 
-def test_revocation_between_runtime_authorization_and_resource_commit_blocks_write(tmp_path):
+def test_revocation_between_runtime_authorization_and_resource_commit_blocks_write(
+    tmp_path,
+):
     env = _environment(tmp_path)
     executor = env["executor"]
     original = executor.execute_authorized
@@ -340,7 +363,10 @@ def test_commit_permit_is_one_use_and_cannot_be_replayed(tmp_path, monkeypatch):
 
     stored = _stored_resource(env["registry"])
     assert stored is not None and stored[2] == 1
-    assert env["registry"].usage(env["signed"].capability.cap_id)[0] == usage_after_first_commit
+    assert (
+        env["registry"].usage(env["signed"].capability.cap_id)[0]
+        == usage_after_first_commit
+    )
 
 
 def test_resource_commit_rejects_modified_signed_permit(tmp_path):
@@ -363,7 +389,9 @@ def test_resource_commit_rejects_modified_signed_permit(tmp_path):
     assert _stored_resource(env["registry"]) is None
 
 
-def test_revocation_waits_for_inflight_commit_and_linearizes_after_it(tmp_path, monkeypatch):
+def test_revocation_waits_for_inflight_commit_and_linearizes_after_it(
+    tmp_path, monkeypatch
+):
     env = _environment(tmp_path)
     permit = env["issuer"].issue_resource_commit_permit(
         env["signed"].token,

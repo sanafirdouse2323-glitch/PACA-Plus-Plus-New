@@ -6,8 +6,10 @@ with no network, no host mounts, a read-only root filesystem and resource limits
 This is an execution boundary adapter, not a substitute for resource-side commit
 authorization or a host kernel/container-runtime security review.
 """
+
 from __future__ import annotations
 
+import contextlib
 import json
 import math
 import os
@@ -17,9 +19,10 @@ import subprocess
 import tempfile
 import threading
 import time
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, Mapping, Optional, Sequence, Tuple
+from typing import Any
 
 
 class SandboxError(RuntimeError):
@@ -50,15 +53,17 @@ class SandboxResult:
     duration_seconds: float
 
 
-_DOCKER_ENV_ALLOWLIST = frozenset({
-    "PATH",
-    "HOME",
-    "DOCKER_HOST",
-    "DOCKER_CONTEXT",
-    "DOCKER_TLS_VERIFY",
-    "DOCKER_CERT_PATH",
-    "DOCKER_CONFIG",
-})
+_DOCKER_ENV_ALLOWLIST = frozenset(
+    {
+        "PATH",
+        "HOME",
+        "DOCKER_HOST",
+        "DOCKER_CONTEXT",
+        "DOCKER_TLS_VERIFY",
+        "DOCKER_CERT_PATH",
+        "DOCKER_CONFIG",
+    }
+)
 _IMAGE_DIGEST = re.compile(r"^[^\s@]+@sha256:[0-9a-f]{64}$")
 _CONTAINER_ID = re.compile(r"^[0-9a-f]{64}$")
 
@@ -83,12 +88,16 @@ class DockerSandbox:
         max_input_bytes: int = 1_048_576,
         max_output_bytes: int = 1_048_576,
         tmpfs_bytes: int = 33_554_432,
-        docker_env: Optional[Mapping[str, str]] = None,
+        docker_env: Mapping[str, str] | None = None,
     ) -> None:
         if not isinstance(image, str) or _IMAGE_DIGEST.fullmatch(image) is None:
-            raise ValueError("sandbox image must be pinned by an immutable sha256 digest")
+            raise ValueError(
+                "sandbox image must be pinned by an immutable sha256 digest"
+            )
         if not isinstance(docker_binary, str) or not docker_binary:
-            raise ValueError("docker_binary must be a non-empty executable name or path")
+            raise ValueError(
+                "docker_binary must be a non-empty executable name or path"
+            )
         if (
             isinstance(timeout_seconds, bool)
             or not isinstance(timeout_seconds, (int, float))
@@ -103,7 +112,11 @@ class DockerSandbox:
             ("max_output_bytes", max_output_bytes, 1, 16 * 1024 * 1024),
             ("tmpfs_bytes", tmpfs_bytes, 1024 * 1024, 512 * 1024 * 1024),
         ):
-            if isinstance(value, bool) or not isinstance(value, int) or not minimum <= value <= maximum:
+            if (
+                isinstance(value, bool)
+                or not isinstance(value, int)
+                or not minimum <= value <= maximum
+            ):
                 raise ValueError(f"{name} is outside the supported range")
         if (
             isinstance(cpu_limit, bool)
@@ -112,12 +125,19 @@ class DockerSandbox:
             or not 0.1 <= cpu_limit <= 8.0
         ):
             raise ValueError("cpu_limit must be between 0.1 and 8.0")
-        supplied_env = dict(docker_env) if docker_env is not None else {
-            key: value for key, value in os.environ.items()
-            if key in _DOCKER_ENV_ALLOWLIST
-        }
+        supplied_env = (
+            dict(docker_env)
+            if docker_env is not None
+            else {
+                key: value
+                for key, value in os.environ.items()
+                if key in _DOCKER_ENV_ALLOWLIST
+            }
+        )
         if set(supplied_env) - _DOCKER_ENV_ALLOWLIST:
-            raise ValueError("docker_env contains variables outside the explicit Docker CLI allowlist")
+            raise ValueError(
+                "docker_env contains variables outside the explicit Docker CLI allowlist"
+            )
         if any(
             not isinstance(key, str)
             or not isinstance(value, str)
@@ -138,18 +158,19 @@ class DockerSandbox:
         self.docker_env = supplied_env
 
     @staticmethod
-    def _validate_argv(argv: Sequence[str]) -> Tuple[str, ...]:
+    def _validate_argv(argv: Sequence[str]) -> tuple[str, ...]:
         if isinstance(argv, (str, bytes)) or not isinstance(argv, Sequence) or not argv:
             raise ValueError("sandbox command must be a non-empty argument sequence")
         command = tuple(argv)
-        if (
-            any(not isinstance(part, str) or not part or "\x00" in part for part in command)
-            or not command[0].startswith("/")
-        ):
-            raise ValueError("sandbox executable must be an absolute path and arguments must be NUL-free strings")
+        if any(
+            not isinstance(part, str) or not part or "\x00" in part for part in command
+        ) or not command[0].startswith("/"):
+            raise ValueError(
+                "sandbox executable must be an absolute path and arguments must be NUL-free strings"
+            )
         return command
 
-    def _build_command(self, argv: Sequence[str], cidfile: str) -> Tuple[str, ...]:
+    def _build_command(self, argv: Sequence[str], cidfile: str) -> tuple[str, ...]:
         command = self._validate_argv(argv)
         if not isinstance(cidfile, str) or not cidfile:
             raise ValueError("cidfile path must be non-empty")
@@ -159,7 +180,8 @@ class DockerSandbox:
             "--rm",
             "--interactive",
             "--init",
-            "--cidfile", cidfile,
+            "--cidfile",
+            cidfile,
             "--network=none",
             "--read-only",
             "--cap-drop=ALL",
@@ -178,7 +200,8 @@ class DockerSandbox:
             "--env=HOME=/tmp",
             "--env=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
             "--env=LANG=C.UTF-8",
-            "--entrypoint", command[0],
+            "--entrypoint",
+            command[0],
             self.image,
             *command[1:],
         )
@@ -190,7 +213,9 @@ class DockerSandbox:
             return
         if _CONTAINER_ID.fullmatch(container_id) is None:
             return
-        try:
+        # The original timeout/output-limit error remains the actionable
+        # failure; an unavailable cleanup CLI must not be reported as success.
+        with contextlib.suppress(OSError, subprocess.SubprocessError):
             subprocess.run(
                 [self.docker_binary, "rm", "--force", container_id],
                 stdin=subprocess.DEVNULL,
@@ -200,10 +225,6 @@ class DockerSandbox:
                 timeout=5,
                 check=False,
             )
-        except (OSError, subprocess.SubprocessError):
-            # The original timeout/output-limit error remains the actionable
-            # failure; an unavailable cleanup CLI must not be reported as success.
-            pass
 
     def run(self, argv: Sequence[str], input_data: bytes) -> SandboxResult:
         """Execute argv with bounded input/output and a wall-clock deadline."""
@@ -252,16 +273,12 @@ class DockerSandbox:
                                 destination.extend(chunk)
                                 output_total[0] += len(chunk)
                         if output_exceeded.is_set():
-                            try:
+                            with contextlib.suppress(OSError):
                                 process.kill()
-                            except OSError:
-                                pass
                             return
                 finally:
-                    try:
+                    with contextlib.suppress(OSError):
                         stream.close()
-                    except OSError:
-                        pass
 
             def feed_input() -> None:
                 try:
@@ -272,15 +289,17 @@ class DockerSandbox:
                     pass
                 finally:
                     if process.stdin is not None:
-                        try:
+                        with contextlib.suppress(OSError):
                             process.stdin.close()
-                        except OSError:
-                            pass
 
             assert process.stdout is not None and process.stderr is not None
             readers = [
-                threading.Thread(target=drain, args=(process.stdout, stdout), daemon=True),
-                threading.Thread(target=drain, args=(process.stderr, stderr), daemon=True),
+                threading.Thread(
+                    target=drain, args=(process.stdout, stdout), daemon=True
+                ),
+                threading.Thread(
+                    target=drain, args=(process.stderr, stderr), daemon=True
+                ),
             ]
             writer = threading.Thread(target=feed_input, daemon=True)
             for thread in readers:
@@ -292,10 +311,8 @@ class DockerSandbox:
                 returncode = process.wait(timeout=self.timeout_seconds)
             except subprocess.TimeoutExpired:
                 timed_out = True
-                try:
+                with contextlib.suppress(OSError):
                     process.kill()
-                except OSError:
-                    pass
                 returncode = process.wait()
 
             writer.join(timeout=1.0)
@@ -306,9 +323,13 @@ class DockerSandbox:
                 self._remove_container(cidfile)
             duration = time.monotonic() - started
             if timed_out:
-                raise SandboxTimeout("sandboxed worker exceeded its wall-clock deadline")
+                raise SandboxTimeout(
+                    "sandboxed worker exceeded its wall-clock deadline"
+                )
             if output_exceeded.is_set():
-                raise SandboxOutputLimitExceeded("sandboxed worker exceeded the combined stdout/stderr limit")
+                raise SandboxOutputLimitExceeded(
+                    "sandboxed worker exceeded the combined stdout/stderr limit"
+                )
             return SandboxResult(
                 returncode=int(returncode),
                 stdout=bytes(stdout),
@@ -334,10 +355,14 @@ class DockerSandboxExecutor:
         commands: Mapping[str, Sequence[str]],
     ) -> None:
         if not callable(getattr(sandbox, "run", None)):
-            raise TypeError("sandbox must provide a callable run(argv, input_data) method")
+            raise TypeError(
+                "sandbox must provide a callable run(argv, input_data) method"
+            )
         if not isinstance(commands, Mapping) or not commands:
-            raise ValueError("commands must be a non-empty trusted action-to-command mapping")
-        normalized: Dict[str, Tuple[str, ...]] = {}
+            raise ValueError(
+                "commands must be a non-empty trusted action-to-command mapping"
+            )
+        normalized: dict[str, tuple[str, ...]] = {}
         for action, argv in commands.items():
             if not isinstance(action, str) or not action:
                 raise ValueError("sandbox action names must be non-empty strings")
@@ -355,11 +380,15 @@ class DockerSandboxExecutor:
             raise TypeError("DockerSandboxExecutor requires a typed PACA Request")
         command = self.commands.get(request.action)
         if command is None:
-            raise SandboxExecutionError("no isolated worker is registered for this action")
-        arguments: Dict[str, Any] = {}
+            raise SandboxExecutionError(
+                "no isolated worker is registered for this action"
+            )
+        arguments: dict[str, Any] = {}
         for name, argument in request.args.items():
             if not isinstance(name, str) or not name or not isinstance(argument, Arg):
-                raise SandboxExecutionError("sandbox request contains an invalid typed argument")
+                raise SandboxExecutionError(
+                    "sandbox request contains an invalid typed argument"
+                )
             arguments[name] = argument.value
         tool = None
         if request.tool is not None:
@@ -384,10 +413,14 @@ class DockerSandboxExecutor:
                 allow_nan=False,
             ).encode("utf-8")
         except (TypeError, ValueError) as exc:
-            raise SandboxExecutionError("sandbox request is not canonical JSON") from exc
+            raise SandboxExecutionError(
+                "sandbox request is not canonical JSON"
+            ) from exc
         result = self.sandbox.run(command, encoded)
         if not isinstance(result, SandboxResult):
-            raise SandboxExecutionError("sandbox runner returned an invalid result object")
+            raise SandboxExecutionError(
+                "sandbox runner returned an invalid result object"
+            )
         if result.returncode != 0:
             detail = result.stderr[:2048].decode("utf-8", errors="replace")
             raise SandboxExecutionError(
@@ -396,13 +429,17 @@ class DockerSandboxExecutor:
         try:
             response = json.loads(result.stdout)
         except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-            raise SandboxExecutionError("isolated worker returned invalid JSON") from exc
+            raise SandboxExecutionError(
+                "isolated worker returned invalid JSON"
+            ) from exc
         if (
             not isinstance(response, dict)
             or response.get("version") != 1
             or "result" not in response
         ):
-            raise SandboxExecutionError("isolated worker returned an invalid result envelope")
+            raise SandboxExecutionError(
+                "isolated worker returned an invalid result envelope"
+            )
         return response["result"]
 
 

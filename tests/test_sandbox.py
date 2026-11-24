@@ -13,7 +13,6 @@ from paca.sandbox import (
     SandboxResult,
 )
 
-
 IMAGE = "ghcr.io/example/paca-worker@sha256:" + ("a" * 64)
 
 

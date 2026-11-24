@@ -9,6 +9,7 @@ The adapter is intended for serialized use of one executor instance per task. It
 capability-step counter is process-local: it does not provide durable coordination
 across executor instances, worker processes, or restarts.
 """
+
 from __future__ import annotations
 
 import ast
@@ -58,10 +59,14 @@ def aggregate_prior_output_labels(extra_args: Mapping[str, Any]) -> Label:
     """
     labels = extra_args.get("paca_output_labels", {})
     if not isinstance(labels, Mapping):
-        return Label(integrity="untrusted", origins=frozenset({"unknown_agentdojo_lineage"}))
+        return Label(
+            integrity="untrusted", origins=frozenset({"unknown_agentdojo_lineage"})
+        )
     recorded = list(labels.values())
     if not recorded or any(not isinstance(value, Label) for value in recorded):
-        return Label(integrity="untrusted", origins=frozenset({"unknown_agentdojo_lineage"}))
+        return Label(
+            integrity="untrusted", origins=frozenset({"unknown_agentdojo_lineage"})
+        )
     return Label.join(*recorded)
 
 
@@ -177,20 +182,26 @@ class PacaToolsExecutor(ToolsExecutor):
             self.metrics["tool_calls_seen"] += 1
             function_name = getattr(tool_call, "function", None)
             if not isinstance(function_name, str) or not function_name:
-                tool_call_results.append(self._deny_result(tool_call, "Invalid or empty tool name."))
+                tool_call_results.append(
+                    self._deny_result(tool_call, "Invalid or empty tool name.")
+                )
                 continue
             if function_name not in registered_names:
                 self.metrics["denied_calls"] += 1
-                tool_call_results.append(self._tool_call_result(
-                    tool_call,
-                    "",
-                    error=f"Invalid tool {function_name} provided.",
-                ))
+                tool_call_results.append(
+                    self._tool_call_result(
+                        tool_call,
+                        "",
+                        error=f"Invalid tool {function_name} provided.",
+                    )
+                )
                 continue
 
             supplied_args = getattr(tool_call, "args", None)
             if not isinstance(supplied_args, Mapping):
-                tool_call_results.append(self._deny_result(tool_call, "Tool arguments are not a mapping."))
+                tool_call_results.append(
+                    self._deny_result(tool_call, "Tool arguments are not a mapping.")
+                )
                 continue
 
             self.metrics["policy_evaluations"] += 1
@@ -220,7 +231,9 @@ class PacaToolsExecutor(ToolsExecutor):
                 if not isinstance(request, Request):
                     raise TypeError("request_builder did not return a PACA++ Request")
                 if isinstance(request.step, bool) or not isinstance(request.step, int):
-                    raise TypeError("request_builder must provide an integer request step")
+                    raise TypeError(
+                        "request_builder must provide an integer request step"
+                    )
                 # Enforce monotonic steps within each capability, even if an application
                 # mapper accidentally reuses a fixed initial step for subsequent calls.
                 last_step = self._last_steps.get(request.cap.cap_id, request.step - 1)
@@ -235,7 +248,10 @@ class PacaToolsExecutor(ToolsExecutor):
                 # effect-relevant field to the correct action and provenance fields.
                 request.args[RAW_ARGUMENTS_KEY] = Arg(
                     copy.deepcopy(execution_args),
-                    Label(integrity="untrusted", origins=frozenset({"agentdojo_tool_call"})),
+                    Label(
+                        integrity="untrusted",
+                        origins=frozenset({"agentdojo_tool_call"}),
+                    ),
                 )
 
                 # The request builder is trusted host code, but configuration
@@ -245,22 +261,32 @@ class PacaToolsExecutor(ToolsExecutor):
                 decision = self.monitor.decide(request)
                 if decision.verdict == "needs_approval":
                     self.metrics["approval_requests"] += 1
-                if decision.verdict == "needs_approval" and self.approval_provider is not None:
+                if (
+                    decision.verdict == "needs_approval"
+                    and self.approval_provider is not None
+                ):
                     approval = self.approval_provider(request, decision, env, state)
                     if approval is not None:
                         if not isinstance(approval, str) or not approval.strip():
-                            raise TypeError("approval_provider must return non-empty authenticated evidence or None")
+                            raise TypeError(
+                                "approval_provider must return non-empty authenticated evidence or None"
+                            )
                         request.approval = approval
                         self.monitor.assert_consequential_safe()
                         decision = self.monitor.decide(request)
 
                 if decision.verdict != "allow":
                     self._record_policy_time(policy_started_ns)
-                    check_ids = ",".join(decision.checks) or "approval_required_or_policy_denied"
-                    tool_call_results.append(self._deny_result(
-                        tool_call,
-                        f"PACA++ decision was {decision.verdict}; checks: {check_ids}.",
-                    ))
+                    check_ids = (
+                        ",".join(decision.checks)
+                        or "approval_required_or_policy_denied"
+                    )
+                    tool_call_results.append(
+                        self._deny_result(
+                            tool_call,
+                            f"PACA++ decision was {decision.verdict}; checks: {check_ids}.",
+                        )
+                    )
                     continue
 
                 bound_args = request.args[RAW_ARGUMENTS_KEY].value
@@ -269,31 +295,37 @@ class PacaToolsExecutor(ToolsExecutor):
                     # Consume the token created by decide(), but fail verification
                     # because the request no longer matches its authorised digest.
                     self.monitor.verify(request, decision)
-                    tool_call_results.append(self._deny_result(
-                        tool_call,
-                        "PACA++ argument binding changed; tool was not executed.",
-                    ))
+                    tool_call_results.append(
+                        self._deny_result(
+                            tool_call,
+                            "PACA++ argument binding changed; tool was not executed.",
+                        )
+                    )
                     continue
 
                 if not self.monitor.verify(request, decision):
                     self._record_policy_time(policy_started_ns)
-                    tool_call_results.append(self._deny_result(
-                        tool_call,
-                        "PACA++ effect-token verification failed; tool was not executed.",
-                    ))
+                    tool_call_results.append(
+                        self._deny_result(
+                            tool_call,
+                            "PACA++ effect-token verification failed; tool was not executed.",
+                        )
+                    )
                     continue
 
                 self._record_policy_time(policy_started_ns)
                 self.metrics["authorized_dispatches"] += 1
 
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 - any authorization-path failure must deny before dispatch.
                 self._record_policy_time(policy_started_ns)
                 # Fail closed: request construction, canonicalization, authorization,
                 # or token verification must never fall through to function dispatch.
-                tool_call_results.append(self._deny_result(
-                    tool_call,
-                    f"PACA++ integration error ({type(exc).__name__}); tool was not dispatched.",
-                ))
+                tool_call_results.append(
+                    self._deny_result(
+                        tool_call,
+                        f"PACA++ integration error ({type(exc).__name__}); tool was not dispatched.",
+                    )
+                )
                 continue
 
             # Keep function execution outside the authorization exception handler:
@@ -311,7 +343,10 @@ class PacaToolsExecutor(ToolsExecutor):
                 self.metrics["dispatch_errors"] += 1
 
             self._output_counter += 1
-            call_id = getattr(tool_call, "id", None) or f"{function_name}:{self._output_counter}"
+            call_id = (
+                getattr(tool_call, "id", None)
+                or f"{function_name}:{self._output_counter}"
+            )
             try:
                 if self.result_labeler is not None:
                     output_label = self.result_labeler(
@@ -330,10 +365,12 @@ class PacaToolsExecutor(ToolsExecutor):
                     )
                 if not isinstance(output_label, Label):
                     raise TypeError("result_labeler must return a Label")
-            except Exception:
+            except Exception:  # noqa: BLE001 - an untrusted label is safer than trusting an unclassified tool result.
                 output_label = Label(
                     integrity="untrusted",
-                    origins=frozenset({f"unclassified_agentdojo_tool_output:{function_name}"}),
+                    origins=frozenset(
+                        {f"unclassified_agentdojo_tool_output:{function_name}"}
+                    ),
                 )
 
             output_labels = state.setdefault("paca_output_labels", {})
@@ -346,26 +383,30 @@ class PacaToolsExecutor(ToolsExecutor):
 
             try:
                 formatted_result = self.output_formatter(result)
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 - formatter callbacks may raise application-defined errors.
                 # The tool function has already returned. Do not label this as a
                 # denied or unexecuted action; only result formatting failed.
-                tool_call_results.append(self._tool_call_result(
-                    tool_call,
-                    "The tool function returned, but its result could not be formatted.",
-                    error=f"Output formatting failed ({type(exc).__name__}).",
-                ))
+                tool_call_results.append(
+                    self._tool_call_result(
+                        tool_call,
+                        "The tool function returned, but its result could not be formatted.",
+                        error=f"Output formatting failed ({type(exc).__name__}).",
+                    )
+                )
                 continue
-            tool_call_results.append(self._tool_call_result(
-                tool_call,
-                formatted_result,
-                error=error,
-            ))
+            tool_call_results.append(
+                self._tool_call_result(
+                    tool_call,
+                    formatted_result,
+                    error=error,
+                )
+            )
 
         return query, runtime, env, [*messages, *tool_call_results], state
 
 
 __all__ = [
+    "RAW_ARGUMENTS_KEY",
     "PacaToolsExecutor",
     "aggregate_prior_output_labels",
-    "RAW_ARGUMENTS_KEY",
 ]

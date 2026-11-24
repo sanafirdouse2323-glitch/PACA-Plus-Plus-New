@@ -5,6 +5,7 @@ worker uses the same local database file. It is not a multi-host database.
 Deployments spanning hosts must implement the same contract with a transactional
 server database such as PostgreSQL.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -14,9 +15,13 @@ import os
 import secrets
 import sqlite3
 import time
+from collections.abc import Callable, Iterable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
-from typing import Callable, Dict, FrozenSet, Iterable, Iterator, Optional, Protocol, Tuple, TYPE_CHECKING
+from typing import (
+    TYPE_CHECKING,
+    Protocol,
+)
 
 if TYPE_CHECKING:
     from .runtime import Capability
@@ -34,7 +39,7 @@ class CapabilityConflict(LedgerError):
 class LedgerState:
     calls: int
     strikes: int
-    destinations: FrozenSet[str]
+    destinations: frozenset[str]
 
 
 def task_scope_key(tenant: str, task_id: str) -> str:
@@ -49,7 +54,9 @@ def task_scope_key(tenant: str, task_id: str) -> str:
     if not isinstance(task_id, str) or not task_id:
         raise ValueError("task_id must be a non-empty string")
     encoded = json.dumps(
-        [tenant, task_id], separators=(",", ":"), ensure_ascii=False,
+        [tenant, task_id],
+        separators=(",", ":"),
+        ensure_ascii=False,
     ).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()
 
@@ -57,15 +64,25 @@ def task_scope_key(tenant: str, task_id: str) -> str:
 class OperationLedger(Protocol):
     """Storage contract consumed by the reference Monitor."""
 
-    def register_capability(self, capability: "Capability") -> LedgerState: ...
+    def register_capability(self, capability: Capability) -> LedgerState: ...
     def issue_authorization(
-        self, capability: "Capability", action: str, digest: str,
-        checks: Iterable[str], destination: Optional[str],
-        consequential: bool, quarantine_after: int,
-    ) -> Tuple[Optional[str], Optional[str]]: ...
+        self,
+        capability: Capability,
+        action: str,
+        digest: str,
+        checks: Iterable[str],
+        destination: str | None,
+        consequential: bool,
+        quarantine_after: int,
+    ) -> tuple[str | None, str | None]: ...
     def record_decision(
-        self, capability: "Capability", action: str, digest: str,
-        verdict: str, checks: Iterable[str], consequential: bool,
+        self,
+        capability: Capability,
+        action: str,
+        digest: str,
+        verdict: str,
+        checks: Iterable[str],
+        consequential: bool,
     ) -> None: ...
     def consume_token(self, token: str, digest: str) -> bool: ...
 
@@ -228,7 +245,9 @@ class SQLiteOperationLedger:
                 row["name"] for row in conn.execute("PRAGMA table_info(operations)")
             }
             required_operation_columns = {
-                "tenant", "task_scope", "task_id",
+                "tenant",
+                "task_scope",
+                "task_id",
             }
             legacy_or_incomplete = (
                 "task_id" in task_columns
@@ -243,7 +262,9 @@ class SQLiteOperationLedger:
                 try:
                     version = int(version_row["value"])
                 except (TypeError, ValueError) as exc:
-                    raise LedgerError("operation ledger schema version is invalid") from exc
+                    raise LedgerError(
+                        "operation ledger schema version is invalid"
+                    ) from exc
                 if version not in {2, 3}:
                     raise LedgerError("operation ledger schema version is unsupported")
 
@@ -257,9 +278,16 @@ class SQLiteOperationLedger:
 
             populated = False
             for table in (
-                "capability_state", "task_state", "destinations", "operations", "tokens",
+                "capability_state",
+                "task_state",
+                "destinations",
+                "operations",
+                "tokens",
             ):
-                if conn.execute(f"SELECT 1 FROM {table} LIMIT 1").fetchone() is not None:
+                if (
+                    conn.execute(f"SELECT 1 FROM {table} LIMIT 1").fetchone()
+                    is not None
+                ):
                     populated = True
                     break
             if populated:
@@ -324,13 +352,13 @@ class SQLiteOperationLedger:
             raise
 
     @staticmethod
-    def _authority_digest(capability: "Capability") -> str:
+    def _authority_digest(capability: Capability) -> str:
         # The authority-lineage snapshot includes issuer, purpose, policy epoch
         # and parent-chain digest. Bind the entire immutable record so a reused
         # capability ID cannot inherit counters under changed authority metadata.
         capability.validate_authority_lineage()
         lineage = capability.authority_lineage
-        authority: Dict[str, object] = {
+        authority: dict[str, object] = {
             "principal": capability.principal,
             "tenant": capability.tenant,
             "task_id": capability.task_id,
@@ -352,7 +380,7 @@ class SQLiteOperationLedger:
         return hashlib.sha256(payload).hexdigest()
 
     def _ensure_capability(
-        self, conn: sqlite3.Connection, capability: "Capability"
+        self, conn: sqlite3.Connection, capability: Capability
     ) -> None:
         fingerprint = self._authority_digest(capability)
         row = conn.execute(
@@ -365,7 +393,10 @@ class SQLiteOperationLedger:
                    (cap_id, task_id, authority_digest, calls) VALUES (?, ?, ?, 0)""",
                 (capability.cap_id, capability.task_id, fingerprint),
             )
-        elif row["task_id"] != capability.task_id or row["authority_digest"] != fingerprint:
+        elif (
+            row["task_id"] != capability.task_id
+            or row["authority_digest"] != fingerprint
+        ):
             raise CapabilityConflict(
                 "capability identifier is already bound to different authority"
             )
@@ -377,9 +408,7 @@ class SQLiteOperationLedger:
         )
 
     @staticmethod
-    def _read_state(
-        conn: sqlite3.Connection, capability: "Capability"
-    ) -> LedgerState:
+    def _read_state(conn: sqlite3.Connection, capability: Capability) -> LedgerState:
         cap_row = conn.execute(
             "SELECT calls FROM capability_state WHERE cap_id = ?",
             (capability.cap_id,),
@@ -401,7 +430,7 @@ class SQLiteOperationLedger:
             destinations=frozenset(str(row["destination"]) for row in dest_rows),
         )
 
-    def register_capability(self, capability: "Capability") -> LedgerState:
+    def register_capability(self, capability: Capability) -> LedgerState:
         try:
             with self._transaction() as conn:
                 self._ensure_capability(conn, capability)
@@ -414,7 +443,7 @@ class SQLiteOperationLedger:
     @staticmethod
     def _insert_operation(
         conn: sqlite3.Connection,
-        capability: "Capability",
+        capability: Capability,
         action: str,
         digest: str,
         verdict: str,
@@ -444,7 +473,7 @@ class SQLiteOperationLedger:
 
     @staticmethod
     def _increment_strike(
-        conn: sqlite3.Connection, capability: "Capability", consequential: bool
+        conn: sqlite3.Connection, capability: Capability, consequential: bool
     ) -> None:
         if consequential:
             conn.execute(
@@ -454,14 +483,14 @@ class SQLiteOperationLedger:
 
     def issue_authorization(
         self,
-        capability: "Capability",
+        capability: Capability,
         action: str,
         digest: str,
         checks: Iterable[str] = (),
-        destination: Optional[str] = None,
+        destination: str | None = None,
         consequential: bool = True,
         quarantine_after: int = 3,
-    ) -> Tuple[Optional[str], Optional[str]]:
+    ) -> tuple[str | None, str | None]:
         """Atomically reserve budgets and issue a random single-use token.
 
         Returns (token, None) on success or (None, failure_check) on a
@@ -473,7 +502,7 @@ class SQLiteOperationLedger:
             with self._transaction() as conn:
                 self._ensure_capability(conn, capability)
                 state = self._read_state(conn, capability)
-                failure: Optional[str] = None
+                failure: str | None = None
                 if consequential and state.strikes >= quarantine_after:
                     failure = "C12"
                 elif state.calls >= capability.max_calls:
@@ -487,8 +516,14 @@ class SQLiteOperationLedger:
 
                 if failure is not None:
                     self._insert_operation(
-                        conn, capability, action, digest, "deny",
-                        base_checks | {failure}, "not_executed", now,
+                        conn,
+                        capability,
+                        action,
+                        digest,
+                        "deny",
+                        base_checks | {failure},
+                        "not_executed",
+                        now,
                     )
                     self._increment_strike(conn, capability, consequential)
                     return None, failure
@@ -496,8 +531,14 @@ class SQLiteOperationLedger:
                 raw_token = secrets.token_urlsafe(32)
                 token_hash = hashlib.sha256(raw_token.encode("ascii")).hexdigest()
                 operation_id = self._insert_operation(
-                    conn, capability, action, digest, "allow",
-                    base_checks, "issued", now,
+                    conn,
+                    capability,
+                    action,
+                    digest,
+                    "allow",
+                    base_checks,
+                    "issued",
+                    now,
                 )
                 conn.execute(
                     "UPDATE capability_state SET calls = calls + 1 WHERE cap_id = ?",
@@ -507,14 +548,20 @@ class SQLiteOperationLedger:
                     conn.execute(
                         "INSERT INTO destinations(task_scope, destination) VALUES (?, ?) "
                         "ON CONFLICT(task_scope, destination) DO NOTHING",
-                        (task_scope_key(capability.tenant, capability.task_id), destination),
+                        (
+                            task_scope_key(capability.tenant, capability.task_id),
+                            destination,
+                        ),
                     )
                 conn.execute(
                     """INSERT INTO tokens
                        (token_hash, operation_id, request_digest, state, issued_at, expires_at)
                        VALUES (?, ?, ?, 'issued', ?, ?)""",
                     (
-                        token_hash, operation_id, digest, now,
+                        token_hash,
+                        operation_id,
+                        digest,
+                        now,
                         now + self.token_ttl_seconds,
                     ),
                 )
@@ -526,7 +573,7 @@ class SQLiteOperationLedger:
 
     def record_decision(
         self,
-        capability: "Capability",
+        capability: Capability,
         action: str,
         digest: str,
         verdict: str,
@@ -540,8 +587,14 @@ class SQLiteOperationLedger:
             with self._transaction() as conn:
                 self._ensure_capability(conn, capability)
                 self._insert_operation(
-                    conn, capability, action, digest, verdict,
-                    checks, "not_executed", now,
+                    conn,
+                    capability,
+                    action,
+                    digest,
+                    verdict,
+                    checks,
+                    "not_executed",
+                    now,
                 )
                 if verdict == "deny":
                     self._increment_strike(conn, capability, consequential)
@@ -563,7 +616,11 @@ class SQLiteOperationLedger:
                        FROM tokens WHERE token_hash = ?""",
                     (token_hash,),
                 ).fetchone()
-                if row is None or row["state"] != "issued" or row["request_digest"] != digest:
+                if (
+                    row is None
+                    or row["state"] != "issued"
+                    or row["request_digest"] != digest
+                ):
                     return False
                 operation_id = int(row["operation_id"])
                 if float(row["expires_at"]) <= now:
@@ -590,14 +647,16 @@ class SQLiteOperationLedger:
                 )
                 return True
         except sqlite3.Error as exc:
-            raise LedgerError("could not atomically consume authorisation token") from exc
+            raise LedgerError(
+                "could not atomically consume authorisation token"
+            ) from exc
 
     def operations(
         self,
-        task_id: Optional[str] = None,
+        task_id: str | None = None,
         *,
-        tenant: Optional[str] = None,
-    ) -> Tuple[Dict[str, object], ...]:
+        tenant: str | None = None,
+    ) -> tuple[dict[str, object], ...]:
         """Return diagnostic history, scoped by authenticated tenant when filtered.
 
         A task identifier is not globally unique. Filtering by task therefore
@@ -608,7 +667,9 @@ class SQLiteOperationLedger:
             if not isinstance(task_id, str) or not task_id:
                 raise ValueError("task_id must be a non-empty string")
             if not isinstance(tenant, str) or not tenant:
-                raise ValueError("tenant is required when filtering operation history by task_id")
+                raise ValueError(
+                    "tenant is required when filtering operation history by task_id"
+                )
         elif tenant is not None and (not isinstance(tenant, str) or not tenant):
             raise ValueError("tenant must be a non-empty string")
 
@@ -641,24 +702,25 @@ class SQLiteOperationLedger:
                     raise LedgerError(
                         "operation history tenant/task scope failed integrity verification"
                     )
-                result.append({
-                    "operation_id": int(row["operation_id"]),
-                    "cap_id": str(row["cap_id"]),
-                    "tenant": tenant_value,
-                    "task_id": task_value,
-                    "action": str(row["action"]),
-                    "request_digest": str(row["request_digest"]),
-                    "decision": str(row["decision"]),
-                    "checks": tuple(json.loads(row["checks_json"])),
-                    "execution_state": str(row["execution_state"]),
-                    "created_at": float(row["created_at"]),
-                })
+                result.append(
+                    {
+                        "operation_id": int(row["operation_id"]),
+                        "cap_id": str(row["cap_id"]),
+                        "tenant": tenant_value,
+                        "task_id": task_value,
+                        "action": str(row["action"]),
+                        "request_digest": str(row["request_digest"]),
+                        "decision": str(row["decision"]),
+                        "checks": tuple(json.loads(row["checks_json"])),
+                        "execution_state": str(row["execution_state"]),
+                        "created_at": float(row["created_at"]),
+                    }
+                )
             return tuple(result)
         except sqlite3.Error as exc:
             raise LedgerError("could not read operation history") from exc
         finally:
             conn.close()
-
 
 
 __all__ = [

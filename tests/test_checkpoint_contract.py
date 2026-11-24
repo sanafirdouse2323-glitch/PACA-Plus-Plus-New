@@ -25,7 +25,8 @@ class _Repository:
     def get_version(self, object_id, version_id):
         return next(
             (
-                node for node in self._nodes.values()
+                node
+                for node in self._nodes.values()
                 if node.object_id == object_id and node.version_id == version_id
             ),
             None,
@@ -33,7 +34,8 @@ class _Repository:
 
     def list_nodes(self, *, object_id_prefix=None):
         return tuple(
-            node for node in self._nodes.values()
+            node
+            for node in self._nodes.values()
             if object_id_prefix is None or node.object_id.startswith(object_id_prefix)
         )
 
@@ -79,7 +81,9 @@ def test_provider_tuple_scope_and_parent_are_bound_to_paca_lineage():
         config=_provider_config("current-checkpoint", thread_id=authenticated_thread),
         checkpoint={},
         metadata={},
-        parent_config=_provider_config("parent-checkpoint", thread_id=authenticated_thread),
+        parent_config=_provider_config(
+            "parent-checkpoint", thread_id=authenticated_thread
+        ),
         pending_writes=[],
     )
 
@@ -96,17 +100,29 @@ def test_provider_tuple_scope_and_parent_are_bound_to_paca_lineage():
 @pytest.mark.parametrize(
     ("config", "parent_config"),
     [
-        (_provider_config("current-checkpoint", thread_id="paca-other-thread"),
-         _provider_config("parent-checkpoint", thread_id=_authenticated_thread())),
-        (_provider_config("current-checkpoint", thread_id=_authenticated_thread()) | {"configurable": {
-            "thread_id": _authenticated_thread(),
-            "checkpoint_ns": "other-namespace",
-            "checkpoint_id": "current-checkpoint",
-        }}, _provider_config("parent-checkpoint", thread_id=_authenticated_thread())),
-        (_provider_config("wrong-checkpoint", thread_id=_authenticated_thread()),
-         _provider_config("parent-checkpoint", thread_id=_authenticated_thread())),
-        (_provider_config("current-checkpoint", thread_id=_authenticated_thread()),
-         _provider_config("unrelated-parent", thread_id=_authenticated_thread())),
+        (
+            _provider_config("current-checkpoint", thread_id="paca-other-thread"),
+            _provider_config("parent-checkpoint", thread_id=_authenticated_thread()),
+        ),
+        (
+            _provider_config("current-checkpoint", thread_id=_authenticated_thread())
+            | {
+                "configurable": {
+                    "thread_id": _authenticated_thread(),
+                    "checkpoint_ns": "other-namespace",
+                    "checkpoint_id": "current-checkpoint",
+                }
+            },
+            _provider_config("parent-checkpoint", thread_id=_authenticated_thread()),
+        ),
+        (
+            _provider_config("wrong-checkpoint", thread_id=_authenticated_thread()),
+            _provider_config("parent-checkpoint", thread_id=_authenticated_thread()),
+        ),
+        (
+            _provider_config("current-checkpoint", thread_id=_authenticated_thread()),
+            _provider_config("unrelated-parent", thread_id=_authenticated_thread()),
+        ),
     ],
 )
 def test_provider_tuple_rejects_wrong_checkpoint_scope_or_parent(config, parent_config):
@@ -143,7 +159,9 @@ def test_provider_tuple_rejects_missing_recorded_parent():
         pending_writes=[],
     )
 
-    with pytest.raises(MemoryIntegrityError, match="omitted the expected parent checkpoint config"):
+    with pytest.raises(
+        MemoryIntegrityError, match="omitted the expected parent checkpoint config"
+    ):
         saver._assert_provider_tuple(
             result,
             tenant="tenant-a",
@@ -156,31 +174,43 @@ def test_provider_tuple_rejects_missing_recorded_parent():
 
 def test_provider_config_requires_authenticated_thread_namespace_and_id():
     valid = _provider_config("checkpoint-1")
-    assert PACAProvenancePostgresSaver._provider_configurable(
-        valid,
-        expected_thread_id="paca-thread-hash",
-        expected_namespace="worker",
-        expected_checkpoint_id="checkpoint-1",
-    ) == valid["configurable"]
-
-    with pytest.raises(MemoryIntegrityError, match="thread namespace"):
+    assert (
         PACAProvenancePostgresSaver._provider_configurable(
-            _provider_config("checkpoint-1") | {"configurable": {
-                "thread_id": "paca-other-thread",
-                "checkpoint_ns": "worker",
-                "checkpoint_id": "checkpoint-1",
-            }},
+            valid,
             expected_thread_id="paca-thread-hash",
             expected_namespace="worker",
             expected_checkpoint_id="checkpoint-1",
         )
+        == valid["configurable"]
+    )
+
+    with pytest.raises(MemoryIntegrityError, match="thread namespace"):
+        PACAProvenancePostgresSaver._provider_configurable(
+            _provider_config("checkpoint-1")
+            | {
+                "configurable": {
+                    "thread_id": "paca-other-thread",
+                    "checkpoint_ns": "worker",
+                    "checkpoint_id": "checkpoint-1",
+                }
+            },
+            expected_thread_id="paca-thread-hash",
+            expected_namespace="worker",
+            expected_checkpoint_id="checkpoint-1",
+        )
+
 
 def test_checkpoint_list_rejects_cursor_from_another_thread_or_namespace():
     from paca.memory import MemoryAccessDenied
 
     saver = object.__new__(PACAProvenancePostgresSaver)
     saver._normalized_config = lambda _config, action: (
-        "signed-token", "tenant-a", "thread-a", "worker", "object-id", {},
+        "signed-token",
+        "tenant-a",
+        "thread-a",
+        "worker",
+        "object-id",
+        {},
     )
     config = {
         "configurable": {
@@ -205,8 +235,12 @@ def test_checkpoint_list_rejects_cursor_from_another_thread_or_namespace():
         },
     )
     for cursor in cursors:
-        with pytest.raises(MemoryAccessDenied, match="different thread or namespace|another thread or namespace"):
+        with pytest.raises(
+            MemoryAccessDenied,
+            match="different thread or namespace|another thread or namespace",
+        ):
             list(saver.list(config, before=cursor))
+
 
 def test_async_checkpoint_thread_handoff_snapshots_mutable_inputs():
     from paca.integrations.langgraph_checkpoint import _snapshot_thread_arguments
@@ -229,17 +263,24 @@ def test_async_checkpoint_thread_handoff_snapshots_mutable_inputs():
     assert args[2][0][1]["content"] == "before thread handoff"
     assert kwargs["task_id"] == "task-1"
 
+
 def test_provider_tuple_rejects_parent_when_transition_evidence_has_none():
     saver, current, _parent = _saver_with_lineage()
     result = CheckpointTuple(
-        config=_provider_config("current-checkpoint", thread_id=_authenticated_thread()),
+        config=_provider_config(
+            "current-checkpoint", thread_id=_authenticated_thread()
+        ),
         checkpoint={},
         metadata={},
-        parent_config=_provider_config("parent-checkpoint", thread_id=_authenticated_thread()),
+        parent_config=_provider_config(
+            "parent-checkpoint", thread_id=_authenticated_thread()
+        ),
         pending_writes=[],
     )
 
-    with pytest.raises(MemoryIntegrityError, match="not recorded by the checkpointer transition"):
+    with pytest.raises(
+        MemoryIntegrityError, match="not recorded by the checkpointer transition"
+    ):
         saver._assert_provider_tuple(
             result,
             tenant="tenant-a",
@@ -248,6 +289,7 @@ def test_provider_tuple_rejects_parent_when_transition_evidence_has_none():
             node=current,
             expected_parent_id=None,
         )
+
 
 def test_latest_checkpoint_selection_matches_postgres_order_not_sqlite_insertion_order():
     first_inserted = _node("first-inserted", "00000000000000000000000000000000")

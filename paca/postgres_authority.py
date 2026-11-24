@@ -10,16 +10,16 @@ serial order over maximum write throughput. All workers must use the same
 authoritative primary database. Read replicas, multi-primary writes and failover
 rollback semantics are not supported by this reference implementation.
 """
+
 from __future__ import annotations
 
 import math
 import re
 import sqlite3
 from contextlib import closing
-from typing import Any, Optional
+from typing import Any
 
 from .authority_runtime import AuthorityRegistryError, SQLiteAuthorityRegistry
-
 
 _LOCK_ID = 0x5041434155544852
 
@@ -96,7 +96,7 @@ class PostgresAuthorityRegistry(SQLiteAuthorityRegistry):
     ) -> None:
         if not isinstance(dsn, str) or not dsn.strip():
             raise ValueError("PostgreSQL DSN must be a non-empty string")
-        if not (dsn.startswith("postgresql://") or dsn.startswith("postgres://") or "host=" in dsn):
+        if not dsn.startswith(("postgresql://", "postgres://")) and "host=" not in dsn:
             raise ValueError("PostgreSQL DSN must identify a PostgreSQL connection")
         if (
             isinstance(timeout, bool)
@@ -134,7 +134,9 @@ class PostgresAuthorityRegistry(SQLiteAuthorityRegistry):
                 connect_timeout=max(1, int(self.timeout)),
             )
         except self._psycopg.Error as exc:
-            raise AuthorityRegistryError("could not connect to the PostgreSQL authority database") from exc
+            raise AuthorityRegistryError(
+                "could not connect to the PostgreSQL authority database"
+            ) from exc
         return _PostgresConnection(raw, self._psycopg)
 
     def _initialise(self) -> None:
@@ -308,11 +310,9 @@ class PostgresAuthorityRegistry(SQLiteAuthorityRegistry):
             except Exception:
                 connection.rollback()
                 raise
-            finally:
-                try:
-                    connection.execute(f"SELECT pg_advisory_unlock({_LOCK_ID})")
-                except Exception:
-                    pass
+            # The enclosing closing() context releases the session advisory lock.
+            # Avoid a second unlock query in finally: it could mask the real
+            # schema-initialization error when the connection has already failed.
 
 
 __all__ = ["PostgresAuthorityRegistry"]

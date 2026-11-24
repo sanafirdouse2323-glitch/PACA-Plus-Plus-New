@@ -55,7 +55,9 @@ def test_oauth_refresh_caches_token_checks_scopes_and_persists_rotation():
 
     def handler(request):
         assert request.url == "https://oauth.example.test/token"
-        assert request.headers["content-type"].startswith("application/x-www-form-urlencoded")
+        assert request.headers["content-type"].startswith(
+            "application/x-www-form-urlencoded"
+        )
         form = urllib.parse.parse_qs(request.content.decode())
         assert form["client_id"] == ["client-id"]
         assert form["client_secret"] == ["client-secret"]
@@ -147,7 +149,9 @@ def test_oauth_refuses_scope_widening_and_invalid_refresh_rotation():
 
 def test_oauth_redirect_and_http_error_do_not_leak_credentials():
     def redirect(_request):
-        return httpx.Response(302, headers={"location": "https://attacker.example/steal"})
+        return httpx.Response(
+            302, headers={"location": "https://attacker.example/steal"}
+        )
 
     provider, client = _oauth_provider(redirect, scopes={"scope.read"})
     try:
@@ -188,7 +192,9 @@ def test_gmail_list_and_get_capture_untrusted_provider_payload():
             },
         )
 
-    client = httpx.Client(transport=httpx.MockTransport(handler), follow_redirects=False)
+    client = httpx.Client(
+        transport=httpx.MockTransport(handler), follow_redirects=False
+    )
     provider, token_client = _oauth_provider(
         lambda _request: httpx.Response(
             200,
@@ -244,7 +250,9 @@ def test_microsoft_graph_pagination_accepts_only_graph_messages_next_link():
             json={"value": [{"id": "message-2", "changeKey": "2"}]},
         )
 
-    client = httpx.Client(transport=httpx.MockTransport(handler), follow_redirects=False)
+    client = httpx.Client(
+        transport=httpx.MockTransport(handler), follow_redirects=False
+    )
     provider, token_client = _oauth_provider(
         lambda _request: httpx.Response(
             200,
@@ -300,14 +308,18 @@ def test_microsoft_graph_body_fields_require_explicit_mail_read_scope():
             200,
             headers={"content-type": "application/json"},
             json={
-                "value": [{
-                    "id": "message-with-body",
-                    "body": {"contentType": "text", "content": "untrusted content"},
-                }]
+                "value": [
+                    {
+                        "id": "message-with-body",
+                        "body": {"contentType": "text", "content": "untrusted content"},
+                    }
+                ]
             },
         )
 
-    client = httpx.Client(transport=httpx.MockTransport(graph_handler), follow_redirects=False)
+    client = httpx.Client(
+        transport=httpx.MockTransport(graph_handler), follow_redirects=False
+    )
     provider, token_client = _oauth_provider(
         oauth_handler,
         scopes={MicrosoftGraphMailConnector.READ_SCOPE},
@@ -332,9 +344,13 @@ def test_microsoft_graph_body_fields_require_explicit_mail_read_scope():
 
 def test_microsoft_graph_body_scope_is_not_silently_escalated():
     def handler(_request):
-        pytest.fail("Mail.Read must not be requested with a Mail.ReadBasic consent grant")
+        pytest.fail(
+            "Mail.Read must not be requested with a Mail.ReadBasic consent grant"
+        )
 
-    client = httpx.Client(transport=httpx.MockTransport(handler), follow_redirects=False)
+    client = httpx.Client(
+        transport=httpx.MockTransport(handler), follow_redirects=False
+    )
     provider, token_client = _oauth_provider(
         handler,
         scopes={MicrosoftGraphMailConnector.BASIC_SCOPE},
@@ -370,7 +386,9 @@ def test_microsoft_graph_rejects_untrusted_next_link_without_sending_token():
             },
         )
 
-    client = httpx.Client(transport=httpx.MockTransport(handler), follow_redirects=False)
+    client = httpx.Client(
+        transport=httpx.MockTransport(handler), follow_redirects=False
+    )
     provider, token_client = _oauth_provider(
         lambda _request: httpx.Response(
             200,
@@ -417,16 +435,20 @@ def test_slack_history_uses_explicit_history_scope_and_returns_cursor():
             headers={"content-type": "application/json"},
             json={
                 "ok": True,
-                "messages": [{
-                    "ts": "1710000000.000001",
-                    "text": "untrusted message",
-                    "channel": "C-ATTACKER-SUPPLIED",
-                }],
+                "messages": [
+                    {
+                        "ts": "1710000000.000001",
+                        "text": "untrusted message",
+                        "channel": "C-ATTACKER-SUPPLIED",
+                    }
+                ],
                 "response_metadata": {"next_cursor": "cursor-next"},
             },
         )
 
-    client = httpx.Client(transport=httpx.MockTransport(handler), follow_redirects=False)
+    client = httpx.Client(
+        transport=httpx.MockTransport(handler), follow_redirects=False
+    )
     provider, token_client = _oauth_provider(
         lambda _request: httpx.Response(
             200,
@@ -519,16 +541,20 @@ def test_qdrant_search_enforces_tenant_filter_and_validates_returned_payload():
             200,
             headers={"content-type": "application/json"},
             json={
-                "result": [{
-                    "id": "point-1",
-                    "version": 12,
-                    "score": 0.91,
-                    "payload": {"text": "external", "tenant_id": "tenant-acme"},
-                }]
+                "result": [
+                    {
+                        "id": "point-1",
+                        "version": 12,
+                        "score": 0.91,
+                        "payload": {"text": "external", "tenant_id": "tenant-acme"},
+                    }
+                ]
             },
         )
 
-    client = httpx.Client(transport=httpx.MockTransport(handler), follow_redirects=False)
+    client = httpx.Client(
+        transport=httpx.MockTransport(handler), follow_redirects=False
+    )
     connector = QdrantVectorConnector(
         "https://qdrant.example.test",
         cluster_id="cluster-1",
@@ -588,6 +614,7 @@ def test_qdrant_rejects_foreign_or_unverifiable_tenant_results(payload):
         connector.close()
         client.close()
 
+
 def test_qdrant_caller_filter_cannot_negate_mandatory_tenant_condition():
     observed = []
 
@@ -600,7 +627,9 @@ def test_qdrant_caller_filter_cannot_negate_mandatory_tenant_condition():
             json={"result": []},
         )
 
-    client = httpx.Client(transport=httpx.MockTransport(handler), follow_redirects=False)
+    client = httpx.Client(
+        transport=httpx.MockTransport(handler), follow_redirects=False
+    )
     connector = QdrantVectorConnector(
         "https://qdrant.example.test",
         cluster_id="cluster-1",
@@ -619,26 +648,29 @@ def test_qdrant_caller_filter_cannot_negate_mandatory_tenant_condition():
             },
         )
         assert page.items == ()
-        assert observed == [{
-            "must": [
-                {"key": "tenant_id", "match": {"value": "tenant-acme"}},
-                {
-                    "must_not": [
-                        {"key": "tenant_id", "match": {"value": "tenant-acme"}},
-                    ],
-                },
-            ],
-        }]
+        assert observed == [
+            {
+                "must": [
+                    {"key": "tenant_id", "match": {"value": "tenant-acme"}},
+                    {
+                        "must_not": [
+                            {"key": "tenant_id", "match": {"value": "tenant-acme"}},
+                        ],
+                    },
+                ],
+            }
+        ]
     finally:
         connector.close()
         client.close()
 
 
-
-
 def test_provider_capture_persists_only_through_matching_untrusted_ingress(tmp_path):
     now = [1_000]
-    clock = lambda: now[0]
+
+    def clock():
+        return now[0]
+
     registry = SQLiteAuthorityRegistry(tmp_path / "authority.sqlite3", clock=clock)
     issuer = HMACCapabilityAuthority(
         registry,
@@ -646,10 +678,14 @@ def test_provider_capture_persists_only_through_matching_untrusted_ingress(tmp_p
         key_id="provider-ingress-key",
         key=b"P" * 32,
         audience="provider-ingress-runtime",
-        identity_verifier=lambda principal, tenant: principal == "agent-a" and tenant == "acme",
-        task_context_verifier=lambda principal, tenant, task_id, purpose: (
+        identity_verifier=lambda principal, tenant: (
             principal == "agent-a" and tenant == "acme"
-            and task_id == "task-provider" and purpose == "review-mail"
+        ),
+        task_context_verifier=lambda principal, tenant, task_id, purpose: (
+            principal == "agent-a"
+            and tenant == "acme"
+            and task_id == "task-provider"
+            and purpose == "review-mail"
         ),
         clock=clock,
     )
@@ -704,15 +740,21 @@ def test_provider_capture_persists_only_through_matching_untrusted_ingress(tmp_p
     assert node is not None
     assert node.source == "gmail:account-1"
     assert node.label.integrity == "untrusted"
-    assert node.content_digest == hashlib.sha256(
-        canonical_value_bytes(
-            {
-                "provider": "gmail",
-                "provider_version": "history-77",
-                "record": {"id": "message-1", "snippet": "external prompt injection"},
-            }
-        )
-    ).hexdigest()
+    assert (
+        node.content_digest
+        == hashlib.sha256(
+            canonical_value_bytes(
+                {
+                    "provider": "gmail",
+                    "provider_version": "history-77",
+                    "record": {
+                        "id": "message-1",
+                        "snippet": "external prompt injection",
+                    },
+                }
+            )
+        ).hexdigest()
+    )
 
     mutable_value = {"id": "message-2", "snippet": "original provider text"}
     mutable_capture = ProviderCapture(
@@ -778,7 +820,9 @@ def test_provider_http_client_rejects_redirect_and_oversized_json():
 
     redirect_client = httpx.Client(
         transport=httpx.MockTransport(
-            lambda _request: httpx.Response(302, headers={"location": "https://attacker.example/collect"})
+            lambda _request: httpx.Response(
+                302, headers={"location": "https://attacker.example/collect"}
+            )
         ),
         follow_redirects=False,
     )
@@ -822,7 +866,9 @@ def test_provider_capture_repr_redacts_provider_content():
         provider="gmail",
         connector_id="gmail:account-1",
         object_id="gmail:account-1:message:message-1",
-        version_id=hashlib.sha256(canonical_value_bytes({"body": "sensitive message body"})).hexdigest(),
+        version_id=hashlib.sha256(
+            canonical_value_bytes({"body": "sensitive message body"})
+        ).hexdigest(),
         provider_version="1",
         value={"body": "sensitive message body"},
     )
@@ -835,7 +881,9 @@ def test_provider_capture_rejects_wrong_or_trusted_ingress_adapter():
         provider="gmail",
         connector_id="gmail:account-1",
         object_id="gmail:account-1:message:message-1",
-        version_id=hashlib.sha256(canonical_value_bytes({"id": "message-1"})).hexdigest(),
+        version_id=hashlib.sha256(
+            canonical_value_bytes({"id": "message-1"})
+        ).hexdigest(),
         provider_version="1",
         value={"id": "message-1"},
     )
@@ -846,8 +894,9 @@ def test_provider_capture_rejects_wrong_or_trusted_ingress_adapter():
         source_class = "external_content"
 
     with pytest.raises(TypeError, match="TrustedConnectorAdapter"):
-        capture.persist(FakeConnector(), purpose="review-mail", capability_token="unused")
-
+        capture.persist(
+            FakeConnector(), purpose="review-mail", capability_token="unused"
+        )
 
 
 @pytest.mark.parametrize(
@@ -872,10 +921,16 @@ def test_microsoft_graph_get_message_uses_the_configured_least_privilege_scope(
         return httpx.Response(
             200,
             headers={"content-type": "application/json"},
-            json={"id": "message-1", "subject": "untrusted", "body": {"content": "external"}},
+            json={
+                "id": "message-1",
+                "subject": "untrusted",
+                "body": {"content": "external"},
+            },
         )
 
-    client = httpx.Client(transport=httpx.MockTransport(handler), follow_redirects=False)
+    client = httpx.Client(
+        transport=httpx.MockTransport(handler), follow_redirects=False
+    )
     provider, token_client = _oauth_provider(
         lambda _request: httpx.Response(
             200,
@@ -914,7 +969,9 @@ def test_qdrant_api_key_provider_errors_do_not_leak_secret_material():
 
     client = httpx.Client(
         transport=httpx.MockTransport(
-            lambda _request: pytest.fail("request must not run when secret retrieval fails")
+            lambda _request: pytest.fail(
+                "request must not run when secret retrieval fails"
+            )
         ),
         follow_redirects=False,
     )

@@ -5,41 +5,48 @@ authorization, revocation and authority state before fetching the value bytes. P
 object boundaries are not host-security boundaries: deployments must keep the value
 database and adapter credentials inaccessible to agent-controlled code.
 """
+
 from __future__ import annotations
 
+import contextlib
 import copy
 import hashlib
 import hmac
 import inspect
 import json
 import os
-import sqlite3
 import secrets
-from contextlib import closing
+import sqlite3
 import time
+from collections.abc import Callable, Iterable, Mapping
+from contextlib import closing
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, Iterable, Mapping, Optional, Tuple
+from typing import Any
 
 from .authority import grant_pattern_is_subset
 from .authority_runtime import (
     AuthorityRegistryError,
     HMACCapabilityAuthority,
 )
-from .durable import LineageIntegrityError, SQLiteProvenanceRepository
+from .durable import SQLiteProvenanceRepository
 from .provenance import Arg, Label, LineageNode
 from .runtime import ACTIONS, Decision, Request, Tool
 
 
 def _b64encode(value: bytes) -> str:
     import base64
+
     return base64.urlsafe_b64encode(value).rstrip(b"=").decode("ascii")
 
 
 def _b64decode(value: str) -> bytes:
     import base64
+
     return base64.b64decode(
-        value + ("=" * (-len(value) % 4)), altchars=b"-_", validate=True,
+        value + ("=" * (-len(value) % 4)),
+        altchars=b"-_",
+        validate=True,
     )
 
 
@@ -59,8 +66,11 @@ def canonical_value_bytes(value: Any) -> bytes:
     """
     try:
         return json.dumps(
-            value, sort_keys=True, separators=(",", ":"),
-            ensure_ascii=False, allow_nan=False,
+            value,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=False,
+            allow_nan=False,
         ).encode("utf-8")
     except (TypeError, ValueError) as exc:
         raise TypeError("memory values must be finite, JSON-serialisable data") from exc
@@ -94,7 +104,9 @@ class SQLiteMemoryValueStore:
             ).fetchone()
             version = int(row["value"]) if row else 0
             if version > 1:
-                raise MemoryIntegrityError("memory value-store schema is newer than this package")
+                raise MemoryIntegrityError(
+                    "memory value-store schema is newer than this package"
+                )
             connection.execute(
                 "CREATE TABLE IF NOT EXISTS memory_values ("
                 "object_id TEXT NOT NULL,"
@@ -107,17 +119,17 @@ class SQLiteMemoryValueStore:
                 connection.execute(
                     "INSERT INTO memory_store_meta(key,value) VALUES('schema_version','1')"
                 )
-        try:
+        with contextlib.suppress(OSError):
             os.chmod(self.database, 0o600)
-        except OSError:
-            pass
 
     def _connect(self) -> sqlite3.Connection:
         connection = sqlite3.connect(
-            str(self.database), timeout=self.timeout, isolation_level=None,
+            str(self.database),
+            timeout=self.timeout,
+            isolation_level=None,
         )
         connection.row_factory = sqlite3.Row
-        connection.execute("PRAGMA busy_timeout=%d" % int(self.timeout * 1000))
+        connection.execute(f"PRAGMA busy_timeout={int(self.timeout * 1000)}")
         connection.execute("PRAGMA synchronous=FULL")
         return connection
 
@@ -131,7 +143,9 @@ class SQLiteMemoryValueStore:
         encoded = canonical_value_bytes(value).decode("utf-8")
         calculated = hashlib.sha256(encoded.encode("utf-8")).hexdigest()
         if not hmac.compare_digest(calculated, content_digest):
-            raise MemoryIntegrityError("caller-supplied content digest does not match the value")
+            raise MemoryIntegrityError(
+                "caller-supplied content digest does not match the value"
+            )
         with closing(self._connect()) as connection:
             connection.execute("BEGIN IMMEDIATE")
             try:
@@ -141,8 +155,13 @@ class SQLiteMemoryValueStore:
                     (object_id, version_id),
                 ).fetchone()
                 if existing is not None:
-                    if existing["payload_json"] != encoded or existing["content_digest"] != content_digest:
-                        raise MemoryIntegrityError("memory object/version is immutable and already has different bytes")
+                    if (
+                        existing["payload_json"] != encoded
+                        or existing["content_digest"] != content_digest
+                    ):
+                        raise MemoryIntegrityError(
+                            "memory object/version is immutable and already has different bytes"
+                        )
                     connection.commit()
                     return
                 connection.execute(
@@ -155,7 +174,7 @@ class SQLiteMemoryValueStore:
                 connection.rollback()
                 raise
 
-    def get(self, object_id: str, version_id: str) -> Optional[Tuple[Any, str]]:
+    def get(self, object_id: str, version_id: str) -> tuple[Any, str] | None:
         with closing(self._connect()) as connection:
             row = connection.execute(
                 "SELECT payload_json,content_digest FROM memory_values "
@@ -170,7 +189,9 @@ class SQLiteMemoryValueStore:
                 raise MemoryIntegrityError("stored memory payload is not canonical")
             return value, row["content_digest"]
         except (json.JSONDecodeError, TypeError, ValueError) as exc:
-            raise MemoryIntegrityError("stored memory payload is not valid canonical JSON") from exc
+            raise MemoryIntegrityError(
+                "stored memory payload is not valid canonical JSON"
+            ) from exc
 
 
 @dataclass(frozen=True)
@@ -186,8 +207,8 @@ class MemoryAccessContext:
 class _AuthorizedMemoryReference:
     context: MemoryAccessContext
     node: LineageNode
-    ancestry: Tuple[LineageNode, ...]
-    authority_ids: Tuple[str, ...]
+    ancestry: tuple[LineageNode, ...]
+    authority_ids: tuple[str, ...]
 
 
 class TrustedMemoryAdapter:
@@ -199,7 +220,7 @@ class TrustedMemoryAdapter:
         values: SQLiteMemoryValueStore,
         authority: HMACCapabilityAuthority,
         *,
-        authorize: Optional[Callable[[MemoryAccessContext, LineageNode], bool]] = None,
+        authorize: Callable[[MemoryAccessContext, LineageNode], bool] | None = None,
         clock=time.time,
     ) -> None:
         self.repository = repository
@@ -211,7 +232,11 @@ class TrustedMemoryAdapter:
         self.clock = clock
 
     def _verified_context(
-        self, capability_token: str, action: str, object_id: str, purpose: str,
+        self,
+        capability_token: str,
+        action: str,
+        object_id: str,
+        purpose: str,
     ) -> MemoryAccessContext:
         try:
             signed = self.authority.verify(capability_token)
@@ -219,35 +244,51 @@ class TrustedMemoryAdapter:
             if record is None:
                 raise MemoryAccessDenied("memory capability has no authority lineage")
             grants = dict(record.grants).get(action, ())
-            if not any(grant_pattern_is_subset(object_id, pattern) for pattern in grants):
-                raise MemoryAccessDenied("memory object is outside the signed capability scope")
+            if not any(
+                grant_pattern_is_subset(object_id, pattern) for pattern in grants
+            ):
+                raise MemoryAccessDenied(
+                    "memory object is outside the signed capability scope"
+                )
             if record.purpose != purpose:
-                raise MemoryAccessDenied("memory purpose does not match the signed capability")
+                raise MemoryAccessDenied(
+                    "memory purpose does not match the signed capability"
+                )
             self.registry.assert_active(record.authority_id)
             return MemoryAccessContext(
-                record.principal, record.tenant, purpose,
-                record.authority_id, signed.capability.max_calls,
+                record.principal,
+                record.tenant,
+                purpose,
+                record.authority_id,
+                signed.capability.max_calls,
             )
         except MemoryAccessDenied:
             raise
         except Exception as exc:
-            raise MemoryAccessDenied("memory capability authentication or active-state check failed") from exc
+            raise MemoryAccessDenied(
+                "memory capability authentication or active-state check failed"
+            ) from exc
 
     @staticmethod
     def _check_label_for_tenant(label: Label, tenant: str) -> None:
         if label.tenant_unknown:
             raise MemoryAccessDenied("memory lineage has unknown tenant ownership")
         if any(value != tenant for value in label.tenants):
-            raise MemoryAccessDenied("memory lineage crosses the caller tenant boundary")
+            raise MemoryAccessDenied(
+                "memory lineage crosses the caller tenant boundary"
+            )
 
     def _consume_budget(self, context: MemoryAccessContext) -> None:
         try:
             self.registry.consume_effect(
-                context.authority_id, max_calls=context.max_calls,
+                context.authority_id,
+                max_calls=context.max_calls,
             )
             self.registry.assert_active(context.authority_id)
         except AuthorityRegistryError as exc:
-            raise MemoryAccessDenied("memory operation budget exhausted or authority revoked") from exc
+            raise MemoryAccessDenied(
+                "memory operation budget exhausted or authority revoked"
+            ) from exc
 
     def _authorised_node(
         self,
@@ -256,10 +297,15 @@ class TrustedMemoryAdapter:
         *,
         purpose: str,
         capability_token: str,
-    ) -> Tuple[MemoryAccessContext, LineageNode, Tuple[LineageNode, ...], Tuple[str, ...]]:
+    ) -> tuple[
+        MemoryAccessContext, LineageNode, tuple[LineageNode, ...], tuple[str, ...]
+    ]:
         """Apply the complete read policy to lineage metadata without fetching values."""
         context = self._verified_context(
-            capability_token, "mem_read", object_id, purpose,
+            capability_token,
+            "mem_read",
+            object_id,
+            purpose,
         )
         node = self.repository.get_version(object_id, version_id)
         if node is None:
@@ -272,7 +318,9 @@ class TrustedMemoryAdapter:
         for ancestor in ancestry:
             self._check_label_for_tenant(ancestor.label, context.tenant)
             if ancestor.purpose is not None and ancestor.purpose != purpose:
-                raise MemoryAccessDenied("memory ancestry is bound to a different purpose")
+                raise MemoryAccessDenied(
+                    "memory ancestry is bound to a different purpose"
+                )
 
         authority_ids = self.repository.authority_ids_for_node(node.node_id)
         for inherited_authority_id in authority_ids:
@@ -295,20 +343,22 @@ class TrustedMemoryAdapter:
     def _recheck_read_authority(
         self,
         context: MemoryAccessContext,
-        ancestry: Tuple[LineageNode, ...],
-        authority_ids: Tuple[str, ...],
+        ancestry: tuple[LineageNode, ...],
+        authority_ids: tuple[str, ...],
     ) -> None:
         """Recheck authority and information revocation after a mediated operation."""
         try:
             self.registry.assert_active(context.authority_id)
             for inherited_authority_id in authority_ids:
                 self.registry.assert_active(inherited_authority_id)
-            if self.repository.revoked_nodes(
-                ancestor.node_id for ancestor in ancestry
-            ):
+            if self.repository.revoked_nodes(ancestor.node_id for ancestor in ancestry):
                 raise MemoryAccessDenied("memory lineage was revoked during retrieval")
-            if not all(bool(self._authorize(context, ancestor)) for ancestor in ancestry):
-                raise MemoryAccessDenied("memory application policy changed during retrieval")
+            if not all(
+                bool(self._authorize(context, ancestor)) for ancestor in ancestry
+            ):
+                raise MemoryAccessDenied(
+                    "memory application policy changed during retrieval"
+                )
         except MemoryAccessDenied:
             raise
         except AuthorityRegistryError as exc:
@@ -323,7 +373,7 @@ class TrustedMemoryAdapter:
     @staticmethod
     def _assert_label_covers_lineage(
         label: Label,
-        ancestry: Tuple[LineageNode, ...],
+        ancestry: tuple[LineageNode, ...],
     ) -> None:
         """Reject request labels that hide any restriction in durable ancestry."""
         if not isinstance(label, Label):
@@ -331,7 +381,9 @@ class TrustedMemoryAdapter:
         for ancestor in ancestry:
             source = ancestor.label
             if source.integrity == "untrusted" and label.integrity != "untrusted":
-                raise MemoryAccessDenied("request label upgrades untrusted lineage integrity")
+                raise MemoryAccessDenied(
+                    "request label upgrades untrusted lineage integrity"
+                )
             if label.sensitivity < source.sensitivity:
                 raise MemoryAccessDenied("request label lowers lineage sensitivity")
             if not source.origins.issubset(label.origins):
@@ -347,7 +399,7 @@ class TrustedMemoryAdapter:
         *,
         purpose: str,
         capability_token: str,
-    ) -> Tuple[_AuthorizedMemoryReference, ...]:
+    ) -> tuple[_AuthorizedMemoryReference, ...]:
         """Validate request argument bytes against the exact durable lineage node.
 
         Every protected effect argument must be captured by a trusted ingress
@@ -358,7 +410,9 @@ class TrustedMemoryAdapter:
         if not isinstance(argument, Arg):
             raise MemoryAccessDenied("effect argument is not a typed PACA Arg")
         if argument.lineage_incomplete:
-            raise MemoryAccessDenied("effect argument has incomplete information lineage")
+            raise MemoryAccessDenied(
+                "effect argument has incomplete information lineage"
+            )
         if not argument.lineage_refs:
             raise MemoryAccessDenied(
                 "protected effect argument is untracked; capture it through trusted ingress "
@@ -372,7 +426,9 @@ class TrustedMemoryAdapter:
             )
         node = self.repository.get_node(refs[0])
         if node is None:
-            raise MemoryAccessDenied("effect argument references unknown information lineage")
+            raise MemoryAccessDenied(
+                "effect argument references unknown information lineage"
+            )
         context, verified, ancestry, authority_ids = self._authorised_node(
             node.object_id,
             node.version_id,
@@ -380,7 +436,9 @@ class TrustedMemoryAdapter:
             capability_token=capability_token,
         )
         if verified.node_id != refs[0]:
-            raise MemoryAccessDenied("effect argument lineage identity does not match the stored node")
+            raise MemoryAccessDenied(
+                "effect argument lineage identity does not match the stored node"
+            )
         try:
             digest = hashlib.sha256(canonical_value_bytes(argument.value)).hexdigest()
         except TypeError as exc:
@@ -394,7 +452,10 @@ class TrustedMemoryAdapter:
         self._assert_label_covers_lineage(argument.label, ancestry)
         self._consume_budget(context)
         access = _AuthorizedMemoryReference(
-            context, verified, ancestry, authority_ids,
+            context,
+            verified,
+            ancestry,
+            authority_ids,
         )
         self._recheck_read_authority(context, ancestry, authority_ids)
         return (access,)
@@ -420,11 +481,16 @@ class TrustedMemoryAdapter:
             capability_token=capability_token,
         )
         if verified.node_id != node_id:
-            raise MemoryAccessDenied("resource lineage identity does not match the stored node")
+            raise MemoryAccessDenied(
+                "resource lineage identity does not match the stored node"
+            )
         self._assert_label_covers_lineage(label, ancestry)
         self._consume_budget(context)
         access = _AuthorizedMemoryReference(
-            context, verified, ancestry, authority_ids,
+            context,
+            verified,
+            ancestry,
+            authority_ids,
         )
         self._recheck_read_authority(context, ancestry, authority_ids)
         return access
@@ -448,7 +514,9 @@ class TrustedMemoryAdapter:
                 node.node_id != access.node.node_id
                 or context.authority_id != access.context.authority_id
             ):
-                raise MemoryAccessDenied("effect lineage authorization changed before execution")
+                raise MemoryAccessDenied(
+                    "effect lineage authorization changed before execution"
+                )
             self._recheck_read_authority(context, ancestry, authority_ids)
 
     def revalidate_read_access(
@@ -490,7 +558,9 @@ class TrustedMemoryAdapter:
         One durable memory-read budget unit is consumed for each disclosed object.
         """
         context, node, ancestry, authority_ids = self._authorised_node(
-            object_id, version_id, purpose=purpose,
+            object_id,
+            version_id,
+            purpose=purpose,
             capability_token=capability_token,
         )
         self._consume_budget(context)
@@ -499,16 +569,23 @@ class TrustedMemoryAdapter:
 
     def _write(self, node: LineageNode, value: Any, capability_token: str) -> Arg:
         context = self._verified_context(
-            capability_token, "mem_write", node.object_id, node.purpose or "",
+            capability_token,
+            "mem_write",
+            node.object_id,
+            node.purpose or "",
         )
         authority = self.registry.assert_active(context.authority_id)
         self._check_label_for_tenant(node.label, authority.tenant)
         if node.purpose != authority.purpose:
-            raise MemoryAccessDenied("memory purpose does not match the writing authority")
+            raise MemoryAccessDenied(
+                "memory purpose does not match the writing authority"
+            )
         encoded = canonical_value_bytes(value)
         digest = hashlib.sha256(encoded).hexdigest()
         if not hmac.compare_digest(digest, node.content_digest):
-            raise MemoryIntegrityError("lineage content digest was not computed from the exact stored value")
+            raise MemoryIntegrityError(
+                "lineage content digest was not computed from the exact stored value"
+            )
         # Memory writes consume the same durable operation budget as tool effects.
         self._consume_budget(context)
         # Metadata is committed first. A crash before value insertion leaves an
@@ -516,12 +593,17 @@ class TrustedMemoryAdapter:
         stored = self.repository.add(node)
         self.repository.bind_authority(stored.node_id, context.authority_id)
         self._values.put_if_absent(
-            stored.object_id, stored.version_id, value, stored.content_digest,
+            stored.object_id,
+            stored.version_id,
+            value,
+            stored.content_digest,
         )
         try:
             self.registry.assert_active(context.authority_id)
         except AuthorityRegistryError as exc:
-            raise MemoryAccessDenied("memory write authority was revoked during persistence") from exc
+            raise MemoryAccessDenied(
+                "memory write authority was revoked during persistence"
+            ) from exc
         return Arg(value, stored.label, frozenset({stored.node_id}), False)
 
     def write_derived(
@@ -537,17 +619,21 @@ class TrustedMemoryAdapter:
         if not inputs or any(not isinstance(item, Arg) for item in inputs):
             raise TypeError("derived memory requires one or more Arg inputs")
         if any(not item.lineage_refs or item.lineage_incomplete for item in inputs):
-            raise MemoryAccessDenied("cannot persist a derived memory with incomplete lineage")
+            raise MemoryAccessDenied(
+                "cannot persist a derived memory with incomplete lineage"
+            )
         # Validate the exact value digest, current read authority, revocation,
         # tenant/purpose ancestry and application metadata policy for every input.
         # Persisted intermediates are required for multi-step transformations.
         input_accesses = []
         for item in inputs:
-            input_accesses.extend(self.authorize_argument(
-                item,
-                purpose=purpose,
-                capability_token=capability_token,
-            ))
+            input_accesses.extend(
+                self.authorize_argument(
+                    item,
+                    purpose=purpose,
+                    capability_token=capability_token,
+                )
+            )
         parent_ids = tuple(sorted(set().union(*(item.lineage_refs for item in inputs))))
         label = Label.join(*(item.label for item in inputs))
         encoded = canonical_value_bytes(value)
@@ -583,8 +669,13 @@ class TrustedMemoryAdapter:
         capability_token: str,
     ) -> Arg:
         return self.write_derived(
-            summary, *inputs, object_id=object_id, version_id=version_id,
-            transformation="summarise", purpose=purpose, capability_token=capability_token,
+            summary,
+            *inputs,
+            object_id=object_id,
+            version_id=version_id,
+            transformation="summarise",
+            purpose=purpose,
+            capability_token=capability_token,
         )
 
     def compact(
@@ -597,8 +688,13 @@ class TrustedMemoryAdapter:
         capability_token: str,
     ) -> Arg:
         return self.write_derived(
-            compacted_value, *inputs, object_id=object_id, version_id=version_id,
-            transformation="compact", purpose=purpose, capability_token=capability_token,
+            compacted_value,
+            *inputs,
+            object_id=object_id,
+            version_id=version_id,
+            transformation="compact",
+            purpose=purpose,
+            capability_token=capability_token,
         )
 
     def read(
@@ -611,28 +707,34 @@ class TrustedMemoryAdapter:
     ) -> Arg:
         # Authenticate the complete lineage and policy before fetching any value bytes.
         context, node, ancestry, authority_ids = self._authorised_node(
-            object_id, version_id, purpose=purpose,
+            object_id,
+            version_id,
+            purpose=purpose,
             capability_token=capability_token,
         )
         self._consume_budget(context)
         stored = self._values.get(object_id, version_id)
         if stored is None:
-            raise MemoryIntegrityError("lineage metadata exists but the memory value is missing")
+            raise MemoryIntegrityError(
+                "lineage metadata exists but the memory value is missing"
+            )
         value, stored_digest = stored
         actual_digest = hashlib.sha256(canonical_value_bytes(value)).hexdigest()
-        if (
-            not hmac.compare_digest(actual_digest, node.content_digest)
-            or not hmac.compare_digest(stored_digest, node.content_digest)
-        ):
+        if not hmac.compare_digest(
+            actual_digest, node.content_digest
+        ) or not hmac.compare_digest(stored_digest, node.content_digest):
             self.repository.revoke_lineage(
-                node.node_id, "memory content digest mismatch", revoked_at=int(self.clock()),
+                node.node_id,
+                "memory content digest mismatch",
+                revoked_at=int(self.clock()),
             )
-            raise MemoryIntegrityError("memory bytes do not match their immutable lineage digest")
+            raise MemoryIntegrityError(
+                "memory bytes do not match their immutable lineage digest"
+            )
         # Re-check after fetching and validating bytes to narrow the concurrent
         # revocation window. Remote sinks still need commit-time authorization.
         self._recheck_read_authority(context, ancestry, authority_ids)
         return Arg(value, node.label, frozenset({node.node_id}), False)
-
 
 
 class TrustedConnectorAdapter:
@@ -649,13 +751,19 @@ class TrustedConnectorAdapter:
         integrity: str = "untrusted",
     ) -> None:
         for name, value in (
-            ("connector_id", connector_id), ("source_class", source_class), ("tenant", tenant),
+            ("connector_id", connector_id),
+            ("source_class", source_class),
+            ("tenant", tenant),
         ):
             if not isinstance(value, str) or not value:
                 raise ValueError(name + " must be a non-empty string")
         if integrity not in {"trusted", "untrusted"}:
             raise ValueError("integrity must be trusted or untrusted")
-        if isinstance(sensitivity, bool) or not isinstance(sensitivity, int) or not 0 <= sensitivity <= 3:
+        if (
+            isinstance(sensitivity, bool)
+            or not isinstance(sensitivity, int)
+            or not 0 <= sensitivity <= 3
+        ):
             raise ValueError("sensitivity must be between 0 and 3")
         self.memory = memory
         self.connector_id = connector_id
@@ -722,7 +830,9 @@ class HMACAgentMessageCodec:
         self.clock = clock
 
     def _assert_payload_matches_lineage(
-        self, value: Any, lineage_refs: Iterable[str],
+        self,
+        value: Any,
+        lineage_refs: Iterable[str],
     ) -> None:
         """Require the exact message value to match one immutable lineage node.
 
@@ -758,22 +868,40 @@ class HMACAgentMessageCodec:
         recipient: str,
         capability_token: str,
     ) -> str:
-        if not isinstance(payload, Arg) or not payload.lineage_refs or payload.lineage_incomplete:
-            raise MemoryAccessDenied("inter-agent messages require complete explicit provenance")
+        if (
+            not isinstance(payload, Arg)
+            or not payload.lineage_refs
+            or payload.lineage_incomplete
+        ):
+            raise MemoryAccessDenied(
+                "inter-agent messages require complete explicit provenance"
+            )
         signed = self.authority.verify(capability_token)
         authority = signed.capability.authority_lineage
         if authority is None:
-            raise MemoryAccessDenied("message sender capability has no authority lineage")
+            raise MemoryAccessDenied(
+                "message sender capability has no authority lineage"
+            )
         authority_id = authority.authority_id
         if sender != authority.principal or not recipient:
-            raise MemoryAccessDenied("message sender does not match authenticated authority")
-        if payload.label.tenant_unknown or any(t != authority.tenant for t in payload.label.tenants):
-            raise MemoryAccessDenied("message provenance crosses or obscures the sender tenant")
+            raise MemoryAccessDenied(
+                "message sender does not match authenticated authority"
+            )
+        if payload.label.tenant_unknown or any(
+            t != authority.tenant for t in payload.label.tenants
+        ):
+            raise MemoryAccessDenied(
+                "message provenance crosses or obscures the sender tenant"
+            )
         if payload.label.sensitivity > 0 and not payload.label.tenants:
             raise MemoryAccessDenied("sensitive message has no tenant provenance")
         send_targets = dict(authority.grants).get("send_agent_message", ())
-        if not any(grant_pattern_is_subset(recipient, pattern) for pattern in send_targets):
-            raise MemoryAccessDenied("sender capability does not authorise this recipient")
+        if not any(
+            grant_pattern_is_subset(recipient, pattern) for pattern in send_targets
+        ):
+            raise MemoryAccessDenied(
+                "sender capability does not authorise this recipient"
+            )
         # A valid message-send grant does not imply a right to read the data.
         # Re-run the same current memory authority and application policy used
         # for ordinary reads before transferring the persisted value.
@@ -791,28 +919,44 @@ class HMACAgentMessageCodec:
                 raise MemoryAccessDenied("message references revoked lineage")
             for item in ancestry:
                 if item.purpose is not None and item.purpose != authority.purpose:
-                    raise MemoryAccessDenied("message source purpose does not match sender authority")
+                    raise MemoryAccessDenied(
+                        "message source purpose does not match sender authority"
+                    )
                 if item.label.tenant_unknown or any(
                     tenant != authority.tenant for tenant in item.label.tenants
                 ):
-                    raise MemoryAccessDenied("message source lineage crosses or obscures sender tenant")
-                if item.label.integrity == "untrusted" and payload.label.integrity != "untrusted":
-                    raise MemoryAccessDenied("message attempts to upgrade source integrity")
+                    raise MemoryAccessDenied(
+                        "message source lineage crosses or obscures sender tenant"
+                    )
+                if (
+                    item.label.integrity == "untrusted"
+                    and payload.label.integrity != "untrusted"
+                ):
+                    raise MemoryAccessDenied(
+                        "message attempts to upgrade source integrity"
+                    )
                 if payload.label.sensitivity < item.label.sensitivity:
                     raise MemoryAccessDenied("message attempts to lower sensitivity")
                 if not item.label.origins.issubset(payload.label.origins):
                     raise MemoryAccessDenied("message attempts to erase source origins")
                 if not item.label.tenants.issubset(payload.label.tenants):
-                    raise MemoryAccessDenied("message attempts to erase source tenant lineage")
-                for bound_authority in self.repository.authority_ids_for_node(item.node_id):
+                    raise MemoryAccessDenied(
+                        "message attempts to erase source tenant lineage"
+                    )
+                for bound_authority in self.repository.authority_ids_for_node(
+                    item.node_id
+                ):
                     self.registry.assert_active(bound_authority)
         try:
             self.registry.consume_effect(
-                authority_id, max_calls=signed.capability.max_calls,
+                authority_id,
+                max_calls=signed.capability.max_calls,
             )
             self.registry.assert_active(authority_id)
         except AuthorityRegistryError as exc:
-            raise MemoryAccessDenied("message send budget exhausted or authority revoked") from exc
+            raise MemoryAccessDenied(
+                "message send budget exhausted or authority revoked"
+            ) from exc
         label = {
             "integrity": payload.label.integrity,
             "sensitivity": payload.label.sensitivity,
@@ -856,8 +1000,14 @@ class HMACAgentMessageCodec:
             if not isinstance(body, dict) or body.get("version") != 1:
                 raise ValueError("unsupported message envelope")
             message_id = body.get("message_id")
-            if not isinstance(message_id, str) or not message_id or len(message_id) > 256:
-                raise ValueError("message identifier is missing or exceeds the supported length")
+            if (
+                not isinstance(message_id, str)
+                or not message_id
+                or len(message_id) > 256
+            ):
+                raise ValueError(
+                    "message identifier is missing or exceeds the supported length"
+                )
             if body.get("recipient") != recipient:
                 raise ValueError("message recipient mismatch")
             # The envelope MAC and recipient capability have both been verified.
@@ -889,11 +1039,12 @@ class HMACAgentMessageCodec:
                 raise ValueError("message sender, recipient or task authority mismatch")
             send_targets = dict(authority.grants).get("send_agent_message", ())
             if not any(
-                grant_pattern_is_subset(recipient, pattern)
-                for pattern in send_targets
+                grant_pattern_is_subset(recipient, pattern) for pattern in send_targets
             ):
                 raise ValueError("sender capability does not authorise this recipient")
-            receive_targets = dict(recipient_record.grants).get("receive_agent_message", ())
+            receive_targets = dict(recipient_record.grants).get(
+                "receive_agent_message", ()
+            )
             if not any(
                 grant_pattern_is_subset(authority.principal, pattern)
                 for pattern in receive_targets
@@ -917,8 +1068,12 @@ class HMACAgentMessageCodec:
                 tenant_unknown=label_data["tenant_unknown"],
                 origins=frozenset(label_data["origins"]),
             )
-            if label.tenant_unknown or any(t != authority.tenant for t in label.tenants):
-                raise ValueError("message provenance crosses or obscures the recipient authority tenant")
+            if label.tenant_unknown or any(
+                t != authority.tenant for t in label.tenants
+            ):
+                raise ValueError(
+                    "message provenance crosses or obscures the recipient authority tenant"
+                )
             if label.sensitivity > 0 and not label.tenants:
                 raise ValueError("sensitive message has no tenant provenance")
             received = Arg(body["value"], label, frozenset(refs), False)
@@ -936,16 +1091,23 @@ class HMACAgentMessageCodec:
                         tenant != authority.tenant for tenant in item.label.tenants
                     ):
                         raise ValueError("message source lineage tenant mismatch")
-                    for bound_authority in self.repository.authority_ids_for_node(item.node_id):
+                    for bound_authority in self.repository.authority_ids_for_node(
+                        item.node_id
+                    ):
                         self.registry.assert_active(bound_authority)
-                    if item.label.integrity == "untrusted" and label.integrity != "untrusted":
+                    if (
+                        item.label.integrity == "untrusted"
+                        and label.integrity != "untrusted"
+                    ):
                         raise ValueError("message integrity exceeds its source lineage")
                     if (
                         label.sensitivity < item.label.sensitivity
                         or not item.label.origins.issubset(label.origins)
                         or not item.label.tenants.issubset(label.tenants)
                     ):
-                        raise ValueError("message label is less restrictive than source lineage")
+                        raise ValueError(
+                            "message label is less restrictive than source lineage"
+                        )
             try:
                 # Consume the replay receipt before charging a memory read. A
                 # duplicate delivery must not drain the recipient's memory-read
@@ -967,8 +1129,16 @@ class HMACAgentMessageCodec:
                 capability_token=recipient_token,
             )
             return received
-        except (ValueError, TypeError, KeyError, json.JSONDecodeError, AuthorityRegistryError) as exc:
-            raise MemoryAccessDenied("inter-agent message authentication or provenance validation failed") from exc
+        except (
+            ValueError,
+            TypeError,
+            KeyError,
+            json.JSONDecodeError,
+            AuthorityRegistryError,
+        ) as exc:
+            raise MemoryAccessDenied(
+                "inter-agent message authentication or provenance validation failed"
+            ) from exc
 
 
 class PACAAgentRuntime:
@@ -988,7 +1158,7 @@ class PACAAgentRuntime:
         messages: HMACAgentMessageCodec,
         *,
         require_resource_commit_fence: bool = False,
-        resource_commit_verifier: Optional[HMACCapabilityAuthority] = None,
+        resource_commit_verifier: HMACCapabilityAuthority | None = None,
     ) -> None:
         if (
             memory.authority is not authority
@@ -1025,7 +1195,8 @@ class PACAAgentRuntime:
             or resource_commit_verifier.issuer_id != authority.issuer_id
             or resource_commit_verifier.key_id != authority.key_id
             or resource_commit_verifier.audience != authority.audience
-            or resource_commit_verifier.SIGNATURE_ALGORITHM != authority.SIGNATURE_ALGORITHM
+            or resource_commit_verifier.SIGNATURE_ALGORITHM
+            != authority.SIGNATURE_ALGORITHM
         ):
             raise ValueError(
                 "resource commit verifier must match the issuer identity, key, algorithm and authority database"
@@ -1035,7 +1206,8 @@ class PACAAgentRuntime:
             and authority.SIGNATURE_ALGORITHM == "Ed25519"
             and (
                 resource_commit_verifier is authority
-                or getattr(resource_commit_verifier, "_ed25519_signing_key", None) is not None
+                or getattr(resource_commit_verifier, "_ed25519_signing_key", None)
+                is not None
             )
         ):
             raise ValueError(
@@ -1054,10 +1226,14 @@ class PACAAgentRuntime:
             return
         tool = request.tool
         if not isinstance(tool, Tool):
-            raise MemoryAccessDenied("protected agent effect requires an explicit typed tool manifest")
+            raise MemoryAccessDenied(
+                "protected agent effect requires an explicit typed tool manifest"
+            )
         pinned = capability.tool_pins.get(tool.name)
         if pinned is None or not hmac.compare_digest(pinned, tool.hash):
-            raise MemoryAccessDenied("tool manifest is not pinned by the authenticated capability")
+            raise MemoryAccessDenied(
+                "tool manifest is not pinned by the authenticated capability"
+            )
 
     def delegate(
         self,
@@ -1069,7 +1245,7 @@ class PACAAgentRuntime:
         role: str = "assistant",
         max_calls: int = 40,
         max_fanout: int = 5,
-        max_task_calls: Optional[int] = None,
+        max_task_calls: int | None = None,
     ):
         return self.authority.issue(
             parent_token=parent_token,
@@ -1083,28 +1259,36 @@ class PACAAgentRuntime:
         )
 
     def send_message(
-        self, payload: Arg, *, sender: str, recipient: str, capability_token: str,
+        self,
+        payload: Arg,
+        *,
+        sender: str,
+        recipient: str,
+        capability_token: str,
     ) -> str:
         return self.messages.seal(
-            payload, sender=sender, recipient=recipient,
+            payload,
+            sender=sender,
+            recipient=recipient,
             capability_token=capability_token,
         )
 
     def receive_message(self, token: str, *, recipient_token: str) -> Arg:
         return self.messages.open(token, recipient_token=recipient_token)
 
-    def revoke_authority(self, authority_id: str, reason: str) -> Tuple[str, ...]:
+    def revoke_authority(self, authority_id: str, reason: str) -> tuple[str, ...]:
         return self.authority.registry.revoke(authority_id, reason)
 
     def revoke_information(self, node_id: str, reason: str) -> None:
-        self.memory.repository.revoke_lineage(node_id, reason, revoked_at=int(self.memory.clock()))
-
+        self.memory.repository.revoke_lineage(
+            node_id, reason, revoked_at=int(self.memory.clock())
+        )
 
     def _prepare_effect(
         self,
         capability_token: str,
         request: Request,
-    ) -> Tuple[Any, Request, str, Tuple[_AuthorizedMemoryReference, ...]]:
+    ) -> tuple[Any, Request, str, tuple[_AuthorizedMemoryReference, ...]]:
         """Authenticate and snapshot an effect before authorizing any consequence."""
         if not isinstance(request, Request):
             raise MemoryAccessDenied("effect request must be a typed PACA Request")
@@ -1116,7 +1300,10 @@ class PACAAgentRuntime:
                 raise MemoryAccessDenied(
                     "consequential runtime monitor configuration is unsafe: " + str(exc)
                 ) from exc
-        if self.require_resource_commit_fence and request.action not in {"write_file", "mem_write"}:
+        if self.require_resource_commit_fence and request.action not in {
+            "write_file",
+            "mem_write",
+        }:
             raise MemoryAccessDenied(
                 "resource commit fence mode currently supports only write_file and mem_write"
             )
@@ -1128,7 +1315,9 @@ class PACAAgentRuntime:
             snapshot = copy.deepcopy(request)
             snapshot_digest = snapshot.digest
         except Exception as exc:
-            raise MemoryAccessDenied("effect request could not be safely snapshotted") from exc
+            raise MemoryAccessDenied(
+                "effect request could not be safely snapshotted"
+            ) from exc
         if snapshot_digest != original_digest:
             raise MemoryAccessDenied("effect request changed while being snapshotted")
 
@@ -1151,21 +1340,27 @@ class PACAAgentRuntime:
             or supplied.max_fanout != issued.max_fanout
             or supplied.tool_pins != issued.tool_pins
         ):
-            raise MemoryAccessDenied("request capability does not match the authenticated token")
+            raise MemoryAccessDenied(
+                "request capability does not match the authenticated token"
+            )
         self._assert_tool_binding(issued, snapshot)
         self.authority.registry.assert_active(issued.cap_id)
 
         authority_record = issued.authority_lineage
         if authority_record is None:
-            raise MemoryAccessDenied("effect capability has no immutable authority lineage")
+            raise MemoryAccessDenied(
+                "effect capability has no immutable authority lineage"
+            )
         purpose = authority_record.purpose
         accesses = []
         for argument in snapshot.args.values():
-            accesses.extend(self.memory.authorize_argument(
-                argument,
-                purpose=purpose,
-                capability_token=capability_token,
-            ))
+            accesses.extend(
+                self.memory.authorize_argument(
+                    argument,
+                    purpose=purpose,
+                    capability_token=capability_token,
+                )
+            )
 
         if snapshot.resource_lineage_refs:
             if snapshot.resource is None:
@@ -1173,35 +1368,47 @@ class PACAAgentRuntime:
                     "resource lineage references require an explicit resource label"
                 )
             for node_id in sorted(snapshot.resource_lineage_refs):
-                accesses.append(self.memory.authorize_reference(
-                    node_id,
-                    label=snapshot.resource,
-                    purpose=purpose,
-                    capability_token=capability_token,
-                ))
+                accesses.append(
+                    self.memory.authorize_reference(
+                        node_id,
+                        label=snapshot.resource,
+                        purpose=purpose,
+                        capability_token=capability_token,
+                    )
+                )
 
         if snapshot.digest != original_digest:
-            raise MemoryAccessDenied("effect request changed during provenance authorization")
+            raise MemoryAccessDenied(
+                "effect request changed during provenance authorization"
+            )
         return issued, snapshot, original_digest, tuple(accesses)
 
     def _authorize_effect(
         self,
         capability_token: str,
         request: Request,
-    ) -> Tuple[Optional[Decision], Optional[Request], Optional[Any], Tuple[_AuthorizedMemoryReference, ...]]:
+    ) -> tuple[
+        Decision | None,
+        Request | None,
+        Any | None,
+        tuple[_AuthorizedMemoryReference, ...],
+    ]:
         """Run policy and consume a single-use decision for a frozen request snapshot."""
         if "C13" in getattr(self.monitor, "disable", ()):
             raise MemoryAccessDenied(
                 "PACAAgentRuntime requires C13 effect-token verification"
             )
         issued, snapshot, request_digest, accesses = self._prepare_effect(
-            capability_token, request,
+            capability_token,
+            request,
         )
         decision = self.monitor.decide(snapshot)
         if decision.verdict != "allow":
             return decision, None, issued, accesses
         if decision.digest != request_digest or snapshot.digest != request_digest:
-            raise MemoryAccessDenied("monitor decision is not bound to the unchanged effect request")
+            raise MemoryAccessDenied(
+                "monitor decision is not bound to the unchanged effect request"
+            )
         if not self.monitor.verify(snapshot, decision):
             return Decision("deny", digest=request_digest), None, issued, accesses
 
@@ -1212,7 +1419,8 @@ class PACAAgentRuntime:
             self.authority.registry.assert_active(issued.cap_id)
         else:
             self.authority.registry.consume_effect(
-                issued.cap_id, max_calls=issued.max_calls,
+                issued.cap_id,
+                max_calls=issued.max_calls,
             )
             self.authority.registry.assert_active(issued.cap_id)
         authority_record = issued.authority_lineage
@@ -1255,11 +1463,13 @@ class PACAAgentRuntime:
             or not isinstance(payload_names, (list, tuple))
             or not payload_names
         ):
-            raise MemoryAccessDenied("resource action mapping lacks a target or payload")
+            raise MemoryAccessDenied(
+                "resource action mapping lacks a target or payload"
+            )
         target_argument = snapshot.args.get(target_name)
         if target_argument is None or not isinstance(target_argument.value, str):
             raise MemoryAccessDenied("resource commit target must be a string")
-        payload: Dict[str, Any] = {}
+        payload: dict[str, Any] = {}
         for name in payload_names:
             argument = snapshot.args.get(name)
             if argument is None:
@@ -1268,7 +1478,9 @@ class PACAAgentRuntime:
         try:
             payload_digest = hashlib.sha256(canonical_value_bytes(payload)).hexdigest()
         except (TypeError, ValueError) as exc:
-            raise MemoryAccessDenied("resource commit payload is not canonical JSON") from exc
+            raise MemoryAccessDenied(
+                "resource commit payload is not canonical JSON"
+            ) from exc
         try:
             return self.authority.issue_resource_commit_permit(
                 capability_token,
@@ -1278,7 +1490,9 @@ class PACAAgentRuntime:
                 payload_digest=payload_digest,
             )
         except Exception as exc:
-            raise MemoryAccessDenied("could not issue a commit-bound resource permit") from exc
+            raise MemoryAccessDenied(
+                "could not issue a commit-bound resource permit"
+            ) from exc
 
     def _revalidate_effect_snapshot(
         self,
@@ -1286,7 +1500,7 @@ class PACAAgentRuntime:
         decision: Decision,
         snapshot: Request,
         issued: Any,
-        accesses: Tuple[_AuthorizedMemoryReference, ...],
+        accesses: tuple[_AuthorizedMemoryReference, ...],
     ) -> None:
         """Check active authority, dynamic lineage policy and request immutability."""
         self.authority.registry.assert_active(issued.cap_id)
@@ -1306,11 +1520,12 @@ class PACAAgentRuntime:
         capability_token: str,
         request: Request,
         executor: Callable[[Request], Any],
-    ) -> Tuple[Decision, Optional[Any]]:
+    ) -> tuple[Decision, Any | None]:
         """Async effect path with provenance, authority and revocation rechecks."""
         fenced_executor = self._require_fenced_executor(executor)
         decision, snapshot, issued, accesses = self._authorize_effect(
-            capability_token, request,
+            capability_token,
+            request,
         )
         if decision is None or issued is None:
             return Decision("deny"), None
@@ -1320,11 +1535,17 @@ class PACAAgentRuntime:
             return Decision("deny", digest=decision.digest), None
 
         self._revalidate_effect_snapshot(
-            capability_token, decision, snapshot, issued, accesses,
+            capability_token,
+            decision,
+            snapshot,
+            issued,
+            accesses,
         )
         if self.require_resource_commit_fence:
             permit = self._issue_effect_commit_permit(
-                capability_token, decision, snapshot,
+                capability_token,
+                decision,
+                snapshot,
             )
             result = fenced_executor.aexecute_authorized(snapshot, permit)
         else:
@@ -1350,7 +1571,11 @@ class PACAAgentRuntime:
             # after constructing it and immediately before entering that body.
             try:
                 self._revalidate_effect_snapshot(
-                    capability_token, decision, snapshot, issued, accesses,
+                    capability_token,
+                    decision,
+                    snapshot,
+                    issued,
+                    accesses,
                 )
             except Exception:
                 close = getattr(result, "close", None)
@@ -1388,11 +1613,12 @@ class PACAAgentRuntime:
         capability_token: str,
         request: Request,
         executor: Callable[[Request], Any],
-    ) -> Tuple[Decision, Optional[Any]]:
+    ) -> tuple[Decision, Any | None]:
         """Check signed authority and exact request provenance immediately before effect."""
         fenced_executor = self._require_fenced_executor(executor)
         decision, snapshot, issued, accesses = self._authorize_effect(
-            capability_token, request,
+            capability_token,
+            request,
         )
         if decision is None or issued is None:
             return Decision("deny"), None
@@ -1401,11 +1627,17 @@ class PACAAgentRuntime:
         if snapshot is None:
             return Decision("deny", digest=decision.digest), None
         self._revalidate_effect_snapshot(
-            capability_token, decision, snapshot, issued, accesses,
+            capability_token,
+            decision,
+            snapshot,
+            issued,
+            accesses,
         )
         if self.require_resource_commit_fence:
             permit = self._issue_effect_commit_permit(
-                capability_token, decision, snapshot,
+                capability_token,
+                decision,
+                snapshot,
             )
             result = fenced_executor.execute_authorized(snapshot, permit)
         else:
@@ -1438,8 +1670,8 @@ class PACAAgentRuntime:
 
 __all__ = [
     "HMACAgentMessageCodec",
-    "MemoryAccessDenied",
     "MemoryAccessContext",
+    "MemoryAccessDenied",
     "MemoryIntegrityError",
     "PACAAgentRuntime",
     "SQLiteMemoryValueStore",
