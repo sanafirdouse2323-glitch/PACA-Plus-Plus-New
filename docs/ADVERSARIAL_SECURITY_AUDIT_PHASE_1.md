@@ -26,15 +26,17 @@ The following properties were confirmed by source inspection; they should not be
 ### A-01 — Revocation is not atomic with external effect commit
 
 **Severity:** High for consequential remote effects  
-**Status:** Open architectural limitation
+**Status:** Partially mitigated for local SQLite-backed resource writes; remote/provider effects remain open
 
-The runtime checks authority/revocation and then invokes an executor. Revocation can occur after the final local check and before, during or after the remote resource commits the effect. The SQLite transaction that records budget use is not held open across the external operation, and holding it open would not make a remote service participate in the same transaction.
+The phase-3 resource-fencing branch adds an opt-in strict mode to `PACAAgentRuntime` and a `SQLiteFencedResourceExecutor` for the `write_file` and `mem_write` action paths. The runtime creates a short-lived, one-use HMAC commit permit bound to the capability authority ID, tenant, task, purpose, policy epoch, action, exact target, request digest, payload digest and nonce. The resource adapter verifies that permit, then calls `SQLiteAuthorityRegistry.commit_fenced_resource_write`.
 
-**Impact:** A capability revoked in the check-to-commit interval may still cause a remote effect unless the resource server independently checks authorization at its own commit boundary.
+The commit method performs all of the following in one `BEGIN IMMEDIATE` transaction on the same database used by `revoke()` and policy-epoch advancement: reloads and validates the authority DAG; checks current epoch, expiry and ancestor revocation; verifies the exact action/target grant; rejects replayed permit nonces; charges both per-capability and tenant/task-wide budgets; and writes the resource value/version and receipt. A deterministic concurrency test pauses a commit while it holds the SQLite write transaction and starts revocation concurrently. The write commits first and revocation serializes after it. A separate test revokes immediately before the resource transaction and verifies that no write or effect-budget charge occurs.
 
-**Required control:** Use resource-side authorization with a monotonic fencing/authorization epoch or single-use operation ID checked atomically at commit. Where the resource cannot enforce this, classify the integration as best-effort preflight authorization and do not claim race-free revocation.
+**Security guarantee:** within this single-host SQLite resource adapter, a resource commit and authority revocation have one database serialization order. A commit can complete before revocation, or it is rejected after revocation; the permit cannot be replayed to perform a second write. The effect-budget charge and resource write are committed or rolled back together.
 
-**Evidence to add:** Deterministic concurrency tests that pause immediately after the last PACA validation, revoke the authority, then attempt the resource commit. The expected secure result must be enforced by the resource-side commit check, not merely by another PACA preflight.
+**Residual impact:** this is an opt-in reference data plane supporting only `write_file` and `mem_write`. It does not make existing in-process executors safe by default, does not cover every action, and is not a remote resource-server protocol. Gmail, Microsoft Graph, Slack, vector databases and other external services do not share the local SQLite transaction. Those integrations need provider/destination-side conditional authorization, fencing/ETag or equivalent conditional commit semantics, plus idempotency and replay handling. The current HMAC permit is symmetric; a verifier holding the secret can mint one. The local SQLite registry is single-host and assumes the database/issuer process are trusted.
+
+**Required control:** make a destination-side commit fence mandatory for every consequential deployment action; implement provider-specific resource-side commit protocols for remote destinations; replace shared-secret permits with asymmetric issuer/verifier separation and protected key rotation; and validate multi-host semantics before distributed production claims.
 
 ### A-02 — Untracked literal arguments depend on trusted ingress
 
