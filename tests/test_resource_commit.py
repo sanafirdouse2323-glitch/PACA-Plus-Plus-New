@@ -167,8 +167,8 @@ def test_resource_write_and_effect_budget_commit_in_one_authority_transaction(tm
     assert stored[2] == 1
     assert stored[3] == env["signed"].capability.cap_id
     # Two source-argument reads and the actual effect commit were charged.
-    assert env["registry"].usage(env["signed"].capability.cap_id)[0] == 3
-    assert env["registry"].task_usage("acme", "task-fence")[0] == 3
+    assert env["registry"].usage(env["signed"].capability.cap_id)[0] == 5
+    assert env["registry"].task_usage("acme", "task-fence")[0] == 5
 
 
 def test_strict_runtime_rejects_in_process_executor_before_any_budget_or_effect(tmp_path):
@@ -181,7 +181,7 @@ def test_strict_runtime_rejects_in_process_executor_before_any_budget_or_effect(
             lambda request: executed.append(request) or "unsafe",
         )
     assert executed == []
-    assert env["registry"].usage(env["signed"].capability.cap_id)[0] == 0
+    assert env["registry"].usage(env["signed"].capability.cap_id)[0] == 2
     assert _stored_resource(env["registry"]) is None
 
 
@@ -207,7 +207,7 @@ def test_revocation_between_runtime_authorization_and_resource_commit_blocks_wri
 
     assert _stored_resource(env["registry"]) is None
     # Only the two source-read charges happened; the fenced effect was not charged.
-    assert env["registry"].usage(env["signed"].capability.cap_id)[0] == 2
+    assert env["registry"].usage(env["signed"].capability.cap_id)[0] == 4
 
 
 def test_commit_permit_is_one_use_and_cannot_be_replayed(tmp_path, monkeypatch):
@@ -305,20 +305,17 @@ def test_revocation_waits_for_inflight_commit_and_linearizes_after_it(tmp_path, 
 
 
 def test_task_quota_exhaustion_prevents_resource_write_and_rolls_back_receipt(tmp_path):
-    env = _environment(tmp_path, max_calls=3)
-    # Pre-consume one unit. The two lineage reads can then complete, but
-    # the commit transaction sees an exhausted quota and cannot write.
-    env["registry"].consume_effect(
-        env["signed"].capability.cap_id,
-        max_calls=3,
-    )
+    env = _environment(tmp_path, max_calls=4)
+    # Two trusted ingress captures have already consumed two call units.
+    # Both effect-argument reads can complete, but the commit transaction sees
+    # an exhausted capability quota and cannot write.
     with pytest.raises(ResourceCommitDenied, match="atomic authority fence"):
         env["runtime"].execute_effect(
             env["signed"].token,
             env["request"],
             env["executor"],
         )
-    assert env["registry"].usage(env["signed"].capability.cap_id)[0] == 3
+    assert env["registry"].usage(env["signed"].capability.cap_id)[0] == 4
     assert _stored_resource(env["registry"]) is None
     with sqlite3.connect(env["registry"].database) as connection:
         count = connection.execute(
@@ -343,4 +340,4 @@ def test_async_runtime_uses_the_same_resource_commit_fence(tmp_path):
     stored = _stored_resource(env["registry"])
     assert stored is not None
     assert json.loads(stored[0]) == {"content": "approved report body"}
-    assert env["registry"].usage(env["signed"].capability.cap_id)[0] == 3
+    assert env["registry"].usage(env["signed"].capability.cap_id)[0] == 5
