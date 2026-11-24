@@ -1001,9 +1001,8 @@ class PACAAgentRuntime:
         monitor_validator = getattr(monitor, "assert_consequential_safe", None)
         if callable(monitor_validator):
             monitor_validator()
-        # C13 is the single-use effect-token binding. It may be disabled in
-        # isolated benchmark ablations, but never in a runtime that can invoke
-        # consequential executors.
+        # Research ablations are permitted in the simulator only. A
+        # consequential runtime must retain the complete packaged policy profile.
         if "C13" in getattr(monitor, "disable", ()):
             raise ValueError("PACAAgentRuntime requires C13 effect-token verification")
         if not isinstance(require_resource_commit_fence, bool):
