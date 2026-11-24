@@ -3,8 +3,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import jsonschema
 import pytest
-from jsonschema import Draft202012Validator, FormatChecker, ValidationError
 
 
 SCHEMA_PATH = (
@@ -16,10 +16,10 @@ SCHEMA_PATH = (
 
 
 @pytest.fixture(scope="module")
-def validator() -> Draft202012Validator:
+def validator() -> jsonschema.Draft202012Validator:
     schema = json.loads(SCHEMA_PATH.read_text(encoding="utf-8"))
-    Draft202012Validator.check_schema(schema)
-    return Draft202012Validator(schema, format_checker=FormatChecker())
+    jsonschema.Draft202012Validator.check_schema(schema)
+    return jsonschema.Draft202012Validator(schema, format_checker=jsonschema.FormatChecker())
 
 
 def envelope(message_type: str) -> dict[str, object]:
@@ -62,22 +62,22 @@ def valid_identity_context() -> dict[str, object]:
 
 
 def test_schema_is_valid_and_accepts_identity_context(
-    validator: Draft202012Validator,
+    validator: jsonschema.Draft202012Validator,
 ) -> None:
     validator.validate(valid_identity_context())
 
 
 def test_unknown_security_fields_are_rejected(
-    validator: Draft202012Validator,
+    validator: jsonschema.Draft202012Validator,
 ) -> None:
     message = valid_identity_context()
     message["is_admin"] = True
-    with pytest.raises(ValidationError):
+    with pytest.raises(jsonschema.ValidationError):
         validator.validate(message)
 
 
 def test_broker_write_requires_commit_permit_and_idempotency(
-    validator: Draft202012Validator,
+    validator: jsonschema.Draft202012Validator,
 ) -> None:
     message = envelope("paca.broker-operation.v1")
     message.update(
@@ -93,7 +93,7 @@ def test_broker_write_requires_commit_permit_and_idempotency(
             "payload_digest": {"algorithm": "sha-256", "value": "b" * 64},
         }
     )
-    with pytest.raises(ValidationError):
+    with pytest.raises(jsonschema.ValidationError):
         validator.validate(message)
     message["commit_permit_ref"] = "permit-1"
     message["idempotency_key"] = "idem-1"
@@ -101,7 +101,7 @@ def test_broker_write_requires_commit_permit_and_idempotency(
 
 
 def test_broker_read_requires_authorisation_before_disclosure(
-    validator: Draft202012Validator,
+    validator: jsonschema.Draft202012Validator,
 ) -> None:
     message = envelope("paca.broker-operation.v1")
     message.update(
@@ -114,16 +114,16 @@ def test_broker_read_requires_authorisation_before_disclosure(
             "resource": {"resource_type": "document", "resource_id": "doc-1"},
         }
     )
-    with pytest.raises(ValidationError):
+    with pytest.raises(jsonschema.ValidationError):
         validator.validate(message)
     message["authorization_grant_ref"] = "grant-1"
     validator.validate(message)
 
 
 def test_digest_must_be_lowercase_sha256_hex(
-    validator: Draft202012Validator,
+    validator: jsonschema.Draft202012Validator,
 ) -> None:
     message = valid_identity_context()
     message["authentication"]["credential_digest"]["value"] = "A" * 64
-    with pytest.raises(ValidationError):
+    with pytest.raises(jsonschema.ValidationError):
         validator.validate(message)
