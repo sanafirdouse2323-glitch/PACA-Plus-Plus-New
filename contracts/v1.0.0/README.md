@@ -62,11 +62,11 @@ JSON Schema alone cannot establish the following. Every implementation MUST enfo
 1. The signature verifies over the exact canonical message and its domain separator; the key is trusted for this issuer, message type and audience.
 2. created_at, expiry and validity intervals are checked against a trusted clock with a documented skew policy.
 3. The authenticated session's subject, workload, tenant, task, purpose and audience match the grant and request. Never trust worker-supplied principal claims.
-4. arguments_digest is recomputed from the complete canonical effect-relevant arguments, including action, destination, tool/provider identity and resource-version preconditions.
+4. the broker operation intent digest is recomputed from the canonical broker message after removing only proof and commit_permit_ref. It binds the operation ID, session, nonce, operation, exact resource/version, grant reference, payload and provenance evidence. The message signature still covers commit_permit_ref. This avoids a circular dependency when a commit permit is issued for the intent and then referenced by the signed request.
 5. Provenance references resolve to existing immutable object versions and their recorded digests/lineage. Missing or stale security-critical evidence denies the operation.
 6. The grant is active, not revoked or expired, is at the current policy epoch, contains the exact action/resource/destination, and has sufficient remaining budget.
 7. Delegation containment is proven using typed predicate semantics; string-prefix or glob heuristics are insufficient.
-8. Mutating broker operations (write, delete, send, execute) require a one-use commit permit, exact payload digest and idempotency key. A read/query requires a grant and authorisation before bytes are released.
+8. The current reference broker supports only logical-file read/write operations. Logical-file writes require a one-use commit permit, exact JCS payload digest, resource-version precondition and non-empty provenance references; unsupported delete/send/execute operations are denied. A read/query requires a grant and authorisation before bytes are released.
 9. A commit permit is consumed once. Consumption and mutation must be atomic where the destination supports it; otherwise the result must be labelled with the actual weaker/uncertain semantics and reconciled.
 10. The broker obtains caller identity from its authenticated channel/session state; it does not accept identity from the request body.
 11. Isolation capability claims are accepted only with verified deployment evidence. operator_assertion is not sufficient for a conformance profile that requires isolation.
@@ -107,3 +107,9 @@ The proof is Ed25519 with unpadded base64url encoding. The verifier accepts only
 Key generation, private-key custody, public-key distribution, rotation, compromise handling and issuer authorization remain deployment responsibilities. The verifier authenticates the configured message issuer/key scope; it does not independently prove that a user, agent or workload identity claim inside the message is true. That requires an authenticated identity authority or a transport/session binding.
 
 Schema validation and signature verification are separate operations. A caller should validate shape and verify the signature before using a message; neither step replaces the broker's current grant, revocation, quota or resource-boundary checks.
+
+## 12. Broker operation-intent digest
+
+For `paca.broker-operation.v1`, compute the permit request digest from the complete message object after removing exactly `proof` and `commit_permit_ref`, then apply the `request` digest domain. All other fields, including operation ID, session ID, nonce, resource and version, authority grant reference, payload, provenance references, payload digest and idempotency key, remain bound.
+
+The worker's Ed25519 signature covers the full message including `commit_permit_ref`. The commit permit is separately signed by the capability issuer and binds the operation-intent digest and payload digest. The broker verifies both signatures and all cross-bindings. A permit reference cannot be swapped without invalidating the worker signature.
