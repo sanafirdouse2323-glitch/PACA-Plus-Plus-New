@@ -267,6 +267,85 @@ def test_microsoft_graph_pagination_accepts_only_graph_messages_next_link():
         token_client.close()
 
 
+def test_microsoft_graph_body_fields_require_explicit_mail_read_scope():
+    requests = []
+
+    def oauth_handler(_request):
+        return httpx.Response(
+            200,
+            headers={"content-type": "application/json"},
+            json={
+                "access_token": "graph-full-access",
+                "token_type": "Bearer",
+                "expires_in": 300,
+                "scope": MicrosoftGraphMailConnector.READ_SCOPE,
+            },
+        )
+
+    def graph_handler(request):
+        requests.append(request)
+        selected = set(request.url.params["$select"].split(","))
+        assert "body" in selected and "uniqueBody" in selected
+        return httpx.Response(
+            200,
+            headers={"content-type": "application/json"},
+            json={
+                "value": [{
+                    "id": "message-with-body",
+                    "body": {"contentType": "text", "content": "untrusted content"},
+                }]
+            },
+        )
+
+    client = httpx.Client(transport=httpx.MockTransport(graph_handler), follow_redirects=False)
+    provider, token_client = _oauth_provider(
+        oauth_handler,
+        scopes={MicrosoftGraphMailConnector.READ_SCOPE},
+    )
+    connector = MicrosoftGraphMailConnector(
+        provider,
+        tenant_id="tenant-1",
+        user_id="user-1",
+        read_body=True,
+        client=client,
+    )
+    try:
+        page = connector.list_messages()
+        assert page.items[0].value["body"]["content"] == "untrusted content"
+        assert len(requests) == 1
+    finally:
+        connector.close()
+        client.close()
+        provider.close()
+        token_client.close()
+
+
+def test_microsoft_graph_body_scope_is_not_silently_escalated():
+    def handler(_request):
+        pytest.fail("Mail.Read must not be requested with a Mail.ReadBasic consent grant")
+
+    client = httpx.Client(transport=httpx.MockTransport(handler), follow_redirects=False)
+    provider, token_client = _oauth_provider(
+        handler,
+        scopes={MicrosoftGraphMailConnector.BASIC_SCOPE},
+    )
+    connector = MicrosoftGraphMailConnector(
+        provider,
+        tenant_id="tenant-1",
+        user_id="user-1",
+        read_body=True,
+        client=client,
+    )
+    try:
+        with pytest.raises(ProviderScopeError, match="does not include"):
+            connector.list_messages()
+    finally:
+        connector.close()
+        client.close()
+        provider.close()
+        token_client.close()
+
+
 def test_microsoft_graph_rejects_untrusted_next_link_without_sending_token():
     calls = []
 
@@ -575,6 +654,19 @@ def test_provider_http_client_rejects_redirect_and_oversized_json():
     finally:
         wrapper.close()
         large_client.close()
+
+
+def test_provider_capture_repr_redacts_provider_content():
+    capture = ProviderCapture(
+        provider="gmail",
+        connector_id="gmail:account-1",
+        object_id="gmail:account-1:message:message-1",
+        version_id="v1",
+        provider_version="1",
+        value={"body": "sensitive message body"},
+    )
+    assert "sensitive message body" not in repr(capture)
+    assert "value=<redacted>" in repr(capture)
 
 
 def test_provider_capture_rejects_wrong_or_trusted_ingress_adapter():
