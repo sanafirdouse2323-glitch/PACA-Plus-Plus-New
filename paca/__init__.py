@@ -31,6 +31,7 @@ from .memory import (
     TrustedConnectorAdapter,
     TrustedMemoryAdapter,
 )
+from .postgres_authority import PostgresAuthorityRegistry
 from .sandbox import (
     DockerSandbox,
     DockerSandboxExecutor,

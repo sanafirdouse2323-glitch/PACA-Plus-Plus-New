@@ -47,6 +47,30 @@ Connector authentication, provider account selection, tenant mapping, source ver
 The metadata policy callback is mandatory for a successful read; a missing callback defaults to deny. The callback must use trusted policy state and must not infer authorization from model-written metadata.
 
 ## Authenticated capabilities and active policy state
+### PostgreSQL authority registry for shared-primary deployments
+
+The module paca.postgres_authority provides PostgresAuthorityRegistry, a PostgreSQL-backed implementation of the authority-registry API using psycopg 3. Supply a PostgreSQL DSN and pass the resulting registry to the existing HMAC or Ed25519 capability authority:
+
+    from paca.authority_runtime import HMACCapabilityAuthority
+    from paca.postgres_authority import PostgresAuthorityRegistry
+
+    registry = PostgresAuthorityRegistry(postgres_dsn, timeout=15.0)
+    issuer = HMACCapabilityAuthority(
+        registry,
+        issuer_id="paca-issuer",
+        key_id="paca-key-1",
+        key=issuer_secret,
+        audience="paca-runtime",
+        identity_verifier=identity_verifier,
+        task_context_verifier=task_context_verifier,
+    )
+
+The optional dependency is installed with pip install "paca-plus-plus[postgres]". Schema version 5 stores authority records, policy epoch/events, revocations, per-capability usage, task-wide usage, message receipts and local resource-commit receipts/values in the same PostgreSQL database. Existing populated version-3-or-older registries are refused because their historical per-task quota baseline cannot be inferred. Version-4 registries can be upgraded transactionally to add resource commit state. A version-5 database missing its resource-commit tables fails closed rather than recreating empty replay state.
+
+To preserve the existing API's explicit transaction boundaries, every mutating operation begins a PostgreSQL transaction and acquires a transaction-scoped SHARE ROW EXCLUSIVE lock across registry tables. This serializes cooperating writers across independent clients connected to the same primary. The design is deliberately conservative and can constrain write throughput; performance and lock-wait behaviour must be load-tested for the deployment.
+
+**Deployment limits:** every issuer and worker for a tenant/task must use the same authoritative primary and schema/search path. Use TLS and least-privilege credentials; the role needs schema migration privileges during controlled deployment, and runtime roles should have only the required DML permissions after migration. This backend does not implement multi-primary writes, read-replica consistency, automatic failover rollback detection, quorum consensus or tamper-evident audit export. Do not promote a replica that may have lost acknowledged authority, quota, revocation or receipt commits. Provenance metadata, memory values and the optional Monitor operation ledger remain separate SQLite components and are not made distributed by this registry.
+
 
 ### Issuer and token envelope
 
