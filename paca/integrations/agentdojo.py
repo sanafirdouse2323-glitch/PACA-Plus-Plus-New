@@ -238,6 +238,10 @@ class PacaToolsExecutor(ToolsExecutor):
                     Label(integrity="untrusted", origins=frozenset({"agentdojo_tool_call"})),
                 )
 
+                # The request builder is trusted host code, but configuration
+                # drift or an accidental mutation there must not weaken policy
+                # between adapter construction and the decision itself.
+                self.monitor.assert_consequential_safe()
                 decision = self.monitor.decide(request)
                 if decision.verdict == "needs_approval":
                     self.metrics["approval_requests"] += 1
@@ -247,6 +251,7 @@ class PacaToolsExecutor(ToolsExecutor):
                         if not isinstance(approval, str) or not approval.strip():
                             raise TypeError("approval_provider must return non-empty authenticated evidence or None")
                         request.approval = approval
+                        self.monitor.assert_consequential_safe()
                         decision = self.monitor.decide(request)
 
                 if decision.verdict != "allow":
