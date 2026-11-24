@@ -20,6 +20,7 @@ def _environment(*, max_task_calls=20):
     from paca.authority_runtime import HMACCapabilityAuthority
     from paca.memory import canonical_value_bytes
     from paca.postgres_authority import PostgresAuthorityRegistry
+    from paca.runtime import Tool
 
     suffix = uuid.uuid4().hex
     tenant = "tenant-" + suffix
@@ -44,6 +45,12 @@ def _environment(*, max_task_calls=20):
         )
 
     key = hashlib.sha256(("key-" + suffix).encode()).digest()
+    write_tool = Tool(
+        "write_file",
+        "1.0",
+        "Write a file to the workspace",
+        ("path", "content"),
+    )
     common = {
         "issuer_id": "postgres-issuer-" + suffix,
         "key_id": "postgres-key-" + suffix,
@@ -63,12 +70,14 @@ def _environment(*, max_task_calls=20):
         grants={
             "write_file": ("/workspace/*",),
             "mem_read": ("mem/*",),
+            "mem_write": ("mem/*",),
             "receive_agent_message": ("agent-a", "agent-b"),
             "send_agent_message": ("agent-a", "agent-b"),
         },
         expires_at=2_000,
         max_calls=30,
         max_fanout=4,
+        tool_pins={"write_file": write_tool.hash},
         max_task_calls=max_task_calls,
     )
     resource_payload = {"content": "shared-primary resource"}
@@ -92,6 +101,7 @@ def _environment(*, max_task_calls=20):
         "issuer_a": issuer_a,
         "issuer_b": issuer_b,
         "root": root,
+        "write_tool": write_tool,
         "resource_payload": resource_payload,
         "resource_digest": resource_digest,
         "permit_token": permit,
@@ -227,3 +237,128 @@ def test_postgres_resource_commit_serializes_before_revoke_across_clients(monkey
     assert authority_id in revoked
     assert not registry_a.is_active(authority_id)
     assert registry_b.usage(authority_id) == (1, 0)
+
+
+def test_postgres_fenced_runtime_commits_through_shared_primary_registry(tmp_path):
+    from paca.durable import SQLiteProvenanceRepository
+    from paca.memory import (
+        HMACAgentMessageCodec,
+        PACAAgentRuntime,
+        SQLiteMemoryValueStore,
+        TrustedConnectorAdapter,
+        TrustedMemoryAdapter,
+    )
+    from paca.resource_commit import FencedResourceExecutor
+    from paca.runtime import Decision, Request
+
+    env = _environment()
+    repository = SQLiteProvenanceRepository(tmp_path / "lineage.sqlite3")
+    values = SQLiteMemoryValueStore(tmp_path / "values.sqlite3")
+    memory = TrustedMemoryAdapter(
+        repository,
+        values,
+        env["issuer_a"],
+        authorize=lambda _context, _node: True,
+        clock=env["clock"],
+    )
+    messages = HMACAgentMessageCodec(
+        b"M" * 32,
+        env["issuer_a"],
+        repository,
+        memory=memory,
+        clock=env["clock"],
+    )
+    source_id = "fixture:postgres-runtime-" + uuid.uuid4().hex
+    connector = TrustedConnectorAdapter(
+        memory,
+        connector_id=source_id,
+        source_class="tool_input",
+        tenant=env["tenant"],
+        sensitivity=1,
+        integrity="untrusted",
+    )
+    suffix = uuid.uuid4().hex
+    resource = f"/workspace/{suffix}.txt"
+    path_argument = connector.ingest(
+        resource,
+        object_id="mem/postgres-runtime/path-" + suffix,
+        version_id="v1",
+        purpose="write-report",
+        capability_token=env["root"].token,
+    )
+    content_argument = connector.ingest(
+        "PostgreSQL strict-runtime write",
+        object_id="mem/postgres-runtime/content-" + suffix,
+        version_id="v1",
+        purpose="write-report",
+        capability_token=env["root"].token,
+    )
+
+    class AllowMonitor:
+        def decide(self, request):
+            return Decision("allow", digest=request.digest)
+
+        def verify(self, request, decision):
+            return decision.digest == request.digest
+
+    assert env["registry_a"].authority_store_id == env["registry_b"].authority_store_id
+    assert env["registry_a"].authority_store_id.startswith("postgresql:")
+    assert DSN not in env["registry_a"].authority_store_id
+
+    verifier_store_id = env["registry_b"].authority_store_id
+    env["registry_b"].authority_store_id = "postgresql:" + uuid.uuid4().hex
+    with pytest.raises(ValueError, match="authority store"):
+        PACAAgentRuntime(
+            env["issuer_a"],
+            memory,
+            AllowMonitor(),
+            messages,
+            require_resource_commit_fence=True,
+            resource_commit_verifier=env["issuer_b"],
+        )
+    env["registry_b"].authority_store_id = verifier_store_id
+
+    runtime = PACAAgentRuntime(
+        env["issuer_a"],
+        memory,
+        AllowMonitor(),
+        messages,
+        require_resource_commit_fence=True,
+        resource_commit_verifier=env["issuer_b"],
+    )
+    request = Request(
+        "write_file",
+        {"path": path_argument, "content": content_argument},
+        env["issuer_a"].verify(env["root"].token).capability,
+        1,
+        tool=env["write_tool"],
+    )
+    executor = FencedResourceExecutor(env["issuer_b"])
+
+    decision, result = runtime.execute_effect(
+        env["root"].token,
+        request,
+        executor,
+    )
+
+    assert decision.verdict == "allow"
+    assert result["resource"] == resource
+    assert result["version"] == 1
+    assert env["registry_b"].task_usage(env["tenant"], env["task_id"]) == (5, 20)
+    assert env["registry_a"].usage(env["root"].capability.cap_id)[0] == 5
+
+    with closing(env["registry_b"]._connect()) as connection:
+        row = connection.execute(
+            "SELECT value_json,payload_digest,version,authority_id "
+            "FROM paca_resource_values "
+            "WHERE tenant=? AND task_id=? AND resource_key=?",
+            (env["tenant"], env["task_id"], resource),
+        ).fetchone()
+    assert row is not None
+    assert row["value_json"] == '{"content":"PostgreSQL strict-runtime write"}'
+    assert (
+        row["payload_digest"]
+        == hashlib.sha256(b'{"content":"PostgreSQL strict-runtime write"}').hexdigest()
+    )
+    assert row["version"] == 1
+    assert row["authority_id"] == env["root"].capability.cap_id

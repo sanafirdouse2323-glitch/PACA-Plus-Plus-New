@@ -1190,8 +1190,18 @@ class PACAAgentRuntime:
             raise TypeError(
                 "resource_commit_verifier must implement the PACA capability verification contract"
             )
+        issuer_store_id = getattr(
+            authority.registry,
+            "authority_store_id",
+            authority.registry.database,
+        )
+        verifier_store_id = getattr(
+            resource_commit_verifier.registry,
+            "authority_store_id",
+            resource_commit_verifier.registry.database,
+        )
         if (
-            resource_commit_verifier.registry.database != authority.registry.database
+            verifier_store_id != issuer_store_id
             or resource_commit_verifier.issuer_id != authority.issuer_id
             or resource_commit_verifier.key_id != authority.key_id
             or resource_commit_verifier.audience != authority.audience
@@ -1199,7 +1209,7 @@ class PACAAgentRuntime:
             != authority.SIGNATURE_ALGORITHM
         ):
             raise ValueError(
-                "resource commit verifier must match the issuer identity, key, algorithm and authority database"
+                "resource commit verifier must match the issuer identity, key, algorithm and authority store"
             )
         if (
             require_resource_commit_fence
@@ -1431,17 +1441,17 @@ class PACAAgentRuntime:
         return decision, snapshot, issued, accesses
 
     def _require_fenced_executor(self, executor: Any) -> Any:
-        """Return the exact trusted SQLite commit adapter required by strict mode."""
+        """Require the exact runtime-bound local resource commit adapter."""
         if not self.require_resource_commit_fence:
             return None
-        from .resource_commit import SQLiteFencedResourceExecutor
+        from .resource_commit import FencedResourceExecutor
 
         if (
-            not isinstance(executor, SQLiteFencedResourceExecutor)
+            not isinstance(executor, FencedResourceExecutor)
             or executor.authority is not self.resource_commit_verifier
         ):
             raise MemoryAccessDenied(
-                "resource commit fence mode requires the runtime-bound SQLiteFencedResourceExecutor"
+                "resource commit fence mode requires the runtime-bound FencedResourceExecutor"
             )
         return executor
 

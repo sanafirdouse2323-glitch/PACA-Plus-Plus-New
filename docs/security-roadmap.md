@@ -1,6 +1,6 @@
 # PAC++ New — implementation status and engineering gates
 
-**Snapshot:** 24 November 2026, after PR #26 was merged to `main` (`784b1205bc6f6bda0107bb3a99a970e0521f3f95`).
+**Snapshot:** 24 November 2026, after PR #27 was merged to `main` (`0ebfcbbb54df831aaeca424243a79495af970ece`).
 
 **Maturity:** research prototype. The repository contains useful reference mechanisms and integrations, but does not mediate every agent lifecycle transition and is not production-ready.
 
@@ -14,8 +14,8 @@
 | Information provenance | Typed lineage records, content digests, parent edges, durable SQLite provenance metadata, explicit derivation and revocation | Truth of source content, automatic capture of all model context or protection from compromised trusted adapters |
 | Memory | Separate immutable SQLite value store; mediated reads/writes; pre-fetch authority/tenant/purpose checks and post-fetch digest validation | Distributed memory service, cross-store atomicity or protection from direct raw-database access |
 | Authority | HMAC and Ed25519 capability envelopes; static, key-ID-bound Ed25519 verification-key rings support planned overlap and explicit key retirement; task/principal callbacks; policy epoch, delegated revocation, per-capability counters and tenant/task aggregate quota | OIDC/workload identity, KMS/HSM custody, authenticated key distribution and coordinated production rollover/retirement |
-| Shared authority state | Optional PostgreSQL registry for authority, revocation, usage, task quotas, receipts and local resource-commit state on one primary | Multi-primary consensus, rollback-safe failover or distribution of provenance/value/Monitor-ledger state |
-| Resource commits | Opt-in local SQLite fence for `write_file` and `mem_write` with one-use permit and transactional quota/authority checks | Mandatory enforcement for all executors or commit authorization at Gmail, Graph, Slack, Qdrant or other remote providers |
+| Shared authority state | Optional PostgreSQL registry for authority, revocation, usage, task quotas, receipts and logical resource commits on one primary; strict-runtime commit path is exercised through two independent registry clients | Multi-primary consensus, rollback-safe failover or distribution of provenance/value/Monitor-ledger state |
+| Resource commits | Opt-in `FencedResourceExecutor` for `write_file` and `mem_write`; SQLite uses one local transaction and PostgreSQL uses its serialized single-primary registry transaction; legacy `SQLiteFencedResourceExecutor` name remains an alias | Mandatory enforcement for all executors, real filesystem/provider writes, or destination-side commit authorization at Gmail, Graph, Slack, Qdrant or other remote services |
 | Framework integrations | AgentDojo ToolsExecutor and limited workspace mapper; LangGraph BaseStore; LangChain middleware; PostgreSQL checkpoint wrapper | Prevention of direct calls to raw tools, stores, checkpointers, SQL connections or alternate frameworks |
 | Provider ingress | Read-only Gmail, Microsoft Graph mail, Slack history and Qdrant search connectors with bounded HTTPS responses and provenance capture | Live account validation in CI, production OAuth subject/tenant binding, provider writes, deletion sync or remote commit fencing |
 | Containment helpers | Optional digest-pinned Docker worker; Linux `openat2` filesystem and DNS/IP-pinned network helpers | Mandatory isolation or end-to-end integration of these primitives into every file, HTTP and tool path |

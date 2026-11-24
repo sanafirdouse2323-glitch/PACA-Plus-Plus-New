@@ -143,6 +143,7 @@ class SQLiteAuthorityRegistry:
         if timeout <= 0:
             raise ValueError("timeout must be positive")
         self.database = Path(raw).expanduser().resolve()
+        self.authority_store_id = "sqlite:" + str(self.database)
         self.timeout = float(timeout)
         self.clock = clock
         self.database.parent.mkdir(parents=True, exist_ok=True)
@@ -298,6 +299,18 @@ class SQLiteAuthorityRegistry:
                     connection.execute(
                         "UPDATE paca_authority_meta SET value='5' WHERE key='schema_version'"
                     )
+                connection.execute(
+                    "INSERT OR IGNORE INTO paca_authority_meta(key,value) VALUES(?,?)",
+                    ("authority_store_id", secrets.token_hex(16)),
+                )
+                store_row = connection.execute(
+                    "SELECT value FROM paca_authority_meta WHERE key='authority_store_id'"
+                ).fetchone()
+                if store_row is None or not store_row["value"]:
+                    raise AuthorityRegistryError(
+                        "authority database store identity is missing"
+                    )
+                self.authority_store_id = "sqlite:" + store_row["value"]
                 connection.commit()
             except Exception:
                 connection.rollback()

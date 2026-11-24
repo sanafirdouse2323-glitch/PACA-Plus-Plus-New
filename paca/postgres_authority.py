@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import math
 import re
+import secrets
 import sqlite3
 from contextlib import closing
 from typing import Any
@@ -119,6 +120,9 @@ class PostgresAuthorityRegistry(SQLiteAuthorityRegistry):
         # the SQLite-compatible diagnostic attribute.
         self._dsn = dsn
         self.database = "<PostgreSQL authority database>"
+        # The persistent opaque ID is stored inside the authority schema, so
+        # independent clients match without exposing connection credentials.
+        self.authority_store_id = None
         self.timeout = float(timeout)
         self.clock = clock if clock is not None else time.time
         self._psycopg = psycopg
@@ -306,6 +310,19 @@ class PostgresAuthorityRegistry(SQLiteAuthorityRegistry):
                     "INSERT INTO paca_authority_meta(key,value) VALUES('schema_version','5') "
                     "ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value"
                 )
+                connection.execute(
+                    "INSERT INTO paca_authority_meta(key,value) VALUES(?,?) "
+                    "ON CONFLICT(key) DO NOTHING",
+                    ("authority_store_id", secrets.token_hex(16)),
+                )
+                store_row = connection.execute(
+                    "SELECT value FROM paca_authority_meta WHERE key='authority_store_id'"
+                ).fetchone()
+                if store_row is None or not store_row["value"]:
+                    raise AuthorityRegistryError(
+                        "PostgreSQL authority store identity is missing"
+                    )
+                self.authority_store_id = "postgresql:" + store_row["value"]
                 connection.commit()
             except Exception:
                 connection.rollback()

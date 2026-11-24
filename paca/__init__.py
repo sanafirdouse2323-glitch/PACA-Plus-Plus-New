@@ -40,7 +40,11 @@ from .memory import (
 from .parser import parse_policy, parse_policy_file, parse_policy_set
 from .postgres_authority import PostgresAuthorityRegistry
 from .provenance import Arg, Label, LineageNode, ProvenanceGraph, derive
-from .resource_commit import ResourceCommitDenied, SQLiteFencedResourceExecutor
+from .resource_commit import (
+    FencedResourceExecutor,
+    ResourceCommitDenied,
+    SQLiteFencedResourceExecutor,
+)
 from .sandbox import (
     DockerSandbox,
     DockerSandboxExecutor,
@@ -63,6 +67,7 @@ __all__ = [
     "DockerSandboxExecutor",
     "Ed25519CapabilityAuthority",
     "EvaluationResult",
+    "FencedResourceExecutor",
     "Expression",
     "HMACAgentMessageCodec",
     "HMACCapabilityAuthority",
