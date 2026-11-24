@@ -875,6 +875,7 @@ def test_filesystem_executor_configuration_rejects_public_state_directory(tmp_pa
     env = _environment(tmp_path)
     root = tmp_path / "filesystem-root"
     (root / "acme" / "reports").mkdir(parents=True)
+    root.chmod(0o700)
     state_dir = tmp_path / "public-state"
     state_dir.mkdir(mode=0o755)
     state_dir.chmod(0o755)
