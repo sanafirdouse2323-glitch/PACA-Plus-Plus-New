@@ -537,7 +537,9 @@ def _filesystem_executor(env, tmp_path, *, initial_content=None):
     return root, state_dir, executor
 
 
-@pytest.mark.skipif(sys.platform != "linux", reason="filesystem commit fence requires Linux openat2")
+@pytest.mark.skipif(
+    sys.platform != "linux", reason="filesystem commit fence requires Linux openat2"
+)
 def test_filesystem_resource_commit_writes_real_file_under_authority_fence(tmp_path):
     env = _environment(tmp_path)
     root, state_dir, executor = _filesystem_executor(env, tmp_path)
@@ -555,12 +557,17 @@ def test_filesystem_resource_commit_writes_real_file_under_authority_fence(tmp_p
     assert result["version"] == 1
     assert result["recovery_pending"] is False
     assert env["registry"].usage(env["signed"].capability.cap_id)[0] == 5
-    assert env["registry"].get_resource_commit_receipt(result["commit_nonce"]) is not None
+    assert (
+        env["registry"].get_resource_commit_receipt(result["commit_nonce"])
+        is not None
+    )
     assert sorted(path.name for path in state_dir.iterdir()) == ["broker.lock"]
     executor.close()
 
 
-@pytest.mark.skipif(sys.platform != "linux", reason="filesystem commit fence requires Linux openat2")
+@pytest.mark.skipif(
+    sys.platform != "linux", reason="filesystem commit fence requires Linux openat2"
+)
 def test_filesystem_commit_replaces_existing_file_and_keeps_single_link_inode(tmp_path):
     env = _environment(tmp_path)
     root, _, executor = _filesystem_executor(
@@ -585,7 +592,9 @@ def test_filesystem_commit_replaces_existing_file_and_keeps_single_link_inode(tm
     executor.close()
 
 
-@pytest.mark.skipif(sys.platform != "linux", reason="filesystem commit fence requires Linux openat2")
+@pytest.mark.skipif(
+    sys.platform != "linux", reason="filesystem commit fence requires Linux openat2"
+)
 def test_filesystem_commit_rolls_back_file_when_database_transaction_fails_after_rename(
     tmp_path,
     monkeypatch,
@@ -617,15 +626,15 @@ def test_filesystem_commit_rolls_back_file_when_database_transaction_fails_after
 
     target = _filesystem_relative_target(root, env["signed"].capability.task_id)
     assert target.read_bytes() == b"previous report"
-    assert env["registry"].get_resource_commit_receipt(
-        "no-such-permit"
-    ) is None
+    assert env["registry"].get_resource_commit_receipt("no-such-permit") is None
     assert not list((tmp_path / "filesystem-state").glob("*.json"))
     monkeypatch.setattr(env["registry"], "commit_fenced_filesystem_write", original)
     executor.close()
 
 
-@pytest.mark.skipif(sys.platform != "linux", reason="filesystem commit fence requires Linux openat2")
+@pytest.mark.skipif(
+    sys.platform != "linux", reason="filesystem commit fence requires Linux openat2"
+)
 def test_filesystem_executor_recovers_committed_journal_after_cleanup_failure(
     tmp_path,
     monkeypatch,
@@ -660,7 +669,9 @@ def test_filesystem_executor_recovers_committed_journal_after_cleanup_failure(
     recovered.close()
 
 
-@pytest.mark.skipif(sys.platform != "linux", reason="filesystem commit fence requires Linux openat2")
+@pytest.mark.skipif(
+    sys.platform != "linux", reason="filesystem commit fence requires Linux openat2"
+)
 def test_filesystem_executor_restores_file_when_revocation_overtakes_commit(tmp_path):
     env = _environment(tmp_path)
     root, _, executor = _filesystem_executor(
@@ -696,7 +707,9 @@ def test_filesystem_executor_restores_file_when_revocation_overtakes_commit(tmp_
     executor.close()
 
 
-@pytest.mark.skipif(sys.platform != "linux", reason="filesystem commit fence requires Linux openat2")
+@pytest.mark.skipif(
+    sys.platform != "linux", reason="filesystem commit fence requires Linux openat2"
+)
 @pytest.mark.parametrize(
     "resource_path",
     [
@@ -724,7 +737,9 @@ def test_filesystem_executor_rejects_traversal_or_cross_tenant_targets(
     executor.close()
 
 
-@pytest.mark.skipif(sys.platform != "linux", reason="filesystem commit fence requires Linux openat2")
+@pytest.mark.skipif(
+    sys.platform != "linux", reason="filesystem commit fence requires Linux openat2"
+)
 def test_filesystem_executor_rejects_symlink_target_without_touching_outside_file(tmp_path):
     resource_path = "/acme/reports/escape.txt"
     env = _environment(tmp_path, resource_path=resource_path)
@@ -760,7 +775,9 @@ def test_filesystem_executor_rejects_symlink_target_without_touching_outside_fil
     executor.close()
 
 
-@pytest.mark.skipif(sys.platform != "linux", reason="filesystem commit fence requires Linux openat2")
+@pytest.mark.skipif(
+    sys.platform != "linux", reason="filesystem commit fence requires Linux openat2"
+)
 def test_filesystem_executor_rejects_hard_link_target(tmp_path):
     env = _environment(tmp_path)
     root = tmp_path / "filesystem-root"
@@ -794,7 +811,9 @@ def test_filesystem_executor_rejects_hard_link_target(tmp_path):
     executor.close()
 
 
-@pytest.mark.skipif(sys.platform != "linux", reason="filesystem commit fence requires Linux openat2")
+@pytest.mark.skipif(
+    sys.platform != "linux", reason="filesystem commit fence requires Linux openat2"
+)
 def test_filesystem_commit_permit_replay_cannot_replace_file_twice(tmp_path, monkeypatch):
     env = _environment(tmp_path)
     root, _, executor = _filesystem_executor(env, tmp_path)
@@ -839,9 +858,9 @@ def test_filesystem_commit_permit_replay_cannot_replace_file_twice(tmp_path, mon
         root,
         env["signed"].capability.task_id,
     ).read_bytes()
-    usage_after_valid_commits = env["registry"].usage(
-        env["signed"].capability.cap_id
-    )[0]
+    usage_after_valid_commits = env["registry"].usage(env["signed"].capability.cap_id)[
+        0
+    ]
 
     with pytest.raises(ResourceCommitDenied, match="replay"):
         executor.execute_authorized(env["request"], issued[0])
@@ -860,7 +879,9 @@ def test_filesystem_commit_permit_replay_cannot_replace_file_twice(tmp_path, mon
     executor.close()
 
 
-@pytest.mark.skipif(sys.platform != "linux", reason="filesystem commit fence requires Linux openat2")
+@pytest.mark.skipif(
+    sys.platform != "linux", reason="filesystem commit fence requires Linux openat2"
+)
 def test_filesystem_commit_holds_authority_transaction_until_destination_rename_finishes(
     tmp_path,
 ):
@@ -936,7 +957,9 @@ def test_filesystem_executor_configuration_rejects_public_state_directory(tmp_pa
         )
 
 
-@pytest.mark.skipif(sys.platform != "linux", reason="filesystem commit fence requires Linux openat2")
+@pytest.mark.skipif(
+    sys.platform != "linux", reason="filesystem commit fence requires Linux openat2"
+)
 def test_filesystem_executor_does_not_overwrite_out_of_band_target_change(
     tmp_path,
     monkeypatch,
@@ -977,7 +1000,9 @@ def test_filesystem_executor_does_not_overwrite_out_of_band_target_change(
     executor.close()
 
 
-@pytest.mark.skipif(sys.platform != "linux", reason="filesystem commit fence requires Linux openat2")
+@pytest.mark.skipif(
+    sys.platform != "linux", reason="filesystem commit fence requires Linux openat2"
+)
 def test_filesystem_executor_rejects_group_or_world_accessible_root(tmp_path):
     env = _environment(tmp_path)
     root = tmp_path / "public-resource-root"
@@ -992,7 +1017,9 @@ def test_filesystem_executor_rejects_group_or_world_accessible_root(tmp_path):
         )
 
 
-@pytest.mark.skipif(sys.platform != "linux", reason="filesystem commit fence requires Linux openat2")
+@pytest.mark.skipif(
+    sys.platform != "linux", reason="filesystem commit fence requires Linux openat2"
+)
 def test_filesystem_resource_namespace_isolated_by_task_id(tmp_path):
     env_one = _environment(
         tmp_path / "task-one",
