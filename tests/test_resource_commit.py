@@ -724,6 +724,7 @@ def test_filesystem_executor_rejects_symlink_target_without_touching_outside_fil
     root = tmp_path / "filesystem-root"
     target_parent = root / "acme" / "reports"
     target_parent.mkdir(parents=True)
+    root.chmod(0o700)
     outside = tmp_path / "outside-secret.txt"
     outside.write_bytes(b"outside secret")
     (target_parent / "escape.txt").symlink_to(outside)
