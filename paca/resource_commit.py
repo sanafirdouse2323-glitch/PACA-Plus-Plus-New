@@ -11,7 +11,7 @@ import hmac
 from typing import Any, Dict, Mapping
 
 from .authority_runtime import HMACCapabilityAuthority
-from .memory import MemoryAccessDenied, canonical_value_bytes
+from .memory import canonical_value_bytes
 from .runtime import ACTIONS, Request
 
 
