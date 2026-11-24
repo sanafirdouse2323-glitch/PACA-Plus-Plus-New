@@ -867,7 +867,9 @@ class HMACAgentMessageCodec:
                 recipient_record.task_id,
                 message_id,
             ):
-                raise ValueError("inter-agent message replay was rejected")
+                # Preserve the explicit denial reason; the outer parser-error
+                # handler intentionally normalizes malformed-envelope failures.
+                raise MemoryAccessDenied("inter-agent message replay was rejected")
             if int(body.get("issued_at", -1)) > int(self.clock()) + 30:
                 raise ValueError("message issuance time is invalid")
             authority_id = body.get("authority_id")
