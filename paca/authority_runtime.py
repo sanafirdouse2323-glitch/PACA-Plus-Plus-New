@@ -13,7 +13,6 @@ import base64
 import hashlib
 import hmac
 import json
-import os
 import secrets
 import sqlite3
 import time
@@ -21,7 +20,7 @@ from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from types import MappingProxyType
 
-from .authority import AuthorityLineage, grant_pattern_is_subset
+from .authority import AuthorityLineage
 from .authority_registry import (
     AuthorityRegistryError,
     SQLiteAuthorityRegistry,
