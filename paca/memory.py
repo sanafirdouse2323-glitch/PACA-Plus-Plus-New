@@ -350,16 +350,20 @@ class TrustedMemoryAdapter:
     ) -> Tuple[_AuthorizedMemoryReference, ...]:
         """Validate request argument bytes against the exact durable lineage node.
 
-        An Arg with no lineage references is an untracked literal/input. It remains
-        dependent on the trusted ingress/application labeling boundary. Known
-        incomplete or multi-reference uncommitted derivations fail closed.
+        Every protected effect argument must be captured by a trusted ingress
+        adapter and bound to one immutable persisted value/version. A caller-created
+        Arg, including one labelled "trusted", is not evidence of source identity.
+        Persisted combined derivations must be committed as one new lineage node.
         """
         if not isinstance(argument, Arg):
             raise MemoryAccessDenied("effect argument is not a typed PACA Arg")
         if argument.lineage_incomplete:
             raise MemoryAccessDenied("effect argument has incomplete information lineage")
         if not argument.lineage_refs:
-            return ()
+            raise MemoryAccessDenied(
+                "protected effect argument is untracked; capture it through trusted ingress "
+                "and persist its value before use"
+            )
         refs = tuple(argument.lineage_refs)
         if len(refs) != 1:
             raise MemoryAccessDenied(
