@@ -566,7 +566,15 @@ def test_inter_agent_envelope_authenticates_both_sides_and_preserves_lineage(tmp
 
     # Also exercise receiver-side verification against a correctly signed but
     # internally inconsistent envelope, as can occur with a compromised sender.
-    body_part_valid, _signature = sealed.split(".")
+    # Use a fresh message identifier so this test reaches the receiver's
+    # digest validation rather than correctly stopping at the replay fast path.
+    digest_test_sealed = env["messages"].seal(
+        payload,
+        sender="agent-a",
+        recipient="worker-b",
+        capability_token=env["root"].token,
+    )
+    body_part_valid, _signature = digest_test_sealed.split(".")
     padded = body_part_valid + "=" * (-len(body_part_valid) % 4)
     body = json.loads(base64.urlsafe_b64decode(padded))
     body["value"] = {"text": "changed inside signed envelope"}
