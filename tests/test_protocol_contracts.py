@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import importlib
 import json
-import pytest
 from pathlib import Path
 from typing import Any
+
+import pytest
 
 
 SCHEMA_PATH = (
