@@ -127,12 +127,12 @@ UseGrant(g) ==
            grantAllocation, now >>
 
 DelegateToChild ==
-    Delegate(ChildGrant, RootGrant, ChildPrincipal, taskB, {read}, {docA}, {report},
-             {mailA}, {agentC}, 2, {"trusted"}, TRUE, 2, 2)
+    Delegate(ChildGrant, RootGrant, ChildPrincipal, UseTask, {UseAction}, {UseResource},
+             {UsePurpose}, {UseDestination}, {GrandchildPrincipal}, 2, {"trusted"}, TRUE, 2, 2)
 
 DelegateToGrandchild ==
-    Delegate(GrandchildGrant, ChildGrant, GrandchildPrincipal, taskB, {read}, {docA},
-             {report}, {mailA}, {}, 1, {"trusted"}, TRUE, 1, 1)
+    Delegate(GrandchildGrant, ChildGrant, GrandchildPrincipal, UseTask, {UseAction},
+             {UseResource}, {UsePurpose}, {UseDestination}, {}, 1, {"trusted"}, TRUE, 1, 1)
 RevokeGrant(g) ==
     /\ g \in Grants
     /\ grantState[g] = "active"
