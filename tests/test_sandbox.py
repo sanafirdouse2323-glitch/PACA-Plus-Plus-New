@@ -321,6 +321,15 @@ def test_docker_sandbox_executor_rejects_non_json_worker_output():
         executor(request)
 
 
+def test_docker_sandbox_configuration_is_immutable_after_initialization():
+    sandbox = _sandbox(docker_env={"DOCKER_HOST": "unix:///var/run/docker.sock"})
+
+    with pytest.raises(AttributeError, match="configuration is immutable"):
+        sandbox.memory_bytes = 64 * 1024 * 1024
+    with pytest.raises(TypeError):
+        sandbox.docker_env["DOCKER_HOST"] = "tcp://untrusted.example:2376"
+
+
 def test_docker_sandbox_does_not_inherit_ambient_docker_context(monkeypatch):
     monkeypatch.setenv("DOCKER_HOST", "tcp://untrusted.example:2376")
     monkeypatch.setenv("DOCKER_CONTEXT", "untrusted-context")
