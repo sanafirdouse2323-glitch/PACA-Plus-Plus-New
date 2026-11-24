@@ -1992,7 +1992,7 @@ def test_runtime_freezes_authorized_request_before_monitor_and_executor(tmp_path
     capability = env["issuer"].verify(env["root"].token).capability
     original = Request(
         "read_file",
-        {"path": Arg("/acme/public/report.txt", Label("trusted", tenant="acme"))},
+        {"path": _ingest_argument(env, "/acme/public/report.txt")},
         capability,
         1,
         tool=_read_file_tool(),
@@ -2332,7 +2332,7 @@ def test_runtime_refuses_monitor_with_effect_token_verification_disabled(tmp_pat
     monitor.disable.add("C13")
     request = Request(
         "read_file",
-        {"path": Arg("/acme/public/report.txt", Label("trusted", tenant="acme"))},
+        {"path": _ingest_argument(env, "/acme/public/report.txt")},
         env["issuer"].verify(env["root"].token).capability,
         1,
         tool=_read_file_tool(),
@@ -2626,7 +2626,7 @@ def test_sync_runtime_rejects_coroutine_result_before_caller_can_await(tmp_path)
     env = _environment(tmp_path)
     request = Request(
         "read_file",
-        {"path": Arg("/acme/public/report.txt", Label("trusted", tenant="acme"))},
+        {"path": _ingest_argument(env, "/acme/public/report.txt")},
         env["issuer"].verify(env["root"].token).capability,
         1,
         tool=_read_file_tool(),
@@ -2653,7 +2653,7 @@ def test_sync_runtime_rejects_lazy_generator_result(tmp_path):
     env = _environment(tmp_path)
     request = Request(
         "read_file",
-        {"path": Arg("/acme/public/report.txt", Label("trusted", tenant="acme"))},
+        {"path": _ingest_argument(env, "/acme/public/report.txt")},
         env["issuer"].verify(env["root"].token).capability,
         1,
         tool=_read_file_tool(),
