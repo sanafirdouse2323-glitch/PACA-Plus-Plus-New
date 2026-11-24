@@ -5,7 +5,7 @@ import json
 import pytest
 
 from paca.provenance import Arg, Label
-from paca.runtime import Request, Tool
+from paca.runtime import Capability, Request, Tool
 from paca.sandbox import (
     DockerSandbox,
     DockerSandboxExecutor,
@@ -48,9 +48,7 @@ def test_docker_command_enforces_no_network_no_mounts_and_resource_limits():
     assert "--ipc=private" in args
     assert "--tmpfs=/tmp:rw,noexec,nosuid,nodev,size=33554432" in args
     assert "--entrypoint" in args
-    assert command[-2:] == ("/usr/local/bin/paca-worker", "--mode") or command[-3:] == (
-        "/usr/local/bin/paca-worker", "--mode", "read;touch /tmp/pwned",
-    )
+    assert command[-2:] == ("--mode", "read;touch /tmp/pwned")
     assert not any(
         part in {"--privileged", "--mount", "-v", "--volume", "--network=host"}
         or part.startswith(("--mount=", "--volume="))
@@ -99,7 +97,7 @@ def test_docker_sandbox_executor_passes_only_tool_input_not_authority_material()
         "read_file",
         {"path": Arg("/workspace/report.txt", Label("untrusted"))},
         # Deliberately include a visible capability to prove it is not serialized.
-        cap=__import__("paca.runtime", fromlist=["Capability"]).Capability(
+        cap=Capability(
             cap_id="secret-capability-id",
             principal="agent-a",
             tenant="acme",
