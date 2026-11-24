@@ -264,7 +264,7 @@ class OAuth2RefreshTokenProvider:
             self._client.close()
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, repr=False)
 class ProviderCapture:
     """A provider record plus the exact source identity/version to be captured."""
 
@@ -273,7 +273,15 @@ class ProviderCapture:
     object_id: str
     version_id: str
     provider_version: str
-    value: Mapping[str, Any]
+    value: Mapping[str, Any] = field(repr=False)
+
+    def __repr__(self) -> str:
+        return (
+            "ProviderCapture("
+            f"provider={self.provider!r}, connector_id={self.connector_id!r}, "
+            f"object_id={self.object_id!r}, version_id={self.version_id!r}, "
+            f"provider_version={self.provider_version!r}, value=<redacted>)"
+        )
 
     def persist(
         self,
@@ -538,12 +546,13 @@ class MicrosoftGraphMailConnector:
     BASE_URL = "https://graph.microsoft.com/v1.0"
     BASIC_SCOPE = "Mail.ReadBasic"
     READ_SCOPE = "Mail.Read"
-    SELECT = (
+    SELECT_BASIC = (
         "id", "conversationId", "subject", "from", "toRecipients",
-        "receivedDateTime", "sentDateTime", "bodyPreview",
-        "internetMessageId", "parentFolderId", "categories",
-        "hasAttachments", "importance", "isRead", "changeKey",
+        "receivedDateTime", "sentDateTime", "internetMessageId",
+        "parentFolderId", "categories", "hasAttachments",
+        "importance", "isRead", "changeKey",
     )
+    SELECT_FULL = SELECT_BASIC + ("body", "uniqueBody")
 
     def __init__(
         self,
@@ -551,6 +560,7 @@ class MicrosoftGraphMailConnector:
         *,
         tenant_id: str,
         user_id: str,
+        read_body: bool = False,
         client: Any = None,
         max_response_bytes: int = 2_097_152,
     ) -> None:
@@ -559,14 +569,19 @@ class MicrosoftGraphMailConnector:
                 raise ValueError(f"{name} must be a bounded non-empty string")
         if not isinstance(token_provider, OAuth2RefreshTokenProvider):
             raise TypeError("Microsoft Graph requires an OAuth2RefreshTokenProvider")
+        if not isinstance(read_body, bool):
+            raise TypeError("read_body must be a boolean")
         self.token_provider = token_provider
         self.tenant_id = tenant_id
         self.user_id = user_id
+        self.read_body = read_body
+        self.required_scope = self.READ_SCOPE if read_body else self.BASIC_SCOPE
+        self.selected_fields = self.SELECT_FULL if read_body else self.SELECT_BASIC
         self.connector_id = f"microsoft-graph:{tenant_id}:{user_id}"
         self.http = _ProviderHTTPClient(client=client, max_response_bytes=max_response_bytes)
 
     def _headers(self) -> Dict[str, str]:
-        token = _require_scope(self.token_provider, self.BASIC_SCOPE)
+        token = _require_scope(self.token_provider, self.required_scope)
         return {"Authorization": "Bearer " + token}
 
     def _messages_url(self) -> str:
@@ -608,7 +623,7 @@ class MicrosoftGraphMailConnector:
         else:
             params = {
                 "$top": top,
-                "$select": ",".join(self.SELECT),
+                "$select": ",".join(self.selected_fields),
             }
             if filter_query is not None:
                 if not isinstance(filter_query, str) or len(filter_query) > 2_048:
