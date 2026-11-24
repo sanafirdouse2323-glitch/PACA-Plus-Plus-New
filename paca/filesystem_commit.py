@@ -124,7 +124,7 @@ class FilesystemFencedResourceExecutor(FencedResourceExecutor):
                 "filesystem state_dir must be a private broker-owned directory with mode 0700 or stricter"
             )
         try:
-            self._state_fd = os.open(
+            state_fd = os.open(
                 state_path,
                 os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC | os.O_NOFOLLOW,
             )
@@ -133,6 +133,19 @@ class FilesystemFencedResourceExecutor(FencedResourceExecutor):
             raise ResourceCommitDenied(
                 "private filesystem state directory cannot be opened"
             ) from exc
+        opened_state_metadata = os.fstat(state_fd)
+        if (
+            (state_metadata.st_dev, state_metadata.st_ino)
+            != (opened_state_metadata.st_dev, opened_state_metadata.st_ino)
+            or opened_state_metadata.st_uid != os.geteuid()
+            or opened_state_metadata.st_mode & 0o077
+        ):
+            os.close(state_fd)
+            self.secure_root.close()
+            raise ResourceCommitDenied(
+                "private filesystem state directory changed while opening"
+            )
+        self._state_fd = state_fd
         self._state_path = state_path
 
         # Recovery must finish before the broker accepts a new write.
