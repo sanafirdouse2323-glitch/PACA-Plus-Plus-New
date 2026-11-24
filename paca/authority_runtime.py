@@ -18,6 +18,7 @@ import secrets
 import sqlite3
 import time
 from collections.abc import Callable, Iterable, Mapping
+from types import MappingProxyType
 from contextlib import closing
 from dataclasses import dataclass
 from pathlib import Path
@@ -1111,6 +1112,14 @@ class HMACCapabilityAuthority:
         ):
             if not isinstance(value, str) or not value:
                 raise ValueError(name + " must be a non-empty string")
+        if len(key_id) > 128 or any(
+            not character.isascii()
+            or not (character.isalnum() or character in "_-")
+            for character in key_id
+        ):
+            raise ValueError(
+                "key_id must contain 1-128 ASCII letters, digits, hyphens or underscores"
+            )
         self.registry = registry
         self.issuer_id = issuer_id
         self.key_id = key_id
@@ -1630,10 +1639,12 @@ class HMACCapabilityAuthority:
 class Ed25519CapabilityAuthority(HMACCapabilityAuthority):
     """Ed25519 authority with distinct private-key issuer and public-key verifier roles.
 
-    The verifier receives only a raw Ed25519 public key and cannot mint
-    capabilities or resource-commit permits. The optional cryptography dependency
-    is imported lazily. Key storage, rotation and authenticated public-key
-    distribution remain responsibilities of the deployment.
+    The verifier receives only public keys and cannot mint capabilities or
+    resource-commit permits. ``verification_keys`` can hold a bounded static
+    key ring for old/new key overlap; removing an ID retires that key for this
+    instance. The optional cryptography dependency is imported lazily. Private
+    key storage, coordinated rotation and authenticated key distribution remain
+    responsibilities of the deployment.
     """
 
     SIGNATURE_ALGORITHM = "Ed25519"
@@ -1652,6 +1663,8 @@ class Ed25519CapabilityAuthority(HMACCapabilityAuthority):
         verification_keys: Mapping[str, bytes] | None = None,
         clock=time.time,
     ) -> None:
+        if not isinstance(key_id, str) or not key_id:
+            raise ValueError("key_id must be a non-empty string")
         if public_key is None and private_key is None and verification_keys is None:
             raise ValueError(
                 "Ed25519 authority requires a current public/private key or a verification key ring"
@@ -1703,12 +1716,23 @@ class Ed25519CapabilityAuthority(HMACCapabilityAuthority):
         configured_verification_keys: dict[str, bytes] = {}
         if verification_keys is not None:
             if not isinstance(verification_keys, Mapping):
-                raise TypeError("verification_keys must be a mapping of key IDs to raw public keys")
+                raise TypeError(
+                    "verification_keys must be a mapping of key IDs to raw public keys"
+                )
             configured_verification_keys = dict(verification_keys)
-        for configured_key_id, configured_public_key in configured_verification_keys.items():
+        for (
+            configured_key_id,
+            configured_public_key,
+        ) in configured_verification_keys.items():
             if (
                 not isinstance(configured_key_id, str)
                 or not configured_key_id
+                or len(configured_key_id) > 128
+                or any(
+                    not character.isascii()
+                    or not (character.isalnum() or character in "_-")
+                    for character in configured_key_id
+                )
                 or not isinstance(configured_public_key, bytes)
                 or len(configured_public_key) != 32
             ):
@@ -1745,10 +1769,16 @@ class Ed25519CapabilityAuthority(HMACCapabilityAuthority):
         )
         self._key = b""
         self._ed25519_signing_key = signing_key
-        self._ed25519_verification_keys = {
-            configured_key_id: Ed25519PublicKey.from_public_bytes(configured_public_key)
-            for configured_key_id, configured_public_key in configured_verification_keys.items()
-        }
+        self._ed25519_verification_keys = MappingProxyType(
+            {
+                configured_key_id: Ed25519PublicKey.from_public_bytes(
+                    configured_public_key
+                )
+                for configured_key_id, configured_public_key in (
+                    configured_verification_keys.items()
+                )
+            }
+        )
         # Retain the active-key attribute for compatibility with code that inspects
         # the authority's configured current verification key.
         self._ed25519_verification_key = self._ed25519_verification_keys[key_id]
