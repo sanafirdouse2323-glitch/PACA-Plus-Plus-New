@@ -1,6 +1,6 @@
 # PAC++ New — implementation status and engineering gates
 
-**Snapshot:** 24 November 2026, after PR #27 was merged to `main` (`0ebfcbbb54df831aaeca424243a79495af970ece`).
+**Snapshot:** 24 November 2026, after PR #28 was merged to `main` (`95c1db0844e71b775cf6277db5a8daebc4c2f9e5`).
 
 **Maturity:** research prototype. The repository contains useful reference mechanisms and integrations, but does not mediate every agent lifecycle transition and is not production-ready.
 
@@ -18,7 +18,7 @@
 | Resource commits | Opt-in `FencedResourceExecutor` for `write_file` and `mem_write`; SQLite uses one local transaction and PostgreSQL uses its serialized single-primary registry transaction; legacy `SQLiteFencedResourceExecutor` name remains an alias | Mandatory enforcement for all executors, real filesystem/provider writes, or destination-side commit authorization at Gmail, Graph, Slack, Qdrant or other remote services |
 | Framework integrations | AgentDojo ToolsExecutor and limited workspace mapper; LangGraph BaseStore; LangChain middleware; PostgreSQL checkpoint wrapper | Prevention of direct calls to raw tools, stores, checkpointers, SQL connections or alternate frameworks |
 | Provider ingress | Read-only Gmail, Microsoft Graph mail, Slack history and Qdrant search connectors with bounded HTTPS responses and provenance capture | Live account validation in CI, production OAuth subject/tenant binding, provider writes, deletion sync or remote commit fencing |
-| Containment helpers | Optional digest-pinned Docker worker; Linux `openat2` filesystem and DNS/IP-pinned network helpers | Mandatory isolation or end-to-end integration of these primitives into every file, HTTP and tool path |
+| Containment helpers | Optional digest-pinned Docker worker with no inherited Docker daemon/context environment by default, explicit operator-only Docker CLI environment, core dumps disabled, no network/mounts, read-only root, non-root UID and resource limits; Linux `openat2` filesystem and DNS/IP-pinned network helpers | Mandatory isolation or end-to-end integration of these primitives into every file, HTTP and tool path |
 | Formal models | Bounded authorization and lifecycle TLA+ specifications, checked with TLC | Proof of Python implementation refinement, real database atomicity, host isolation or full lifecycle security |
 | Evaluation | Deterministic simulator, adapter tests, protocol fixtures and a limited AgentDojo runner | Independent benchmark results or demonstrated real-world attack prevention |
 
