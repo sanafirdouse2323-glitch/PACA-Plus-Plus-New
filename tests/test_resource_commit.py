@@ -933,12 +933,12 @@ def test_filesystem_resource_namespace_isolated_by_task_id(tmp_path):
         state_dir=tmp_path / "state-two",
     )
     try:
-        env_one["runtime"].execute_effect(
+        _, result_one = env_one["runtime"].execute_effect(
             env_one["signed"].token,
             env_one["request"],
             executor_one,
         )
-        env_two["runtime"].execute_effect(
+        _, result_two = env_two["runtime"].execute_effect(
             env_two["signed"].token,
             env_two["request"],
             executor_two,
@@ -947,9 +947,18 @@ def test_filesystem_resource_namespace_isolated_by_task_id(tmp_path):
         assert target_one != target_two
         assert target_one.read_bytes() == b"content for task one"
         assert target_two.read_bytes() == b"content for task two"
-        assert env_one["registry"].get_resource_commit_receipt(
-            env_one["registry"].get_resource_commit_receipt.__self__  # type: ignore[attr-defined]
-        ) is None
+        assert (
+            env_one["registry"].get_resource_commit_receipt(
+                result_one["commit_nonce"]
+            )["task_id"]
+            == "task-one"
+        )
+        assert (
+            env_two["registry"].get_resource_commit_receipt(
+                result_two["commit_nonce"]
+            )["task_id"]
+            == "task-two"
+        )
     finally:
         executor_one.close()
         executor_two.close()
