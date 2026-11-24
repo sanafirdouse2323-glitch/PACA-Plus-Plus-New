@@ -12,6 +12,7 @@ import hashlib
 import hmac
 import json
 import os
+import re
 import secrets
 import sqlite3
 import time
@@ -20,7 +21,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Dict, Iterable, Mapping, Optional, Tuple
 
-from .authority import AuthorityLineage, AuthorityLineageGraph
+from .authority import AuthorityLineage, AuthorityLineageGraph, grant_pattern_is_subset
 from .runtime import Capability
 
 
@@ -30,6 +31,33 @@ class AuthorityRegistryError(RuntimeError):
 
 class CapabilityAuthenticationError(PermissionError):
     """A signed capability failed authentication or validation."""
+
+
+@dataclass(frozen=True)
+class VerifiedResourceCommitPermit:
+    """Verified short-lived authorization for one exact resource mutation.
+
+    The record is immutable after signature verification. The authoritative
+    active-state, target-scope, replay and quota checks still occur inside the
+    resource database transaction that commits the mutation.
+    """
+
+    nonce: str
+    issuer: str
+    key_id: str
+    audience: str
+    authority_id: str
+    tenant: str
+    task_id: str
+    purpose: str
+    policy_epoch: int
+    issued_at: int
+    expires_at: int
+    max_calls: int
+    action: str
+    resource: str
+    request_digest: str
+    payload_digest: str
 
 
 def _canonical(value: object) -> bytes:
@@ -89,7 +117,7 @@ class SQLiteAuthorityRegistry:
     global policy epoch invalidates all capabilities issued at earlier epochs.
     """
 
-    SCHEMA_VERSION = 4
+    SCHEMA_VERSION = 5
 
     def __init__(
         self,
@@ -216,6 +244,44 @@ class SQLiteAuthorityRegistry:
                     )
                     connection.execute(
                         "UPDATE paca_authority_meta SET value='4' WHERE key='schema_version'"
+                    )
+                if version < 5:
+                    # Local resource state and commit receipts deliberately share
+                    # the authority database. BEGIN IMMEDIATE therefore serializes
+                    # a resource commit against revoke()/advance_policy_epoch().
+                    connection.execute(
+                        "CREATE TABLE IF NOT EXISTS paca_resource_commit_receipts ("
+                        "nonce TEXT PRIMARY KEY,"
+                        "authority_id TEXT NOT NULL REFERENCES authority_records(authority_id) ON DELETE RESTRICT,"
+                        "tenant TEXT NOT NULL,"
+                        "task_id TEXT NOT NULL,"
+                        "action TEXT NOT NULL,"
+                        "resource_key TEXT NOT NULL,"
+                        "request_digest TEXT NOT NULL,"
+                        "payload_digest TEXT NOT NULL,"
+                        "committed_at INTEGER NOT NULL)"
+                    )
+                    connection.execute(
+                        "CREATE INDEX IF NOT EXISTS paca_resource_commit_authority_idx "
+                        "ON paca_resource_commit_receipts(authority_id,committed_at)"
+                    )
+                    connection.execute(
+                        "CREATE TABLE IF NOT EXISTS paca_resource_values ("
+                        "tenant TEXT NOT NULL,"
+                        "task_id TEXT NOT NULL,"
+                        "resource_key TEXT NOT NULL,"
+                        "action TEXT NOT NULL,"
+                        "value_json TEXT NOT NULL,"
+                        "payload_digest TEXT NOT NULL,"
+                        "version INTEGER NOT NULL CHECK(version>=1),"
+                        "authority_id TEXT NOT NULL REFERENCES authority_records(authority_id) ON DELETE RESTRICT,"
+                        "request_digest TEXT NOT NULL,"
+                        "commit_nonce TEXT NOT NULL UNIQUE REFERENCES paca_resource_commit_receipts(nonce) ON DELETE RESTRICT,"
+                        "updated_at INTEGER NOT NULL,"
+                        "PRIMARY KEY(tenant,task_id,resource_key))"
+                    )
+                    connection.execute(
+                        "UPDATE paca_authority_meta SET value='5' WHERE key='schema_version'"
                     )
                 connection.commit()
             except Exception:
@@ -542,6 +608,199 @@ class SQLiteAuthorityRegistry:
                 connection.rollback()
                 raise
 
+    def commit_fenced_resource_write(
+        self,
+        permit: VerifiedResourceCommitPermit,
+        payload: Mapping[str, object],
+    ) -> Dict[str, object]:
+        """Commit one resource mutation under the same transaction as revocation.
+
+        This reference data plane is intentionally colocated with the authority
+        registry. Both this method and revoke()/advance_policy_epoch() use
+        BEGIN IMMEDIATE on this SQLite database, so they have a serial order:
+        a write commits before revocation, or the write observes the revocation
+        and fails. This guarantee does not extend to a remote provider/API.
+        """
+        if not isinstance(permit, VerifiedResourceCommitPermit):
+            raise TypeError("resource commit requires a cryptographically verified permit")
+        if permit.action not in {"write_file", "mem_write"}:
+            raise AuthorityRegistryError("resource commit action is not supported by this local commit gate")
+        if (
+            not isinstance(permit.resource, str)
+            or not permit.resource
+            or len(permit.resource) > 4096
+            or any(ord(character) < 32 for character in permit.resource)
+        ):
+            raise ValueError("resource key must be a bounded, printable string")
+        for name, value in (
+            ("nonce", permit.nonce),
+            ("issuer", permit.issuer),
+            ("key_id", permit.key_id),
+            ("audience", permit.audience),
+            ("authority_id", permit.authority_id),
+            ("tenant", permit.tenant),
+            ("task_id", permit.task_id),
+            ("purpose", permit.purpose),
+            ("action", permit.action),
+            ("resource", permit.resource),
+        ):
+            if not isinstance(value, str) or not value:
+                raise ValueError(f"commit permit {name} must be a non-empty string")
+        for name, value in (
+            ("policy_epoch", permit.policy_epoch),
+            ("issued_at", permit.issued_at),
+            ("expires_at", permit.expires_at),
+            ("max_calls", permit.max_calls),
+        ):
+            if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+                raise ValueError(f"commit permit {name} must be a non-negative integer")
+        if permit.max_calls < 1:
+            raise ValueError("commit permit max_calls must be positive")
+        for name, digest in (
+            ("request_digest", permit.request_digest),
+            ("payload_digest", permit.payload_digest),
+        ):
+            if (
+                not isinstance(digest, str)
+                or len(digest) != 64
+                or any(character not in "0123456789abcdef" for character in digest)
+            ):
+                raise ValueError(f"commit permit {name} must be a lowercase SHA-256 digest")
+        if not isinstance(payload, Mapping):
+            raise TypeError("fenced resource payload must be a JSON object")
+        try:
+            encoded_payload = _canonical(payload)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("fenced resource payload must be canonical JSON") from exc
+        payload_digest = hashlib.sha256(encoded_payload).hexdigest()
+        if not hmac.compare_digest(payload_digest, permit.payload_digest):
+            raise AuthorityRegistryError("resource payload does not match the signed commit permit")
+        now = int(self.clock())
+        if (
+            permit.issued_at > now + 30
+            or permit.expires_at <= now
+            or permit.expires_at <= permit.issued_at
+            or permit.expires_at - permit.issued_at > 30
+        ):
+            raise AuthorityRegistryError("resource commit permit is expired or has an invalid lifetime")
+
+        encoded_value = encoded_payload.decode("utf-8")
+        with closing(self._connect()) as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            try:
+                graph = self._load_graph(connection)
+                record = graph.get(permit.authority_id)
+                if record is None or not self._is_active(connection, permit.authority_id):
+                    raise AuthorityRegistryError("resource commit authority is expired, revoked, stale or unknown")
+                if (
+                    record.issuer != permit.issuer
+                    or record.tenant != permit.tenant
+                    or record.task_id != permit.task_id
+                    or record.purpose != permit.purpose
+                    or record.policy_epoch != permit.policy_epoch
+                ):
+                    raise AuthorityRegistryError("resource commit permit does not match the active authority record")
+                patterns = dict(record.grants).get(permit.action, ())
+                if not any(
+                    grant_pattern_is_subset(permit.resource, pattern)
+                    for pattern in patterns
+                ):
+                    raise AuthorityRegistryError("active authority does not grant the fenced resource target")
+
+                usage = connection.execute(
+                    "SELECT calls_used FROM authority_usage WHERE authority_id=?",
+                    (permit.authority_id,),
+                ).fetchone()
+                if usage is None or int(usage["calls_used"]) >= permit.max_calls:
+                    raise AuthorityRegistryError("capability call budget is exhausted at resource commit")
+                task_usage = connection.execute(
+                    "SELECT calls_used,max_task_calls FROM task_usage WHERE tenant=? AND task_id=?",
+                    (record.tenant, record.task_id),
+                ).fetchone()
+                if (
+                    task_usage is None
+                    or int(task_usage["max_task_calls"]) != record.max_task_calls
+                    or int(task_usage["calls_used"]) >= record.max_task_calls
+                ):
+                    raise AuthorityRegistryError("task-wide call budget is exhausted or inconsistent at resource commit")
+
+                # The unique nonce prevents a captured commit permit from being
+                # replayed to produce a second mutation or quota charge.
+                connection.execute(
+                    "INSERT INTO paca_resource_commit_receipts("
+                    "nonce,authority_id,tenant,task_id,action,resource_key,"
+                    "request_digest,payload_digest,committed_at) "
+                    "VALUES(?,?,?,?,?,?,?,?,?)",
+                    (
+                        permit.nonce,
+                        permit.authority_id,
+                        permit.tenant,
+                        permit.task_id,
+                        permit.action,
+                        permit.resource,
+                        permit.request_digest,
+                        permit.payload_digest,
+                        now,
+                    ),
+                )
+
+                connection.execute(
+                    "UPDATE authority_usage SET calls_used=calls_used+1 WHERE authority_id=?",
+                    (permit.authority_id,),
+                )
+                updated = connection.execute(
+                    "UPDATE task_usage SET calls_used=calls_used+1 "
+                    "WHERE tenant=? AND task_id=? AND calls_used<max_task_calls",
+                    (record.tenant, record.task_id),
+                )
+                if updated.rowcount != 1:
+                    raise AuthorityRegistryError("task-wide quota was exhausted during resource commit")
+
+                existing = connection.execute(
+                    "SELECT version FROM paca_resource_values "
+                    "WHERE tenant=? AND task_id=? AND resource_key=?",
+                    (record.tenant, record.task_id, permit.resource),
+                ).fetchone()
+                version = int(existing["version"]) + 1 if existing is not None else 1
+                connection.execute(
+                    "INSERT INTO paca_resource_values("
+                    "tenant,task_id,resource_key,action,value_json,payload_digest,"
+                    "version,authority_id,request_digest,commit_nonce,updated_at"
+                    ") VALUES(?,?,?,?,?,?,?,?,?,?,?) "
+                    "ON CONFLICT(tenant,task_id,resource_key) DO UPDATE SET "
+                    "action=excluded.action,value_json=excluded.value_json,"
+                    "payload_digest=excluded.payload_digest,version=excluded.version,"
+                    "authority_id=excluded.authority_id,request_digest=excluded.request_digest,"
+                    "commit_nonce=excluded.commit_nonce,updated_at=excluded.updated_at",
+                    (
+                        record.tenant,
+                        record.task_id,
+                        permit.resource,
+                        permit.action,
+                        encoded_value,
+                        permit.payload_digest,
+                        version,
+                        permit.authority_id,
+                        permit.request_digest,
+                        permit.nonce,
+                        now,
+                    ),
+                )
+                connection.commit()
+                return {
+                    "tenant": record.tenant,
+                    "task_id": record.task_id,
+                    "resource": permit.resource,
+                    "action": permit.action,
+                    "version": version,
+                    "payload_digest": permit.payload_digest,
+                    "commit_nonce": permit.nonce,
+                    "committed_at": now,
+                }
+            except Exception:
+                connection.rollback()
+                raise
+
     def has_message_receipt(
         self,
         principal: str,
@@ -795,6 +1054,142 @@ class HMACCapabilityAuthority:
         signing_input = self.key_id + "." + body
         signature = _b64encode(hmac.new(self._key, signing_input.encode("ascii"), hashlib.sha256).digest())
         return signing_input + "." + signature
+
+    def issue_resource_commit_permit(
+        self,
+        capability_token: str,
+        *,
+        request_digest: str,
+        action: str,
+        resource: str,
+        payload_digest: str,
+        lifetime_seconds: int = 15,
+    ) -> str:
+        """Issue a one-use, short-lived MAC permit bound to one exact resource write.
+
+        This HMAC reference implementation is suitable only where the issuer and
+        commit verifier remain inside the trusted host. Verifiers that hold this
+        symmetric key can also mint permits; asymmetric issuer/verifier separation
+        remains a separate production requirement.
+        """
+        for name, value in (
+            ("request_digest", request_digest),
+            ("payload_digest", payload_digest),
+        ):
+            if (
+                not isinstance(value, str)
+                or len(value) != 64
+                or any(character not in "0123456789abcdef" for character in value)
+            ):
+                raise ValueError(f"{name} must be a lowercase SHA-256 digest")
+        if action not in {"write_file", "mem_write"}:
+            raise ValueError("resource commit permits are supported only for write_file and mem_write")
+        if not isinstance(resource, str) or not resource or len(resource) > 4096:
+            raise ValueError("resource must be a non-empty bounded key")
+        if (
+            isinstance(lifetime_seconds, bool)
+            or not isinstance(lifetime_seconds, int)
+            or not 1 <= lifetime_seconds <= 30
+        ):
+            raise ValueError("resource commit permit lifetime must be between 1 and 30 seconds")
+        signed = self.verify(capability_token)
+        capability = signed.capability
+        record = capability.authority_lineage
+        if record is None:
+            raise CapabilityAuthenticationError("resource commit capability lacks authority lineage")
+        now = int(self.clock())
+        payload: Dict[str, object] = {
+            "version": 1,
+            "issuer": self.issuer_id,
+            "key_id": self.key_id,
+            "audience": self.audience,
+            "authority_id": record.authority_id,
+            "tenant": record.tenant,
+            "task_id": record.task_id,
+            "purpose": record.purpose,
+            "policy_epoch": record.policy_epoch,
+            "issued_at": now,
+            "expires_at": now + lifetime_seconds,
+            "max_calls": capability.max_calls,
+            "action": action,
+            "resource": resource,
+            "request_digest": request_digest,
+            "payload_digest": payload_digest,
+            "nonce": secrets.token_urlsafe(24),
+        }
+        body = _b64encode(_canonical(payload))
+        signing_input = "resource-commit-v1." + self.key_id + "." + body
+        signature = _b64encode(
+            hmac.new(self._key, signing_input.encode("ascii"), hashlib.sha256).digest()
+        )
+        return signing_input + "." + signature
+
+    def verify_resource_commit_permit(
+        self,
+        token: str,
+    ) -> VerifiedResourceCommitPermit:
+        """Authenticate a resource permit; active-state checks happen in commit SQL."""
+        try:
+            if not isinstance(token, str) or len(token) > 16_384:
+                raise ValueError("invalid resource commit permit size or type")
+            version, key_id, body, signature = token.split(".")
+            if version != "resource-commit-v1" or key_id != self.key_id:
+                raise ValueError("resource commit permit version or key identifier mismatch")
+            signing_input = version + "." + key_id + "." + body
+            expected = hmac.new(
+                self._key, signing_input.encode("ascii"), hashlib.sha256,
+            ).digest()
+            if not hmac.compare_digest(expected, _b64decode(signature)):
+                raise ValueError("resource commit permit signature mismatch")
+            payload = json.loads(_b64decode(body))
+            if not isinstance(payload, dict) or payload.get("version") != 1:
+                raise ValueError("resource commit permit payload is malformed")
+            if payload.get("issuer") != self.issuer_id:
+                raise ValueError("resource commit permit issuer mismatch")
+            if payload.get("key_id") != self.key_id or payload.get("audience") != self.audience:
+                raise ValueError("resource commit permit key or audience mismatch")
+            expected_fields = {
+                "version", "issuer", "key_id", "audience", "authority_id",
+                "tenant", "task_id", "purpose", "policy_epoch", "issued_at",
+                "expires_at", "max_calls", "action", "resource", "request_digest",
+                "payload_digest", "nonce",
+            }
+            if set(payload) != expected_fields:
+                raise ValueError("resource commit permit contains missing or unknown fields")
+            result = VerifiedResourceCommitPermit(
+                nonce=payload["nonce"],
+                issuer=payload["issuer"],
+                key_id=payload["key_id"],
+                audience=payload["audience"],
+                authority_id=payload["authority_id"],
+                tenant=payload["tenant"],
+                task_id=payload["task_id"],
+                purpose=payload["purpose"],
+                policy_epoch=payload["policy_epoch"],
+                issued_at=payload["issued_at"],
+                expires_at=payload["expires_at"],
+                max_calls=payload["max_calls"],
+                action=payload["action"],
+                resource=payload["resource"],
+                request_digest=payload["request_digest"],
+                payload_digest=payload["payload_digest"],
+            )
+            now = int(self.clock())
+            if (
+                result.issued_at > now + 30
+                or result.expires_at <= now
+                or result.expires_at <= result.issued_at
+                or result.expires_at - result.issued_at > 30
+            ):
+                raise ValueError("resource commit permit is expired or has an invalid lifetime")
+            return result
+        except (
+            ValueError, TypeError, KeyError, json.JSONDecodeError, AuthorityRegistryError,
+            sqlite3.Error,
+        ) as exc:
+            raise CapabilityAuthenticationError(
+                "resource commit permit authentication failed"
+            ) from exc
 
     def issue(
         self,
