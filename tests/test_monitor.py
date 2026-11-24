@@ -237,7 +237,7 @@ def test_consequential_runtime_profile_rejects_unknown_or_duplicate_required_rul
     default_policy = resources.files("paca").joinpath(
         "policies", "agent_policy.paca",
     ).read_text(encoding="utf-8")
-    duplicate = default_policy + "\\nC6: deny any when flow.cross_tenant == true\\n"
+    duplicate = default_policy + "\nC6: deny any when flow.cross_tenant == true\n"
     monitor = Monitor(policy_text=duplicate)
     with pytest.raises(ValueError, match="missing or duplicates required policy rule C6"):
         monitor.assert_consequential_safe()
