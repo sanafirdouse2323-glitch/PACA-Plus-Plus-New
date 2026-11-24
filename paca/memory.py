@@ -988,6 +988,7 @@ class PACAAgentRuntime:
         messages: HMACAgentMessageCodec,
         *,
         require_resource_commit_fence: bool = False,
+        resource_commit_verifier: Optional[HMACCapabilityAuthority] = None,
     ) -> None:
         if (
             memory.authority is not authority
@@ -1004,7 +1005,42 @@ class PACAAgentRuntime:
             raise ValueError("PACAAgentRuntime requires C13 effect-token verification")
         if not isinstance(require_resource_commit_fence, bool):
             raise TypeError("require_resource_commit_fence must be a boolean")
+        if resource_commit_verifier is None:
+            if (
+                require_resource_commit_fence
+                and authority.SIGNATURE_ALGORITHM == "Ed25519"
+            ):
+                raise ValueError(
+                    "Ed25519 strict resource-commit mode requires a separate public-key-only verifier"
+                )
+            resource_commit_verifier = authority
+        if not isinstance(resource_commit_verifier, HMACCapabilityAuthority):
+            raise TypeError(
+                "resource_commit_verifier must implement the PACA capability verification contract"
+            )
+        if (
+            resource_commit_verifier.registry.database != authority.registry.database
+            or resource_commit_verifier.issuer_id != authority.issuer_id
+            or resource_commit_verifier.key_id != authority.key_id
+            or resource_commit_verifier.audience != authority.audience
+            or resource_commit_verifier.SIGNATURE_ALGORITHM != authority.SIGNATURE_ALGORITHM
+        ):
+            raise ValueError(
+                "resource commit verifier must match the issuer identity, key, algorithm and authority database"
+            )
+        if (
+            require_resource_commit_fence
+            and authority.SIGNATURE_ALGORITHM == "Ed25519"
+            and (
+                resource_commit_verifier is authority
+                or getattr(resource_commit_verifier, "_ed25519_signing_key", None) is not None
+            )
+        ):
+            raise ValueError(
+                "Ed25519 resource commit verifier must be a separate public-key-only authority instance"
+            )
         self.authority = authority
+        self.resource_commit_verifier = resource_commit_verifier
         self.memory = memory
         self.monitor = monitor
         self.messages = messages
@@ -1184,7 +1220,7 @@ class PACAAgentRuntime:
 
         if (
             not isinstance(executor, SQLiteFencedResourceExecutor)
-            or executor.authority is not self.authority
+            or executor.authority is not self.resource_commit_verifier
         ):
             raise MemoryAccessDenied(
                 "resource commit fence mode requires the runtime-bound SQLiteFencedResourceExecutor"
