@@ -58,7 +58,9 @@ def test_oauth_refresh_caches_token_checks_scopes_and_persists_rotation():
         form = urllib.parse.parse_qs(request.content.decode())
         assert form["client_id"] == ["client-id"]
         assert form["client_secret"] == ["client-secret"]
-        assert form["refresh_token"] == ["refresh-secret"]
+        assert form["refresh_token"] == [
+            "refresh-secret" if not calls else "rotated-refresh-secret"
+        ]
         assert form["grant_type"] == ["refresh_token"]
         assert form["scope"] == ["scope.read"]
         calls.append(request)
