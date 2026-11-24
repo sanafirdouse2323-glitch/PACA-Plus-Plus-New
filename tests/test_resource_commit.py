@@ -807,16 +807,37 @@ def test_filesystem_commit_permit_replay_cannot_replace_file_twice(tmp_path, mon
         return token
 
     monkeypatch.setattr(env["issuer"], "issue_resource_commit_permit", capture_permit)
-    env["runtime"].execute_effect(
+    _, first_result = env["runtime"].execute_effect(
         env["signed"].token,
         env["request"],
         executor,
     )
-    first_content = _filesystem_relative_target(
+    first_receipt = env["registry"].get_resource_commit_receipt(
+        first_result["commit_nonce"]
+    )
+    assert first_receipt is not None
+    assert first_receipt["version"] == 1
+
+    # A later valid commit replaces the logical resource value but must not
+    # erase visibility of the earlier append-only nonce receipt.
+    _, second_result = env["runtime"].execute_effect(
+        env["signed"].token,
+        env["request"],
+        executor,
+    )
+    second_receipt = env["registry"].get_resource_commit_receipt(
+        second_result["commit_nonce"]
+    )
+    assert second_receipt is not None
+    assert second_receipt["version"] == 2
+    assert env["registry"].get_resource_commit_receipt(
+        first_result["commit_nonce"]
+    )["version"] is None
+    final_content = _filesystem_relative_target(
         root,
         env["signed"].capability.task_id,
     ).read_bytes()
-    usage_after_first_commit = env["registry"].usage(
+    usage_after_valid_commits = env["registry"].usage(
         env["signed"].capability.cap_id
     )[0]
 
@@ -828,9 +849,12 @@ def test_filesystem_commit_permit_replay_cannot_replace_file_twice(tmp_path, mon
             root,
             env["signed"].capability.task_id,
         ).read_bytes()
-        == first_content
+        == final_content
     )
-    assert env["registry"].usage(env["signed"].capability.cap_id)[0] == usage_after_first_commit
+    assert (
+        env["registry"].usage(env["signed"].capability.cap_id)[0]
+        == usage_after_valid_commits
+    )
     executor.close()
 
 
