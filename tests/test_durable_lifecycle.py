@@ -2841,3 +2841,47 @@ def test_registry_refuses_to_guess_quota_for_populated_v3_database(tmp_path):
         ).fetchone()[0]
     assert version == "3"
     assert count == 1
+
+
+
+@pytest.mark.parametrize("callback_result", ["false", {"authenticated": False}, object(), 1])
+def test_identity_verifier_must_return_literal_true(tmp_path, callback_result):
+    registry = SQLiteAuthorityRegistry(tmp_path / "strict-identity.sqlite3")
+    issuer = HMACCapabilityAuthority(
+        registry,
+        issuer_id="test-issuer",
+        key_id="test-key",
+        key=b"X" * 32,
+        audience="test-audience",
+        identity_verifier=lambda _principal, _tenant: callback_result,
+    )
+    with pytest.raises(CapabilityAuthenticationError, match="not authenticated"):
+        issuer.issue(
+            principal="agent-a",
+            tenant="acme",
+            task_id="identity-task",
+            purpose="test",
+            grants={"read_file": ("/acme/*",)},
+            expires_at=2_000_000_000,
+        )
+
+
+def test_identity_verifier_accepts_literal_true_only(tmp_path):
+    registry = SQLiteAuthorityRegistry(tmp_path / "strict-identity-true.sqlite3")
+    issuer = HMACCapabilityAuthority(
+        registry,
+        issuer_id="test-issuer",
+        key_id="test-key",
+        key=b"X" * 32,
+        audience="test-audience",
+        identity_verifier=lambda _principal, _tenant: True,
+    )
+    signed = issuer.issue(
+        principal="agent-a",
+        tenant="acme",
+        task_id="identity-task",
+        purpose="test",
+        grants={"read_file": ("/acme/*",)},
+        expires_at=2_000_000_000,
+    )
+    assert issuer.verify(signed.token).capability.principal == "agent-a"
