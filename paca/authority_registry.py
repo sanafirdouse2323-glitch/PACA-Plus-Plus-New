@@ -16,7 +16,7 @@ import os
 import secrets
 import sqlite3
 import time
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from contextlib import closing
 from dataclasses import dataclass
 from pathlib import Path
@@ -638,7 +638,40 @@ class SQLiteAuthorityRegistry:
         permit: VerifiedResourceCommitPermit,
         payload: Mapping[str, object],
     ) -> dict[str, object]:
-        """Commit one resource mutation under the same transaction as revocation.
+        """Commit one logical resource value under the authority transaction."""
+        return self._commit_fenced_resource_write(permit, payload, None)
+
+    def commit_fenced_filesystem_write(
+        self,
+        permit: VerifiedResourceCommitPermit,
+        payload: Mapping[str, object],
+        *,
+        commit_callback: Callable[[], None],
+    ) -> dict[str, object]:
+        """Run an atomic destination rename inside the authority commit transaction.
+
+        The caller must prepare a durable recovery journal before calling this
+        method. The callback executes only after the permit, active authority,
+        target grant, replay nonce and quotas have been checked and recorded,
+        but before the shared database transaction commits. SQLite BEGIN
+        IMMEDIATE and the PostgreSQL registry write lock remain held while the
+        callback runs, serializing the filesystem rename against revocation.
+        """
+        if not callable(commit_callback):
+            raise TypeError("filesystem commit callback must be callable")
+        return self._commit_fenced_resource_write(
+            permit,
+            payload,
+            commit_callback,
+        )
+
+    def _commit_fenced_resource_write(
+        self,
+        permit: VerifiedResourceCommitPermit,
+        payload: Mapping[str, object],
+        commit_callback: Callable[[], None] | None,
+    ) -> dict[str, object]:
+        """Commit a resource mutation under the same transaction as revocation.
 
         This reference data plane is intentionally colocated with the authority
         registry. Both this method and revoke()/advance_policy_epoch() use
@@ -840,6 +873,8 @@ class SQLiteAuthorityRegistry:
                         now,
                     ),
                 )
+                if commit_callback is not None:
+                    commit_callback()
                 connection.commit()
                 return {
                     "tenant": record.tenant,
@@ -854,6 +889,22 @@ class SQLiteAuthorityRegistry:
             except Exception:
                 connection.rollback()
                 raise
+
+    def get_resource_commit_receipt(
+        self,
+        nonce: str,
+    ) -> dict[str, object] | None:
+        """Return the durable receipt used by filesystem-journal recovery."""
+        if not isinstance(nonce, str) or not nonce or len(nonce) > 256:
+            raise ValueError("resource commit nonce must be a bounded non-empty string")
+        with closing(self._connect()) as connection:
+            row = connection.execute(
+                "SELECT nonce,authority_id,tenant,task_id,action,resource_key,"
+                "request_digest,payload_digest,committed_at "
+                "FROM paca_resource_commit_receipts WHERE nonce=?",
+                (nonce,),
+            ).fetchone()
+        return dict(row) if row is not None else None
 
     def has_message_receipt(
         self,
