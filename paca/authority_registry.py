@@ -899,12 +899,20 @@ class SQLiteAuthorityRegistry:
             raise ValueError("resource commit nonce must be a bounded non-empty string")
         with closing(self._connect()) as connection:
             row = connection.execute(
-                "SELECT nonce,authority_id,tenant,task_id,action,resource_key,"
-                "request_digest,payload_digest,committed_at "
-                "FROM paca_resource_commit_receipts WHERE nonce=?",
+                "SELECT r.nonce,r.authority_id,r.tenant,r.task_id,r.action,r.resource_key,"
+                "r.request_digest,r.payload_digest,r.committed_at,v.version AS version "
+                "FROM paca_resource_commit_receipts r "
+                "LEFT JOIN paca_resource_values v ON v.commit_nonce=r.nonce "
+                "WHERE r.nonce=?",
                 (nonce,),
             ).fetchone()
-        return dict(row) if row is not None else None
+        if row is None:
+            return None
+        if row["version"] is None:
+            raise AuthorityRegistryError(
+                "resource commit receipt exists without its matching committed resource value"
+            )
+        return dict(row)
 
     def has_message_receipt(
         self,
