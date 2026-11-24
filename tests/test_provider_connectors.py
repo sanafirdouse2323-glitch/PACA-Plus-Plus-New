@@ -588,6 +588,53 @@ def test_qdrant_rejects_foreign_or_unverifiable_tenant_results(payload):
         connector.close()
         client.close()
 
+def test_qdrant_caller_filter_cannot_negate_mandatory_tenant_condition():
+    observed = []
+
+    def handler(request):
+        body = json.loads(request.content)
+        observed.append(body["filter"])
+        return httpx.Response(
+            200,
+            headers={"content-type": "application/json"},
+            json={"result": []},
+        )
+
+    client = httpx.Client(transport=httpx.MockTransport(handler), follow_redirects=False)
+    connector = QdrantVectorConnector(
+        "https://qdrant.example.test",
+        cluster_id="cluster-1",
+        tenant_id="tenant-acme",
+        api_key_provider=lambda: "qdrant-secret",
+        client=client,
+    )
+    try:
+        page = connector.search(
+            "reports",
+            [0.1, 0.2],
+            query_filter={
+                "must_not": [
+                    {"key": "tenant_id", "match": {"value": "tenant-acme"}},
+                ],
+            },
+        )
+        assert page.items == ()
+        assert observed == [{
+            "must": [
+                {"key": "tenant_id", "match": {"value": "tenant-acme"}},
+                {
+                    "must_not": [
+                        {"key": "tenant_id", "match": {"value": "tenant-acme"}},
+                    ],
+                },
+            ],
+        }]
+    finally:
+        connector.close()
+        client.close()
+
+
+
 
 def test_provider_capture_persists_only_through_matching_untrusted_ingress(tmp_path):
     now = [1_000]
