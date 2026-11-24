@@ -830,9 +830,11 @@ def test_filesystem_commit_permit_replay_cannot_replace_file_twice(tmp_path, mon
     )
     assert second_receipt is not None
     assert second_receipt["version"] == 2
-    assert env["registry"].get_resource_commit_receipt(
+    stale_receipt = env["registry"].get_resource_commit_receipt(
         first_result["commit_nonce"]
-    )["version"] is None
+    )
+    assert stale_receipt is not None
+    assert stale_receipt["version"] is None
     final_content = _filesystem_relative_target(
         root,
         env["signed"].capability.task_id,
