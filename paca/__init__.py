@@ -45,6 +45,7 @@ from .resource_commit import (
     ResourceCommitDenied,
     SQLiteFencedResourceExecutor,
 )
+from .filesystem_commit import FilesystemFencedResourceExecutor
 from .sandbox import (
     DockerSandbox,
     DockerSandboxExecutor,
