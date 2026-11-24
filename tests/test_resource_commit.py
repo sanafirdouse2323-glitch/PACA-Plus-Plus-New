@@ -52,6 +52,7 @@ def _environment(
     asymmetric=False,
     resource_path="/acme/reports/report.txt",
     task_id="task-fence",
+    content_text="approved report body",
 ):
     now = [1_000]
 
@@ -154,7 +155,7 @@ def _environment(
         capability_token=signed.token,
     )
     content = connector.ingest(
-        "approved report body",
+        content_text,
         object_id="mem/fence/content",
         version_id="v1",
         purpose="write-report",
@@ -898,3 +899,57 @@ def test_filesystem_executor_configuration_rejects_public_state_directory(tmp_pa
             root=root,
             state_dir=state_dir,
         )
+
+
+@pytest.mark.skipif(sys.platform != "linux", reason="filesystem commit fence requires Linux openat2")
+def test_filesystem_resource_namespace_isolated_by_task_id(tmp_path):
+    env_one = _environment(
+        tmp_path / "task-one",
+        task_id="task-one",
+        content_text="content for task one",
+    )
+    env_two = _environment(
+        tmp_path / "task-two",
+        task_id="task-two",
+        content_text="content for task two",
+    )
+    root = tmp_path / "shared-filesystem-root"
+    root.mkdir(mode=0o700)
+    root.chmod(0o700)
+
+    target_one = _filesystem_relative_target(root, "task-one")
+    target_two = _filesystem_relative_target(root, "task-two")
+    target_one.parent.mkdir(parents=True)
+    target_two.parent.mkdir(parents=True)
+
+    executor_one = FilesystemFencedResourceExecutor(
+        env_one["executor"].authority,
+        root=root,
+        state_dir=tmp_path / "state-one",
+    )
+    executor_two = FilesystemFencedResourceExecutor(
+        env_two["executor"].authority,
+        root=root,
+        state_dir=tmp_path / "state-two",
+    )
+    try:
+        env_one["runtime"].execute_effect(
+            env_one["signed"].token,
+            env_one["request"],
+            executor_one,
+        )
+        env_two["runtime"].execute_effect(
+            env_two["signed"].token,
+            env_two["request"],
+            executor_two,
+        )
+
+        assert target_one != target_two
+        assert target_one.read_bytes() == b"content for task one"
+        assert target_two.read_bytes() == b"content for task two"
+        assert env_one["registry"].get_resource_commit_receipt(
+            env_one["registry"].get_resource_commit_receipt.__self__  # type: ignore[attr-defined]
+        ) is None
+    finally:
+        executor_one.close()
+        executor_two.close()
