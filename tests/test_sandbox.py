@@ -44,6 +44,7 @@ def test_docker_command_enforces_no_network_no_mounts_and_resource_limits():
     assert "--cpus=0.500" in args
     assert "--pids-limit=24" in args
     assert "--user=65534:65534" in args
+    assert "--ulimit=core=0:0" in args
     assert "--ipc=private" in args
     assert "--tmpfs=/tmp:rw,noexec,nosuid,nodev,size=33554432" in args
     assert "--entrypoint" in args
@@ -178,3 +179,22 @@ def test_docker_sandbox_executor_rejects_non_json_worker_output():
     )
     with pytest.raises(SandboxExecutionError, match="invalid JSON"):
         executor(request)
+
+
+def test_docker_sandbox_does_not_inherit_ambient_docker_context(monkeypatch):
+    monkeypatch.setenv("DOCKER_HOST", "tcp://untrusted.example:2376")
+    monkeypatch.setenv("DOCKER_CONTEXT", "untrusted-context")
+    monkeypatch.setenv("DOCKER_CONFIG", "/tmp/untrusted-docker-config")
+    monkeypatch.setenv("DOCKER_TLS_VERIFY", "1")
+
+    sandbox = _sandbox()
+
+    assert sandbox.docker_env == {}
+
+
+def test_docker_sandbox_requires_explicit_mapping_for_cli_environment():
+    with pytest.raises(TypeError, match="must be a mapping"):
+        _sandbox(docker_env=["DOCKER_HOST", "tcp://example.invalid"])
+
+    configured = _sandbox(docker_env={"DOCKER_HOST": "unix:///var/run/docker.sock"})
+    assert configured.docker_env == {"DOCKER_HOST": "unix:///var/run/docker.sock"}

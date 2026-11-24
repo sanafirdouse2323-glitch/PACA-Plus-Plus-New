@@ -12,7 +12,6 @@ from __future__ import annotations
 import contextlib
 import json
 import math
-import os
 import re
 import shutil
 import subprocess
@@ -125,15 +124,13 @@ class DockerSandbox:
             or not 0.1 <= cpu_limit <= 8.0
         ):
             raise ValueError("cpu_limit must be between 0.1 and 8.0")
-        supplied_env = (
-            dict(docker_env)
-            if docker_env is not None
-            else {
-                key: value
-                for key, value in os.environ.items()
-                if key in _DOCKER_ENV_ALLOWLIST
-            }
-        )
+        if docker_env is not None and not isinstance(docker_env, Mapping):
+            raise TypeError(
+                "docker_env must be a mapping of trusted Docker CLI settings"
+            )
+        # Do not inherit ambient daemon/context selection from the host process.
+        # A remote daemon or alternate Docker config must be an explicit operator choice.
+        supplied_env = dict(docker_env) if docker_env is not None else {}
         if set(supplied_env) - _DOCKER_ENV_ALLOWLIST:
             raise ValueError(
                 "docker_env contains variables outside the explicit Docker CLI allowlist"
@@ -194,6 +191,7 @@ class DockerSandbox:
             "--user=65534:65534",
             "--ipc=private",
             "--ulimit=nofile=64:64",
+            "--ulimit=core=0:0",
             f"--ulimit=fsize={self.max_output_bytes}:{self.max_output_bytes}",
             f"--tmpfs=/tmp:rw,noexec,nosuid,nodev,size={self.tmpfs_bytes}",
             "--workdir=/tmp",
