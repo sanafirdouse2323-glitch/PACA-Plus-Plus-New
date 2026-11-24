@@ -85,3 +85,11 @@ Security-critical dependency failure defaults to denial. A timeout after a remot
 ## 9. Limits
 
 This contract bundle is a schema and design artefact. It does not yet provide a production encoder/verifier, authenticated broker session, identity provider, resource adapter, remote provider commit protocol or independent interoperability test suite.
+
+## 10. Reference-core primitives
+
+The `paca.contracts` package provides strict JSON parsing, RFC 8785 canonical UTF-8 bytes, domain-separated SHA-256 object digests and optional schema validation. Install the `protocol` extra to enable these helpers. The package does not verify signatures, establish the authenticated broker session, evaluate authority, check revocation or perform protected resource operations.
+
+Canonical JSON input rejects duplicate object member names, non-JSON constants, invalid UTF-8, unpaired Unicode surrogates and integer values outside the I-JSON exact integer range. Exact large integer values must be encoded as decimal strings. Unicode strings are not normalised.
+
+The `validate_message` function checks only the versioned JSON Schema. A structurally valid proof field remains unverified until a future trusted key-verification service validates it against authenticated issuer, message type and audience configuration.

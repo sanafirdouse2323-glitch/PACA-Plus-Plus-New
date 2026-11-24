@@ -45,6 +45,7 @@ python -m pip install -e ".[dev,agentdojo]"
 python -m pip install -e ".[dev,langgraph]"
 python -m pip install -e ".[dev,langgraph-postgres]"
 python -m pip install -e ".[providers]"
+python -m pip install -e ".[protocol]"
 python -m pip install -e ".[postgres]"
 ```
 
@@ -87,6 +88,7 @@ Do not deploy PAC++ New as the sole security control protecting company data, ac
 ## Documentation map
 
 - [Open, platform-independent architecture specification](docs/ARCHITECTURE_SPECIFICATION.md) — proposed target architecture (Draft v0.2.0; not an implementation or security guarantee).
+- [Protocol SDK and conformance tests](paca/contracts/) — canonical JSON, domain-separated digests and structural validation helpers.
 - [Versioned protocol contracts v1.0.0](contracts/v1.0.0/README.md) — JSON Schemas and message-security semantics.
 - [Security semantics](docs/SECURITY_SEMANTICS.md) — delegation, provenance, revocation and commit state rules.
 - [Current implementation status and next gates](docs/security-roadmap.md)

@@ -1,0 +1,1890 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:paca:contracts:v1.0.0:paca-contracts",
+  "title": "PACA++ Protocol Contracts v1.0.0",
+  "description": "Platform-neutral message contracts. Authentication, canonicalisation and cross-field semantic checks are additionally mandatory.",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/identity_context"
+    },
+    {
+      "$ref": "#/$defs/provenance_evidence"
+    },
+    {
+      "$ref": "#/$defs/policy_request"
+    },
+    {
+      "$ref": "#/$defs/policy_response"
+    },
+    {
+      "$ref": "#/$defs/authorization_grant"
+    },
+    {
+      "$ref": "#/$defs/pep_invocation"
+    },
+    {
+      "$ref": "#/$defs/commit_permit"
+    },
+    {
+      "$ref": "#/$defs/broker_operation"
+    },
+    {
+      "$ref": "#/$defs/isolation_profile"
+    },
+    {
+      "$ref": "#/$defs/audit_event"
+    }
+  ],
+  "$defs": {
+    "id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/@+-]{0,255}$"
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "maxLength": 40
+    },
+    "digest": {
+      "type": "object",
+      "properties": {
+        "algorithm": {
+          "const": "sha-256"
+        },
+        "value": {
+          "type": "string",
+          "minLength": 64,
+          "maxLength": 64,
+          "pattern": "^[a-f0-9]{64}$"
+        }
+      },
+      "required": [
+        "algorithm",
+        "value"
+      ],
+      "additionalProperties": false
+    },
+    "proof": {
+      "type": "object",
+      "properties": {
+        "key_id": {
+          "$ref": "#/$defs/id"
+        },
+        "algorithm": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9._-]+$"
+        },
+        "signature": {
+          "type": "string",
+          "minLength": 40,
+          "maxLength": 4096,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        }
+      },
+      "required": [
+        "key_id",
+        "algorithm",
+        "signature"
+      ],
+      "additionalProperties": false
+    },
+    "principal": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "enum": [
+            "human",
+            "agent",
+            "service",
+            "workload",
+            "provider"
+          ]
+        },
+        "id": {
+          "$ref": "#/$defs/id"
+        }
+      },
+      "required": [
+        "kind",
+        "id"
+      ],
+      "additionalProperties": false
+    },
+    "resource": {
+      "type": "object",
+      "properties": {
+        "resource_type": {
+          "$ref": "#/$defs/id"
+        },
+        "resource_id": {
+          "$ref": "#/$defs/id"
+        },
+        "provider": {
+          "$ref": "#/$defs/id"
+        },
+        "version_id": {
+          "$ref": "#/$defs/id"
+        },
+        "precondition_digest": {
+          "$ref": "#/$defs/digest"
+        }
+      },
+      "required": [
+        "resource_type",
+        "resource_id"
+      ],
+      "additionalProperties": false
+    },
+    "evidence_ref": {
+      "type": "object",
+      "properties": {
+        "evidence_id": {
+          "$ref": "#/$defs/id"
+        },
+        "digest": {
+          "$ref": "#/$defs/digest"
+        }
+      },
+      "required": [
+        "evidence_id",
+        "digest"
+      ],
+      "additionalProperties": false
+    },
+    "provenance_ref": {
+      "type": "object",
+      "properties": {
+        "object_id": {
+          "$ref": "#/$defs/id"
+        },
+        "version_id": {
+          "$ref": "#/$defs/id"
+        },
+        "content_digest": {
+          "$ref": "#/$defs/digest"
+        }
+      },
+      "required": [
+        "object_id",
+        "version_id",
+        "content_digest"
+      ],
+      "additionalProperties": false
+    },
+    "resource_predicate": {
+      "type": "object",
+      "properties": {
+        "predicate_type": {
+          "$ref": "#/$defs/id"
+        },
+        "operator": {
+          "enum": [
+            "equals",
+            "in",
+            "prefix",
+            "path-beneath",
+            "uri-origin",
+            "provider-object",
+            "custom"
+          ]
+        },
+        "value": {
+          "type": [
+            "string",
+            "array",
+            "object"
+          ],
+          "maxLength": 4096
+        }
+      },
+      "required": [
+        "predicate_type",
+        "operator",
+        "value"
+      ],
+      "additionalProperties": false
+    },
+    "obligation": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "$ref": "#/$defs/id"
+        },
+        "parameters": {
+          "type": "object"
+        }
+      },
+      "required": [
+        "type"
+      ],
+      "additionalProperties": false
+    },
+    "identity_context": {
+      "type": "object",
+      "properties": {
+        "message_id": {
+          "$ref": "#/$defs/id"
+        },
+        "message_type": {
+          "const": "paca.identity-context.v1"
+        },
+        "contract_version": {
+          "const": "1.0.0"
+        },
+        "created_at": {
+          "$ref": "#/$defs/timestamp"
+        },
+        "issuer": {
+          "$ref": "#/$defs/id"
+        },
+        "audience": {
+          "$ref": "#/$defs/id"
+        },
+        "correlation_id": {
+          "$ref": "#/$defs/id"
+        },
+        "proof": {
+          "$ref": "#/$defs/proof"
+        },
+        "subject": {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "enum": [
+                "human",
+                "agent",
+                "service",
+                "workload",
+                "provider"
+              ]
+            },
+            "id": {
+              "$ref": "#/$defs/id"
+            }
+          },
+          "required": [
+            "kind",
+            "id"
+          ],
+          "additionalProperties": false
+        },
+        "workload": {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "enum": [
+                "human",
+                "agent",
+                "service",
+                "workload",
+                "provider"
+              ]
+            },
+            "id": {
+              "$ref": "#/$defs/id"
+            }
+          },
+          "required": [
+            "kind",
+            "id"
+          ],
+          "additionalProperties": false
+        },
+        "tenant_id": {
+          "$ref": "#/$defs/id"
+        },
+        "task_id": {
+          "$ref": "#/$defs/id"
+        },
+        "purpose": {
+          "$ref": "#/$defs/id"
+        },
+        "session_id": {
+          "$ref": "#/$defs/id"
+        },
+        "authentication": {
+          "type": "object",
+          "properties": {
+            "method": {
+              "enum": [
+                "oidc",
+                "workload_identity",
+                "mutual_tls",
+                "platform_attestation",
+                "other"
+              ]
+            },
+            "issuer": {
+              "type": "string",
+              "format": "uri"
+            },
+            "subject_id": {
+              "$ref": "#/$defs/id"
+            },
+            "credential_digest": {
+              "$ref": "#/$defs/digest"
+            },
+            "authenticated_at": {
+              "$ref": "#/$defs/timestamp"
+            },
+            "expires_at": {
+              "$ref": "#/$defs/timestamp"
+            }
+          },
+          "required": [
+            "method",
+            "issuer",
+            "subject_id",
+            "credential_digest",
+            "authenticated_at",
+            "expires_at"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "message_id",
+        "message_type",
+        "contract_version",
+        "created_at",
+        "issuer",
+        "audience",
+        "proof",
+        "subject",
+        "workload",
+        "tenant_id",
+        "task_id",
+        "purpose",
+        "session_id",
+        "authentication"
+      ],
+      "additionalProperties": false
+    },
+    "provenance_evidence": {
+      "type": "object",
+      "properties": {
+        "message_id": {
+          "$ref": "#/$defs/id"
+        },
+        "message_type": {
+          "const": "paca.provenance-evidence.v1"
+        },
+        "contract_version": {
+          "const": "1.0.0"
+        },
+        "created_at": {
+          "$ref": "#/$defs/timestamp"
+        },
+        "issuer": {
+          "$ref": "#/$defs/id"
+        },
+        "audience": {
+          "$ref": "#/$defs/id"
+        },
+        "correlation_id": {
+          "$ref": "#/$defs/id"
+        },
+        "proof": {
+          "$ref": "#/$defs/proof"
+        },
+        "object_id": {
+          "$ref": "#/$defs/id"
+        },
+        "version_id": {
+          "$ref": "#/$defs/id"
+        },
+        "content_digest": {
+          "$ref": "#/$defs/digest"
+        },
+        "source": {
+          "type": "object",
+          "properties": {
+            "source_class": {
+              "enum": [
+                "user_instruction",
+                "organisation_policy",
+                "external_content",
+                "tool_output",
+                "memory",
+                "peer_agent_message",
+                "model_generated",
+                "other"
+              ]
+            },
+            "source_id": {
+              "$ref": "#/$defs/id"
+            },
+            "source_principal": {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "enum": [
+                    "human",
+                    "agent",
+                    "service",
+                    "workload",
+                    "provider"
+                  ]
+                },
+                "id": {
+                  "$ref": "#/$defs/id"
+                }
+              },
+              "required": [
+                "kind",
+                "id"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "source_class",
+            "source_id"
+          ],
+          "additionalProperties": false
+        },
+        "label": {
+          "type": "object",
+          "properties": {
+            "integrity": {
+              "enum": [
+                "trusted",
+                "untrusted"
+              ]
+            },
+            "sensitivity": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 3
+            },
+            "tenant_binding": {
+              "enum": [
+                "known",
+                "mixed",
+                "unknown"
+              ]
+            },
+            "tenant_ids": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/id"
+              },
+              "uniqueItems": true
+            },
+            "origins": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/id"
+              },
+              "uniqueItems": true
+            }
+          },
+          "required": [
+            "integrity",
+            "sensitivity",
+            "tenant_binding",
+            "tenant_ids",
+            "origins"
+          ],
+          "additionalProperties": false
+        },
+        "parents": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "object_id": {
+                "$ref": "#/$defs/id"
+              },
+              "version_id": {
+                "$ref": "#/$defs/id"
+              },
+              "content_digest": {
+                "$ref": "#/$defs/digest"
+              }
+            },
+            "required": [
+              "object_id",
+              "version_id",
+              "content_digest"
+            ],
+            "additionalProperties": false
+          },
+          "uniqueItems": true,
+          "maxItems": 256
+        },
+        "transformation": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "$ref": "#/$defs/id"
+            },
+            "implementation_digest": {
+              "$ref": "#/$defs/digest"
+            },
+            "actor_ref": {
+              "$ref": "#/$defs/id"
+            }
+          },
+          "required": [
+            "name"
+          ],
+          "additionalProperties": false
+        },
+        "purpose": {
+          "$ref": "#/$defs/id"
+        },
+        "captured_at": {
+          "$ref": "#/$defs/timestamp"
+        },
+        "expires_at": {
+          "$ref": "#/$defs/timestamp"
+        }
+      },
+      "required": [
+        "message_id",
+        "message_type",
+        "contract_version",
+        "created_at",
+        "issuer",
+        "audience",
+        "proof",
+        "object_id",
+        "version_id",
+        "content_digest",
+        "source",
+        "label",
+        "parents",
+        "captured_at"
+      ],
+      "additionalProperties": false
+    },
+    "policy_request": {
+      "type": "object",
+      "properties": {
+        "message_id": {
+          "$ref": "#/$defs/id"
+        },
+        "message_type": {
+          "const": "paca.policy-evaluation.request.v1"
+        },
+        "contract_version": {
+          "const": "1.0.0"
+        },
+        "created_at": {
+          "$ref": "#/$defs/timestamp"
+        },
+        "issuer": {
+          "$ref": "#/$defs/id"
+        },
+        "audience": {
+          "$ref": "#/$defs/id"
+        },
+        "correlation_id": {
+          "$ref": "#/$defs/id"
+        },
+        "proof": {
+          "$ref": "#/$defs/proof"
+        },
+        "request_id": {
+          "$ref": "#/$defs/id"
+        },
+        "subject_ref": {
+          "$ref": "#/$defs/id"
+        },
+        "tenant_id": {
+          "$ref": "#/$defs/id"
+        },
+        "task_id": {
+          "$ref": "#/$defs/id"
+        },
+        "purpose": {
+          "$ref": "#/$defs/id"
+        },
+        "action": {
+          "$ref": "#/$defs/id"
+        },
+        "resource": {
+          "type": "object",
+          "properties": {
+            "resource_type": {
+              "$ref": "#/$defs/id"
+            },
+            "resource_id": {
+              "$ref": "#/$defs/id"
+            },
+            "provider": {
+              "$ref": "#/$defs/id"
+            },
+            "version_id": {
+              "$ref": "#/$defs/id"
+            },
+            "precondition_digest": {
+              "$ref": "#/$defs/digest"
+            }
+          },
+          "required": [
+            "resource_type",
+            "resource_id"
+          ],
+          "additionalProperties": false
+        },
+        "destination": {
+          "$ref": "#/$defs/id"
+        },
+        "arguments_digest": {
+          "$ref": "#/$defs/digest"
+        },
+        "provenance_refs": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "object_id": {
+                "$ref": "#/$defs/id"
+              },
+              "version_id": {
+                "$ref": "#/$defs/id"
+              },
+              "content_digest": {
+                "$ref": "#/$defs/digest"
+              }
+            },
+            "required": [
+              "object_id",
+              "version_id",
+              "content_digest"
+            ],
+            "additionalProperties": false
+          },
+          "uniqueItems": true,
+          "maxItems": 256
+        },
+        "authority_ref": {
+          "$ref": "#/$defs/id"
+        },
+        "requested_obligations": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/id"
+          },
+          "uniqueItems": true
+        }
+      },
+      "required": [
+        "message_id",
+        "message_type",
+        "contract_version",
+        "created_at",
+        "issuer",
+        "audience",
+        "proof",
+        "request_id",
+        "subject_ref",
+        "tenant_id",
+        "task_id",
+        "purpose",
+        "action",
+        "resource",
+        "arguments_digest",
+        "provenance_refs"
+      ],
+      "additionalProperties": false
+    },
+    "policy_response": {
+      "type": "object",
+      "properties": {
+        "message_id": {
+          "$ref": "#/$defs/id"
+        },
+        "message_type": {
+          "const": "paca.policy-evaluation.response.v1"
+        },
+        "contract_version": {
+          "const": "1.0.0"
+        },
+        "created_at": {
+          "$ref": "#/$defs/timestamp"
+        },
+        "issuer": {
+          "$ref": "#/$defs/id"
+        },
+        "audience": {
+          "$ref": "#/$defs/id"
+        },
+        "correlation_id": {
+          "$ref": "#/$defs/id"
+        },
+        "proof": {
+          "$ref": "#/$defs/proof"
+        },
+        "decision_id": {
+          "$ref": "#/$defs/id"
+        },
+        "request_digest": {
+          "$ref": "#/$defs/digest"
+        },
+        "decision": {
+          "enum": [
+            "allow",
+            "deny",
+            "require_approval",
+            "allow_with_obligations"
+          ]
+        },
+        "policy_id": {
+          "$ref": "#/$defs/id"
+        },
+        "policy_version": {
+          "$ref": "#/$defs/id"
+        },
+        "policy_epoch": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "reason_codes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/id"
+          },
+          "uniqueItems": true,
+          "maxItems": 128
+        },
+        "obligations": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "type": {
+                "$ref": "#/$defs/id"
+              },
+              "parameters": {
+                "type": "object"
+              }
+            },
+            "required": [
+              "type"
+            ],
+            "additionalProperties": false
+          },
+          "maxItems": 128
+        },
+        "approval_evidence": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "evidence_id": {
+                "$ref": "#/$defs/id"
+              },
+              "digest": {
+                "$ref": "#/$defs/digest"
+              }
+            },
+            "required": [
+              "evidence_id",
+              "digest"
+            ],
+            "additionalProperties": false
+          },
+          "uniqueItems": true,
+          "maxItems": 64
+        }
+      },
+      "required": [
+        "message_id",
+        "message_type",
+        "contract_version",
+        "created_at",
+        "issuer",
+        "audience",
+        "proof",
+        "decision_id",
+        "request_digest",
+        "decision",
+        "policy_id",
+        "policy_version",
+        "policy_epoch",
+        "reason_codes",
+        "obligations"
+      ],
+      "additionalProperties": false
+    },
+    "authorization_grant": {
+      "type": "object",
+      "properties": {
+        "message_id": {
+          "$ref": "#/$defs/id"
+        },
+        "message_type": {
+          "const": "paca.authorization-grant.v1"
+        },
+        "contract_version": {
+          "const": "1.0.0"
+        },
+        "created_at": {
+          "$ref": "#/$defs/timestamp"
+        },
+        "issuer": {
+          "$ref": "#/$defs/id"
+        },
+        "audience": {
+          "$ref": "#/$defs/id"
+        },
+        "correlation_id": {
+          "$ref": "#/$defs/id"
+        },
+        "proof": {
+          "$ref": "#/$defs/proof"
+        },
+        "grant_id": {
+          "$ref": "#/$defs/id"
+        },
+        "subject": {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "enum": [
+                "human",
+                "agent",
+                "service",
+                "workload",
+                "provider"
+              ]
+            },
+            "id": {
+              "$ref": "#/$defs/id"
+            }
+          },
+          "required": [
+            "kind",
+            "id"
+          ],
+          "additionalProperties": false
+        },
+        "tenant_id": {
+          "$ref": "#/$defs/id"
+        },
+        "task_id": {
+          "$ref": "#/$defs/id"
+        },
+        "purpose": {
+          "$ref": "#/$defs/id"
+        },
+        "grant_audience": {
+          "$ref": "#/$defs/id"
+        },
+        "actions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/id"
+          },
+          "uniqueItems": true,
+          "minItems": 1,
+          "maxItems": 256
+        },
+        "resource_scope": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "predicate_type": {
+                "$ref": "#/$defs/id"
+              },
+              "operator": {
+                "enum": [
+                  "equals",
+                  "in",
+                  "prefix",
+                  "path-beneath",
+                  "uri-origin",
+                  "provider-object",
+                  "custom"
+                ]
+              },
+              "value": {
+                "type": [
+                  "string",
+                  "array",
+                  "object"
+                ],
+                "maxLength": 4096
+              }
+            },
+            "required": [
+              "predicate_type",
+              "operator",
+              "value"
+            ],
+            "additionalProperties": false
+          },
+          "minItems": 1,
+          "maxItems": 256
+        },
+        "data_constraints": {
+          "type": "object",
+          "properties": {
+            "max_sensitivity": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 3
+            },
+            "allowed_integrity": {
+              "type": "array",
+              "items": {
+                "enum": [
+                  "trusted",
+                  "untrusted"
+                ]
+              },
+              "uniqueItems": true,
+              "minItems": 1
+            },
+            "allowed_tenants": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/id"
+              },
+              "uniqueItems": true
+            },
+            "unknown_tenant_allowed": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "max_sensitivity",
+            "allowed_integrity",
+            "allowed_tenants",
+            "unknown_tenant_allowed"
+          ],
+          "additionalProperties": false
+        },
+        "destinations": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/id"
+          },
+          "uniqueItems": true
+        },
+        "parent_grant_id": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 256
+        },
+        "delegation_subjects": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "enum": [
+                  "human",
+                  "agent",
+                  "service",
+                  "workload",
+                  "provider"
+                ]
+              },
+              "id": {
+                "$ref": "#/$defs/id"
+              }
+            },
+            "required": [
+              "kind",
+              "id"
+            ],
+            "additionalProperties": false
+          },
+          "uniqueItems": true
+        },
+        "not_before": {
+          "$ref": "#/$defs/timestamp"
+        },
+        "expires_at": {
+          "$ref": "#/$defs/timestamp"
+        },
+        "policy_epoch": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "usage_limits": {
+          "type": "object",
+          "properties": {
+            "max_operations": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            },
+            "max_bytes": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "max_cost_microunits": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 0,
+              "maximum": 9007199254740991
+            }
+          },
+          "required": [
+            "max_operations"
+          ],
+          "additionalProperties": false
+        },
+        "requires_approval": {
+          "type": "boolean"
+        },
+        "approval_refs": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "evidence_id": {
+                "$ref": "#/$defs/id"
+              },
+              "digest": {
+                "$ref": "#/$defs/digest"
+              }
+            },
+            "required": [
+              "evidence_id",
+              "digest"
+            ],
+            "additionalProperties": false
+          },
+          "uniqueItems": true
+        },
+        "grant_digest": {
+          "$ref": "#/$defs/digest"
+        }
+      },
+      "required": [
+        "message_id",
+        "message_type",
+        "contract_version",
+        "created_at",
+        "issuer",
+        "audience",
+        "proof",
+        "grant_id",
+        "subject",
+        "tenant_id",
+        "task_id",
+        "purpose",
+        "grant_audience",
+        "actions",
+        "resource_scope",
+        "data_constraints",
+        "destinations",
+        "not_before",
+        "expires_at",
+        "policy_epoch",
+        "usage_limits",
+        "requires_approval",
+        "grant_digest"
+      ],
+      "additionalProperties": false
+    },
+    "pep_invocation": {
+      "type": "object",
+      "properties": {
+        "message_id": {
+          "$ref": "#/$defs/id"
+        },
+        "message_type": {
+          "const": "paca.pep-invocation.v1"
+        },
+        "contract_version": {
+          "const": "1.0.0"
+        },
+        "created_at": {
+          "$ref": "#/$defs/timestamp"
+        },
+        "issuer": {
+          "$ref": "#/$defs/id"
+        },
+        "audience": {
+          "$ref": "#/$defs/id"
+        },
+        "correlation_id": {
+          "$ref": "#/$defs/id"
+        },
+        "proof": {
+          "$ref": "#/$defs/proof"
+        },
+        "operation_id": {
+          "$ref": "#/$defs/id"
+        },
+        "phase": {
+          "enum": [
+            "pre_input",
+            "pre_read",
+            "pre_memory_write",
+            "pre_plan_transition",
+            "pre_delegation",
+            "pre_message",
+            "pre_tool",
+            "pre_effect",
+            "pre_commit"
+          ]
+        },
+        "subject_ref": {
+          "$ref": "#/$defs/id"
+        },
+        "tenant_id": {
+          "$ref": "#/$defs/id"
+        },
+        "task_id": {
+          "$ref": "#/$defs/id"
+        },
+        "purpose": {
+          "$ref": "#/$defs/id"
+        },
+        "action": {
+          "$ref": "#/$defs/id"
+        },
+        "resource": {
+          "type": "object",
+          "properties": {
+            "resource_type": {
+              "$ref": "#/$defs/id"
+            },
+            "resource_id": {
+              "$ref": "#/$defs/id"
+            },
+            "provider": {
+              "$ref": "#/$defs/id"
+            },
+            "version_id": {
+              "$ref": "#/$defs/id"
+            },
+            "precondition_digest": {
+              "$ref": "#/$defs/digest"
+            }
+          },
+          "required": [
+            "resource_type",
+            "resource_id"
+          ],
+          "additionalProperties": false
+        },
+        "destination": {
+          "$ref": "#/$defs/id"
+        },
+        "arguments_digest": {
+          "$ref": "#/$defs/digest"
+        },
+        "tool_implementation_digest": {
+          "$ref": "#/$defs/digest"
+        },
+        "authority_grant_ref": {
+          "$ref": "#/$defs/id"
+        },
+        "provenance_refs": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "object_id": {
+                "$ref": "#/$defs/id"
+              },
+              "version_id": {
+                "$ref": "#/$defs/id"
+              },
+              "content_digest": {
+                "$ref": "#/$defs/digest"
+              }
+            },
+            "required": [
+              "object_id",
+              "version_id",
+              "content_digest"
+            ],
+            "additionalProperties": false
+          },
+          "uniqueItems": true,
+          "maxItems": 256
+        },
+        "policy_epoch": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "message_id",
+        "message_type",
+        "contract_version",
+        "created_at",
+        "issuer",
+        "audience",
+        "proof",
+        "operation_id",
+        "phase",
+        "subject_ref",
+        "tenant_id",
+        "task_id",
+        "purpose",
+        "action",
+        "resource",
+        "arguments_digest",
+        "authority_grant_ref",
+        "provenance_refs",
+        "policy_epoch"
+      ],
+      "additionalProperties": false
+    },
+    "commit_permit": {
+      "type": "object",
+      "properties": {
+        "message_id": {
+          "$ref": "#/$defs/id"
+        },
+        "message_type": {
+          "const": "paca.commit-permit.v1"
+        },
+        "contract_version": {
+          "const": "1.0.0"
+        },
+        "created_at": {
+          "$ref": "#/$defs/timestamp"
+        },
+        "issuer": {
+          "$ref": "#/$defs/id"
+        },
+        "audience": {
+          "$ref": "#/$defs/id"
+        },
+        "correlation_id": {
+          "$ref": "#/$defs/id"
+        },
+        "proof": {
+          "$ref": "#/$defs/proof"
+        },
+        "permit_id": {
+          "$ref": "#/$defs/id"
+        },
+        "grant_id": {
+          "$ref": "#/$defs/id"
+        },
+        "operation_id": {
+          "$ref": "#/$defs/id"
+        },
+        "subject": {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "enum": [
+                "human",
+                "agent",
+                "service",
+                "workload",
+                "provider"
+              ]
+            },
+            "id": {
+              "$ref": "#/$defs/id"
+            }
+          },
+          "required": [
+            "kind",
+            "id"
+          ],
+          "additionalProperties": false
+        },
+        "tenant_id": {
+          "$ref": "#/$defs/id"
+        },
+        "task_id": {
+          "$ref": "#/$defs/id"
+        },
+        "purpose": {
+          "$ref": "#/$defs/id"
+        },
+        "action": {
+          "$ref": "#/$defs/id"
+        },
+        "resource": {
+          "type": "object",
+          "properties": {
+            "resource_type": {
+              "$ref": "#/$defs/id"
+            },
+            "resource_id": {
+              "$ref": "#/$defs/id"
+            },
+            "provider": {
+              "$ref": "#/$defs/id"
+            },
+            "version_id": {
+              "$ref": "#/$defs/id"
+            },
+            "precondition_digest": {
+              "$ref": "#/$defs/digest"
+            }
+          },
+          "required": [
+            "resource_type",
+            "resource_id"
+          ],
+          "additionalProperties": false
+        },
+        "destination": {
+          "$ref": "#/$defs/id"
+        },
+        "arguments_digest": {
+          "$ref": "#/$defs/digest"
+        },
+        "payload_digest": {
+          "$ref": "#/$defs/digest"
+        },
+        "resource_version_precondition": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 256
+        },
+        "policy_epoch": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "issued_at": {
+          "$ref": "#/$defs/timestamp"
+        },
+        "expires_at": {
+          "$ref": "#/$defs/timestamp"
+        },
+        "nonce": {
+          "type": "string",
+          "minLength": 16,
+          "maxLength": 256
+        },
+        "idempotency_key": {
+          "$ref": "#/$defs/id"
+        },
+        "single_use": {
+          "const": true
+        }
+      },
+      "required": [
+        "message_id",
+        "message_type",
+        "contract_version",
+        "created_at",
+        "issuer",
+        "audience",
+        "proof",
+        "permit_id",
+        "grant_id",
+        "operation_id",
+        "subject",
+        "tenant_id",
+        "task_id",
+        "purpose",
+        "action",
+        "resource",
+        "destination",
+        "arguments_digest",
+        "payload_digest",
+        "policy_epoch",
+        "issued_at",
+        "expires_at",
+        "nonce",
+        "idempotency_key",
+        "single_use"
+      ],
+      "additionalProperties": false
+    },
+    "broker_operation": {
+      "type": "object",
+      "properties": {
+        "message_id": {
+          "$ref": "#/$defs/id"
+        },
+        "message_type": {
+          "const": "paca.broker-operation.v1"
+        },
+        "contract_version": {
+          "const": "1.0.0"
+        },
+        "created_at": {
+          "$ref": "#/$defs/timestamp"
+        },
+        "issuer": {
+          "$ref": "#/$defs/id"
+        },
+        "audience": {
+          "$ref": "#/$defs/id"
+        },
+        "correlation_id": {
+          "$ref": "#/$defs/id"
+        },
+        "proof": {
+          "$ref": "#/$defs/proof"
+        },
+        "operation_id": {
+          "$ref": "#/$defs/id"
+        },
+        "session_id": {
+          "$ref": "#/$defs/id"
+        },
+        "channel_binding_digest": {
+          "$ref": "#/$defs/digest"
+        },
+        "request_nonce": {
+          "type": "string",
+          "minLength": 16,
+          "maxLength": 256
+        },
+        "operation": {
+          "enum": [
+            "read",
+            "query",
+            "write",
+            "delete",
+            "send",
+            "execute"
+          ]
+        },
+        "resource": {
+          "type": "object",
+          "properties": {
+            "resource_type": {
+              "$ref": "#/$defs/id"
+            },
+            "resource_id": {
+              "$ref": "#/$defs/id"
+            },
+            "provider": {
+              "$ref": "#/$defs/id"
+            },
+            "version_id": {
+              "$ref": "#/$defs/id"
+            },
+            "precondition_digest": {
+              "$ref": "#/$defs/digest"
+            }
+          },
+          "required": [
+            "resource_type",
+            "resource_id"
+          ],
+          "additionalProperties": false
+        },
+        "authorization_grant_ref": {
+          "$ref": "#/$defs/id"
+        },
+        "commit_permit_ref": {
+          "$ref": "#/$defs/id"
+        },
+        "payload": {
+          "type": "object"
+        },
+        "payload_digest": {
+          "$ref": "#/$defs/digest"
+        },
+        "idempotency_key": {
+          "$ref": "#/$defs/id"
+        },
+        "read_constraints": {
+          "type": "object",
+          "properties": {
+            "max_bytes": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            },
+            "expected_version": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "maxLength": 256
+            },
+            "fields": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/id"
+              },
+              "uniqueItems": true
+            }
+          },
+          "required": [],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "message_id",
+        "message_type",
+        "contract_version",
+        "created_at",
+        "issuer",
+        "audience",
+        "proof",
+        "operation_id",
+        "session_id",
+        "channel_binding_digest",
+        "request_nonce",
+        "operation",
+        "resource",
+        "authorization_grant_ref"
+      ],
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "operation": {
+                "enum": [
+                  "write",
+                  "delete",
+                  "send",
+                  "execute"
+                ]
+              }
+            },
+            "required": [
+              "operation"
+            ]
+          },
+          "then": {
+            "required": [
+              "commit_permit_ref",
+              "idempotency_key",
+              "payload_digest"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "operation": {
+                "const": "write"
+              }
+            },
+            "required": [
+              "operation"
+            ]
+          },
+          "then": {
+            "required": [
+              "payload"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "operation": {
+                "enum": [
+                  "read",
+                  "query"
+                ]
+              }
+            },
+            "required": [
+              "operation"
+            ]
+          },
+          "then": {
+            "not": {
+              "required": [
+                "commit_permit_ref"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "isolation_profile": {
+      "type": "object",
+      "properties": {
+        "message_id": {
+          "$ref": "#/$defs/id"
+        },
+        "message_type": {
+          "const": "paca.isolation-profile.v1"
+        },
+        "contract_version": {
+          "const": "1.0.0"
+        },
+        "created_at": {
+          "$ref": "#/$defs/timestamp"
+        },
+        "issuer": {
+          "$ref": "#/$defs/id"
+        },
+        "audience": {
+          "$ref": "#/$defs/id"
+        },
+        "correlation_id": {
+          "$ref": "#/$defs/id"
+        },
+        "proof": {
+          "$ref": "#/$defs/proof"
+        },
+        "profile_id": {
+          "$ref": "#/$defs/id"
+        },
+        "adapter_id": {
+          "$ref": "#/$defs/id"
+        },
+        "implementation_digest": {
+          "$ref": "#/$defs/digest"
+        },
+        "configuration_digest": {
+          "$ref": "#/$defs/digest"
+        },
+        "status": {
+          "enum": [
+            "verified",
+            "partially_verified",
+            "unavailable",
+            "failed"
+          ]
+        },
+        "requested_capabilities": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/id"
+          },
+          "uniqueItems": true
+        },
+        "enforced_capabilities": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/id"
+          },
+          "uniqueItems": true
+        },
+        "unsupported_capabilities": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/id"
+          },
+          "uniqueItems": true
+        },
+        "evidence_refs": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "evidence_id": {
+                "$ref": "#/$defs/id"
+              },
+              "digest": {
+                "$ref": "#/$defs/digest"
+              }
+            },
+            "required": [
+              "evidence_id",
+              "digest"
+            ],
+            "additionalProperties": false
+          },
+          "uniqueItems": true
+        },
+        "validation_method": {
+          "enum": [
+            "conformance_test",
+            "trusted_attestation",
+            "operator_assertion",
+            "unknown"
+          ]
+        }
+      },
+      "required": [
+        "message_id",
+        "message_type",
+        "contract_version",
+        "created_at",
+        "issuer",
+        "audience",
+        "proof",
+        "profile_id",
+        "adapter_id",
+        "implementation_digest",
+        "configuration_digest",
+        "status",
+        "requested_capabilities",
+        "enforced_capabilities",
+        "unsupported_capabilities",
+        "evidence_refs",
+        "validation_method"
+      ],
+      "additionalProperties": false
+    },
+    "audit_event": {
+      "type": "object",
+      "properties": {
+        "message_id": {
+          "$ref": "#/$defs/id"
+        },
+        "message_type": {
+          "const": "paca.audit-event.v1"
+        },
+        "contract_version": {
+          "const": "1.0.0"
+        },
+        "created_at": {
+          "$ref": "#/$defs/timestamp"
+        },
+        "issuer": {
+          "$ref": "#/$defs/id"
+        },
+        "audience": {
+          "$ref": "#/$defs/id"
+        },
+        "correlation_id": {
+          "$ref": "#/$defs/id"
+        },
+        "proof": {
+          "$ref": "#/$defs/proof"
+        },
+        "event_id": {
+          "$ref": "#/$defs/id"
+        },
+        "event_type": {
+          "enum": [
+            "decision",
+            "denial",
+            "approval",
+            "delegation",
+            "revocation",
+            "resource_read",
+            "commit_attempt",
+            "commit_success",
+            "commit_failure",
+            "commit_uncertain",
+            "recovery",
+            "adapter_failure",
+            "policy_change"
+          ]
+        },
+        "occurred_at": {
+          "$ref": "#/$defs/timestamp"
+        },
+        "outcome": {
+          "enum": [
+            "success",
+            "denied",
+            "failed",
+            "uncertain"
+          ]
+        },
+        "subject_ref": {
+          "$ref": "#/$defs/id"
+        },
+        "tenant_id": {
+          "$ref": "#/$defs/id"
+        },
+        "task_id": {
+          "$ref": "#/$defs/id"
+        },
+        "operation_id": {
+          "$ref": "#/$defs/id"
+        },
+        "action": {
+          "$ref": "#/$defs/id"
+        },
+        "resource": {
+          "type": "object",
+          "properties": {
+            "resource_type": {
+              "$ref": "#/$defs/id"
+            },
+            "resource_id": {
+              "$ref": "#/$defs/id"
+            },
+            "provider": {
+              "$ref": "#/$defs/id"
+            },
+            "version_id": {
+              "$ref": "#/$defs/id"
+            },
+            "precondition_digest": {
+              "$ref": "#/$defs/digest"
+            }
+          },
+          "required": [
+            "resource_type",
+            "resource_id"
+          ],
+          "additionalProperties": false
+        },
+        "policy_version": {
+          "$ref": "#/$defs/id"
+        },
+        "policy_epoch": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "evidence_refs": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "evidence_id": {
+                "$ref": "#/$defs/id"
+              },
+              "digest": {
+                "$ref": "#/$defs/digest"
+              }
+            },
+            "required": [
+              "evidence_id",
+              "digest"
+            ],
+            "additionalProperties": false
+          },
+          "uniqueItems": true,
+          "maxItems": 256
+        },
+        "reason_codes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/id"
+          },
+          "uniqueItems": true,
+          "maxItems": 128
+        },
+        "details_digest": {
+          "$ref": "#/$defs/digest"
+        }
+      },
+      "required": [
+        "message_id",
+        "message_type",
+        "contract_version",
+        "created_at",
+        "issuer",
+        "audience",
+        "proof",
+        "event_id",
+        "event_type",
+        "occurred_at",
+        "outcome",
+        "evidence_refs",
+        "reason_codes"
+      ],
+      "additionalProperties": false
+    }
+  }
+}
