@@ -1113,8 +1113,7 @@ class HMACCapabilityAuthority:
             if not isinstance(value, str) or not value:
                 raise ValueError(name + " must be a non-empty string")
         if len(key_id) > 128 or any(
-            not character.isascii()
-            or not (character.isalnum() or character in "_-")
+            not character.isascii() or not (character.isalnum() or character in "_-")
             for character in key_id
         ):
             raise ValueError(
