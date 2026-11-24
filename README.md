@@ -29,7 +29,7 @@ The benchmark command writes `index.html` and `results.json` into the selected o
 | Policy enforcement | `paca/monitor.py`, `paca/runtime.py`, packaged PACA policy | Covers selected, explicitly mapped actions; it is not a universal framework hook. |
 | Provenance and memory | `paca/provenance.py`, `paca/durable.py`, `paca/memory.py` | Labels and lineage depend on trusted connectors; not every hidden model-context dependency is tracked automatically. |
 | Authority and revocation | `paca/authority_runtime.py`, `paca/postgres_authority.py` | PostgreSQL shares authority state across clients on one primary; it does not make every other store distributed. |
-| Local resource commits | Opt-in `SQLiteFencedResourceExecutor` for `write_file` and `mem_write` | Not a remote provider commit protocol and not enabled for every executor. |
+| Local resource commits | Opt-in backend-neutral `FencedResourceExecutor` for `write_file` and `mem_write` (with `SQLiteFencedResourceExecutor` retained as a compatibility alias) | SQLite and PostgreSQL fence logical resource writes in their respective authority registries; this is not a real filesystem write or a remote provider commit protocol, and the fence is not enabled for every executor. |
 | Framework adapters | AgentDojo, LangGraph store, LangChain middleware and PostgreSQL checkpoint adapters | Direct calls to underlying tools, stores or databases can bypass wrappers. |
 | Provider ingress | Read-only Gmail, Microsoft Graph, Slack and Qdrant connectors | CI uses mocked HTTP; production identity binding and live account validation remain deployment work. |
 | Process and network helpers | Optional Docker worker plus Linux filesystem/network primitives | The isolated worker is opt-in; helpers are not wired into every path. |
@@ -79,7 +79,7 @@ The current simulated PACA++ failures include E02 (agent-message propagation, wi
 - **External effects:** provider adapters are read-only. Local resource-commit fencing covers only selected local writes; remote provider-side authorization, idempotency and commit fencing are not implemented.
 - **Isolation and approvals:** Docker worker isolation is optional, not mandatory for every executor. A production approval service is not included; approval verification must be supplied by trusted host code.
 - **Evaluation:** there is no independent security audit, comprehensive host-level bypass evaluation or completed live-agent effectiveness study.
-- **Repository governance:** `main` currently has no active branch-protection ruleset or required review/check policy. A repository administrator must apply and verify the settings in `docs/REPOSITORY_SECURITY_CONFIGURATION.md`.
+- **Repository governance:** the last confirmed repository-settings inspection on 24 November 2026 found no active branch-protection ruleset. The current GitHub connection cannot read the branch-protection endpoint (403), so the live setting could not be rechecked in this update. A repository administrator must apply and verify the settings in `docs/REPOSITORY_SECURITY_CONFIGURATION.md`.
 
 Do not deploy PAC++ New as the sole security control protecting company data, accounts or autonomous business operations.
 
