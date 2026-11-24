@@ -101,3 +101,8 @@ The formal workflow now runs five finite-state models:
 | PACAInfoFlow | Conservative integrity join, maximum sensitivity join, explicit audited sensitivity declassification and no integrity promotion | Semantic truth of content, dynamic information-flow labels and source authenticity |
 
 These are bounded abstractions. TLC passing establishes that the specified invariants hold over the configured finite state space and transitions. It does not prove that Python code refines the models, that real resource operations are atomic, or that an execution platform is isolated.
+## 9. Reference message authentication primitive
+
+The current reference core implements Ed25519 message signing and verification with explicit key scopes: key ID, issuer, allowed audience set and allowed message types. It uses RFC 8785 canonical bytes and the message domain separator defined in Protocol Contracts v1.0.0. The verifier never dispatches to an algorithm selected by an untrusted message.
+
+This authenticates the message under the configured issuer key. It does not prove the truth of a principal claim in the payload, establish the broker's authenticated channel, distribute keys or protect private-key custody. Those remain separate identity/deployment requirements.

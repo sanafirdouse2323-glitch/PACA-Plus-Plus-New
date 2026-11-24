@@ -7,6 +7,8 @@ from pathlib import Path
 import pytest
 from jsonschema import Draft202012Validator
 
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+
 from paca.contracts import (
     CanonicalizationError,
     ContractValidationError,
@@ -153,6 +155,115 @@ def test_packaged_schema_matches_source_contract_schema() -> None:
     assert json.loads(source_schema.read_text(encoding="utf-8")) == json.loads(
         packaged_schema.read_text(encoding="utf-8")
     )
+
+
+
+
+def _base_message() -> dict[str, object]:
+    return {
+        "message_id": "signed-message-1",
+        "message_type": "paca.identity-context.v1",
+        "contract_version": "1.0.0",
+        "created_at": "2026-11-24T12:00:00Z",
+        "issuer": "identity-authority",
+        "audience": "paca-core",
+        "subject": {"kind": "agent", "id": "agent-1"},
+    }
+
+
+def test_ed25519_message_signature_verifies_with_scoped_key() -> None:
+    from paca.contracts import MessageSigner, MessageVerifier, TrustedMessageKey
+
+    private_key = Ed25519PrivateKey.generate()
+    signer = MessageSigner(
+        key_id="identity-key-1",
+        issuer="identity-authority",
+        audiences=frozenset({"paca-core"}),
+        private_key=private_key,
+    )
+    signed = signer.sign(_base_message())
+    verifier = MessageVerifier(
+        {
+            "identity-key-1": TrustedMessageKey(
+                public_key=private_key.public_key(),
+                issuer="identity-authority",
+                audiences=frozenset({"paca-core"}),
+                message_types=frozenset({"paca.identity-context.v1"}),
+            )
+        }
+    )
+    verified = verifier.verify(signed)
+    assert verified.key_id == "identity-key-1"
+    assert verified.issuer == "identity-authority"
+    assert verified.audience == "paca-core"
+
+
+def test_ed25519_message_signature_detects_payload_tampering() -> None:
+    from paca.contracts import MessageAuthenticationError, MessageSigner, MessageVerifier, TrustedMessageKey
+
+    private_key = Ed25519PrivateKey.generate()
+    signed = MessageSigner(
+        key_id="key-1",
+        issuer="identity-authority",
+        audiences=frozenset({"paca-core"}),
+        private_key=private_key,
+    ).sign(_base_message())
+    signed["subject"] = {"kind": "agent", "id": "attacker"}
+    verifier = MessageVerifier(
+        {
+            "key-1": TrustedMessageKey(
+                public_key=private_key.public_key(),
+                issuer="identity-authority",
+                audiences=frozenset({"paca-core"}),
+                message_types=frozenset({"paca.identity-context.v1"}),
+            )
+        }
+    )
+    with pytest.raises(MessageAuthenticationError):
+        verifier.verify(signed)
+
+
+def test_ed25519_message_key_is_scoped_to_issuer_audience_and_type() -> None:
+    from paca.contracts import MessageAuthenticationError, MessageSigner, MessageVerifier, TrustedMessageKey
+
+    private_key = Ed25519PrivateKey.generate()
+    signed = MessageSigner(
+        key_id="key-1",
+        issuer="identity-authority",
+        audiences=frozenset({"paca-core"}),
+        private_key=private_key,
+    ).sign(_base_message())
+    verifier = MessageVerifier(
+        {
+            "key-1": TrustedMessageKey(
+                public_key=private_key.public_key(),
+                issuer="another-issuer",
+                audiences=frozenset({"paca-core"}),
+                message_types=frozenset({"paca.identity-context.v1"}),
+            )
+        }
+    )
+    with pytest.raises(MessageAuthenticationError):
+        verifier.verify(signed)
+
+
+def test_message_signer_rejects_preexisting_proof_and_wrong_audience() -> None:
+    from paca.contracts import MessageSigner
+
+    private_key = Ed25519PrivateKey.generate()
+    signer = MessageSigner(
+        key_id="key-1",
+        issuer="identity-authority",
+        audiences=frozenset({"paca-core"}),
+        private_key=private_key,
+    )
+    signed = signer.sign(_base_message())
+    with pytest.raises(ValueError):
+        signer.sign(signed)
+    wrong_audience = _base_message()
+    wrong_audience["audience"] = "other-service"
+    with pytest.raises(ValueError):
+        signer.sign(wrong_audience)
 
 
 def test_source_schema_itself_is_valid() -> None:

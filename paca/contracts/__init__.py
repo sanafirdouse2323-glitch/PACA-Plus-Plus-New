@@ -7,7 +7,7 @@ from .canonical import (
     digest_object,
     parse_json,
 )
-from .validation import (
+from .signatures import (
     ContractValidationError,
     ProtocolDependencyError,
     validate_message,
@@ -17,7 +17,13 @@ __all__ = [
     "CanonicalizationError",
     "ContractValidationError",
     "InvalidJSONError",
+    "MessageAuthenticationError",
+    "MessageSigner",
+    "MessageSigningConfigurationError",
+    "MessageVerifier",
     "ProtocolDependencyError",
+    "TrustedMessageKey",
+    "VerifiedMessage",
     "canonicalize",
     "digest_object",
     "parse_json",

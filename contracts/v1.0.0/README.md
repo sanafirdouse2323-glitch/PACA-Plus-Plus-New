@@ -93,3 +93,17 @@ The `paca.contracts` package provides strict JSON parsing, RFC 8785 canonical UT
 Canonical JSON input rejects duplicate object member names, non-JSON constants, invalid UTF-8, unpaired Unicode surrogates and integer values outside the I-JSON exact integer range. Exact large integer values must be encoded as decimal strings. Unicode strings are not normalised.
 
 The `validate_message` function checks only the versioned JSON Schema. A structurally valid proof field remains unverified until a future trusted key-verification service validates it against authenticated issuer, message type and audience configuration.
+
+## 11. Ed25519 message signing and verification
+
+The reference core exposes `MessageSigner` and `MessageVerifier` in `paca.contracts.signatures`. The signer accepts an Ed25519 private key, key ID, issuer and permitted audiences. The verifier accepts a trusted key ring whose entries bind each public key to one issuer, an explicit audience set and an explicit message-type set.
+
+Signed bytes are:
+
+    UTF8("PACA++/MESSAGE/V1\\n" + message_type + "\\n") || JCS(message_without_proof)
+
+The proof is Ed25519 with unpadded base64url encoding. The verifier accepts only Ed25519, checks issuer/audience/type against trusted local configuration, removes the proof field and verifies the exact canonical content. A message cannot select a different algorithm by changing its proof field.
+
+Key generation, private-key custody, public-key distribution, rotation, compromise handling and issuer authorization remain deployment responsibilities. The verifier authenticates the configured message issuer/key scope; it does not independently prove that a user, agent or workload identity claim inside the message is true. That requires an authenticated identity authority or a transport/session binding.
+
+Schema validation and signature verification are separate operations. A caller should validate shape and verify the signature before using a message; neither step replaces the broker's current grant, revocation, quota or resource-boundary checks.
