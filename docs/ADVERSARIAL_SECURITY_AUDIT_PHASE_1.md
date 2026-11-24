@@ -121,16 +121,20 @@ The repository now includes Ed25519CapabilityAuthority, using a private-key-conf
 
 **Required control:** protect the Ed25519 private key using KMS/HSM or workload-bound signing, implement a versioned key ring with overlap and emergency revocation, distribute verifier public keys through authenticated configuration, and bind issuer calls to validated workload identity and authoritative tenant/task membership. Keep HMAC verifiers and keys out of production multi-service deployments.
 
-### A-09 — Provider integrations are interfaces, not production connectors
+### A-09 — Provider adapters require authenticated source capture and destination-side authorization
 
 **Severity:** High for real-world provider data/effects  
-**Status:** Open production blocker
+**Status:** Partially mitigated by read-only provider connectors; production identity binding and remote effects remain open
 
-The trusted connector adapter is a reference ingress abstraction. It does not itself authenticate to Gmail, Microsoft Graph, Slack, or a production vector database; fetch provider objects; bind provider tenant/user identity; capture source version/ETag; or enforce authorization at the provider's effect/commit endpoint.
+The phase-4 provider branch adds read-only HTTP adapters for Gmail messages.list/messages.get, Microsoft Graph /me/messages with constrained nextLink handling and separate Mail.ReadBasic metadata-only versus explicit Mail.Read body access, Slack conversations.history, and Qdrant points search. OAuth2RefreshTokenProvider performs HTTPS refresh-token exchanges, verifies configured/granted scopes, caches short-lived bearer tokens, supports rotated refresh-token persistence callbacks and refuses token-endpoint redirects. Qdrant credentials are injected through a callable secret provider. Provider HTTP clients refuse redirects, enforce HTTPS (except explicitly allowed localhost for Qdrant development), cap response bytes, validate JSON responses and return sanitized errors. Microsoft Graph pagination accepts only the graph.microsoft.com messages collection origin/path; the token is never sent to an arbitrary nextLink host.
 
-**Impact:** Application callbacks can mislabel, omit or stale-bind source data. Provider-side effects and revocation are not covered unless the provider adapter enforces them.
+Each provider result is converted into a ProviderCapture carrying a fixed connector ID, provider object ID, provider version metadata and a canonical content version. Persisting that capture requires a matching TrustedConnectorAdapter configured as untrusted external content, and TrustedConnectorAdapter.ingest stores the exact captured record as digest-bound provenance. Tests exercise this persist path and verify that a trusted-integrity connector is rejected.
 
-**Required control:** Build provider-specific connectors with OAuth scopes, tenant binding, object IDs and version/ETag capture, source-side pagination and deletion semantics, webhook/revocation handling, outbound commit authorization, bounded retries, and audit correlation IDs. Use least-privilege credentials and never expose them to agent code.
+**Security qualification:** the adapters are read-only. They do not implement send/update/delete operations, webhook subscriptions, provider-side revocation propagation, tombstone/delete synchronization, full incremental-sync cursors or provider commit fencing. The configured OAuth consent scopes and tenant/account IDs are trusted application configuration; this tranche does not independently validate the provider token subject against those IDs or perform OIDC tenant/account binding. ProviderCapture is a host-side integration object and must not be exposed as a model-constructible ingress API.
+
+**Validation:** HTTP behaviour is tested with httpx MockTransport, including OAuth refresh/rotation, scope rejection, Graph lookalike nextLink rejection, Slack API-level denial, Qdrant API-key header, response-size and redirect controls, and persistence through untrusted provenance ingress. No live Gmail/Microsoft/Slack/Qdrant credentials or real customer accounts were exercised by CI.
+
+**Remaining controls:** bind OAuth grants to independently validated workload/user/tenant identity; persist rotated refresh tokens in KMS/HSM-backed secret storage; implement revocation and deletion propagation; add bounded incremental synchronization/webhook processing; add connector audit correlation; and build destination-side commit fences/idempotency before enabling provider writes.
 
 ### A-10 — Local SQLite state is not a distributed or tamper-evident security authority
 
