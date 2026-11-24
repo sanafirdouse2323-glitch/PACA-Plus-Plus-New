@@ -243,6 +243,7 @@ def test_postgres_resource_commit_serializes_before_revoke_across_clients(monkey
 
 def test_postgres_filesystem_commit_callback_serializes_with_revocation(
     tmp_path,
+    monkeypatch,
 ):
     env = _environment()
     target = tmp_path / "resource.txt"
@@ -254,8 +255,23 @@ def test_postgres_filesystem_commit_callback_serializes_with_revocation(
 
     renamed = threading.Event()
     allow_transaction_commit = threading.Event()
-    revoke_started = threading.Event()
+    revoke_begin_attempted = threading.Event()
     revoke_finished = threading.Event()
+    original_connect = env["registry_b"]._connect
+
+    def tracked_connect():
+        connection = original_connect()
+        original_execute = connection.execute
+
+        def tracked_execute(statement, parameters=()):
+            if statement.strip() == "BEGIN IMMEDIATE":
+                revoke_begin_attempted.set()
+            return original_execute(statement, parameters)
+
+        connection.execute = tracked_execute
+        return connection
+
+    monkeypatch.setattr(env["registry_b"], "_connect", tracked_connect)
 
     def commit_callback():
         os.replace(staged, target)
@@ -276,7 +292,6 @@ def test_postgres_filesystem_commit_callback_serializes_with_revocation(
         )
 
     def revoke():
-        revoke_started.set()
         try:
             return env["registry_b"].revoke(
                 env["root"].capability.cap_id,
@@ -289,9 +304,9 @@ def test_postgres_filesystem_commit_callback_serializes_with_revocation(
         commit_future = pool.submit(commit)
         assert renamed.wait(timeout=20)
         revoke_future = pool.submit(revoke)
-        assert revoke_started.wait(timeout=20)
-        # The filesystem rename has occurred, but the authority transaction is
-        # deliberately still open. A second registry client must not overtake it.
+        assert revoke_begin_attempted.wait(timeout=20)
+        # The second client reached BEGIN IMMEDIATE while the first transaction
+        # still holds its registry-wide write lock. Revocation must remain blocked.
         assert not revoke_finished.wait(timeout=0.5)
         allow_transaction_commit.set()
         committed = commit_future.result(timeout=30)
