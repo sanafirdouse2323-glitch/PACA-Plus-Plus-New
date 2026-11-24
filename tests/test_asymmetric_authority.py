@@ -445,3 +445,21 @@ def test_ed25519_key_ring_rejects_current_key_mismatch(tmp_path):
             verification_keys={"ed-key-1": other_public},
             **_callbacks(),
         )
+
+
+def test_ed25519_verification_key_ring_has_a_safe_size_limit(tmp_path):
+    registry = SQLiteAuthorityRegistry(
+        tmp_path / "authority.sqlite3", clock=lambda: 1_000
+    )
+    _private_key, public_key = _keypair()
+    keys = {f"ed-key-{index}": public_key for index in range(33)}
+
+    with pytest.raises(ValueError, match="limited to 32 keys"):
+        Ed25519CapabilityAuthority(
+            registry,
+            issuer_id="ed-issuer",
+            key_id="ed-key-0",
+            audience="paca-test",
+            verification_keys=keys,
+            **_callbacks(),
+        )
