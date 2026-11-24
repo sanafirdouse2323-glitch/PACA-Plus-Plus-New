@@ -1,6 +1,6 @@
 # PAC++ New — implementation status and engineering gates
 
-**Snapshot:** 24 November 2026, after PR #30 was merged to `main` (`d76e0f11211375f1eaa05e41aea739798b5e8213`).
+**Snapshot:** 24 November 2026, after the stacked structural refactors in PRs #32–#34 were merged to `main` (`2476b13489188b38b0c81eab032abb7222e5d7e2`).
 
 **Maturity:** research prototype. The repository contains useful reference mechanisms and integrations, but does not mediate every agent lifecycle transition and is not production-ready.
 
