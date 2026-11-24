@@ -28,7 +28,7 @@ from .authority_runtime import (
 )
 from .durable import LineageIntegrityError, SQLiteProvenanceRepository
 from .provenance import Arg, Label, LineageNode
-from .runtime import Decision, Request, Tool
+from .runtime import ACTIONS, Decision, Request, Tool
 
 
 def _b64encode(value: bytes) -> str:
@@ -986,6 +986,8 @@ class PACAAgentRuntime:
         memory: TrustedMemoryAdapter,
         monitor: Any,
         messages: HMACAgentMessageCodec,
+        *,
+        require_resource_commit_fence: bool = False,
     ) -> None:
         if (
             memory.authority is not authority
@@ -1000,10 +1002,13 @@ class PACAAgentRuntime:
         # consequential executors.
         if "C13" in getattr(monitor, "disable", ()):
             raise ValueError("PACAAgentRuntime requires C13 effect-token verification")
+        if not isinstance(require_resource_commit_fence, bool):
+            raise TypeError("require_resource_commit_fence must be a boolean")
         self.authority = authority
         self.memory = memory
         self.monitor = monitor
         self.messages = messages
+        self.require_resource_commit_fence = require_resource_commit_fence
 
     @staticmethod
     def _assert_tool_binding(capability: Any, request: Request) -> None:
@@ -1065,6 +1070,10 @@ class PACAAgentRuntime:
         """Authenticate and snapshot an effect before authorizing any consequence."""
         if not isinstance(request, Request):
             raise MemoryAccessDenied("effect request must be a typed PACA Request")
+        if self.require_resource_commit_fence and request.action not in {"write_file", "mem_write"}:
+            raise MemoryAccessDenied(
+                "resource commit fence mode currently supports only write_file and mem_write"
+            )
         signed = self.authority.verify(capability_token)
         issued = signed.capability
 
@@ -1150,16 +1159,80 @@ class PACAAgentRuntime:
         if not self.monitor.verify(snapshot, decision):
             return Decision("deny", digest=request_digest), None, issued, accesses
 
-        self.authority.registry.consume_effect(
-            issued.cap_id, max_calls=issued.max_calls,
-        )
-        self.authority.registry.assert_active(issued.cap_id)
+        if self.require_resource_commit_fence:
+            # The resource database transaction performs the effect-budget
+            # charge together with the final active-authority check and write.
+            # Charging here would split the commit from the quota transaction.
+            self.authority.registry.assert_active(issued.cap_id)
+        else:
+            self.authority.registry.consume_effect(
+                issued.cap_id, max_calls=issued.max_calls,
+            )
+            self.authority.registry.assert_active(issued.cap_id)
         authority_record = issued.authority_lineage
         if authority_record is None:
             raise MemoryAccessDenied("effect capability lost its authority lineage")
         if snapshot.digest != request_digest or decision.digest != request_digest:
             raise MemoryAccessDenied("effect request changed before executor entry")
         return decision, snapshot, issued, accesses
+
+    def _require_fenced_executor(self, executor: Any) -> Any:
+        """Return the exact trusted SQLite commit adapter required by strict mode."""
+        if not self.require_resource_commit_fence:
+            return None
+        from .resource_commit import SQLiteFencedResourceExecutor
+
+        if (
+            not isinstance(executor, SQLiteFencedResourceExecutor)
+            or executor.authority is not self.authority
+        ):
+            raise MemoryAccessDenied(
+                "resource commit fence mode requires the runtime-bound SQLiteFencedResourceExecutor"
+            )
+        return executor
+
+    def _issue_effect_commit_permit(
+        self,
+        capability_token: str,
+        decision: Decision,
+        snapshot: Request,
+    ) -> str:
+        """Bind a short-lived one-use permit to the exact action, target and payload."""
+        spec = ACTIONS.get(snapshot.action)
+        if not isinstance(spec, dict):
+            raise MemoryAccessDenied("resource action has no trusted target mapping")
+        target_name = spec.get("target")
+        payload_names = spec.get("payload", ())
+        if (
+            not isinstance(target_name, str)
+            or not target_name
+            or not isinstance(payload_names, (list, tuple))
+            or not payload_names
+        ):
+            raise MemoryAccessDenied("resource action mapping lacks a target or payload")
+        target_argument = snapshot.args.get(target_name)
+        if target_argument is None or not isinstance(target_argument.value, str):
+            raise MemoryAccessDenied("resource commit target must be a string")
+        payload: Dict[str, Any] = {}
+        for name in payload_names:
+            argument = snapshot.args.get(name)
+            if argument is None:
+                raise MemoryAccessDenied("resource commit payload argument is missing")
+            payload[name] = argument.value
+        try:
+            payload_digest = hashlib.sha256(canonical_value_bytes(payload)).hexdigest()
+        except (TypeError, ValueError) as exc:
+            raise MemoryAccessDenied("resource commit payload is not canonical JSON") from exc
+        try:
+            return self.authority.issue_resource_commit_permit(
+                capability_token,
+                request_digest=decision.digest,
+                action=snapshot.action,
+                resource=target_argument.value,
+                payload_digest=payload_digest,
+            )
+        except Exception as exc:
+            raise MemoryAccessDenied("could not issue a commit-bound resource permit") from exc
 
     def _revalidate_effect_snapshot(
         self,
@@ -1189,6 +1262,7 @@ class PACAAgentRuntime:
         executor: Callable[[Request], Any],
     ) -> Tuple[Decision, Optional[Any]]:
         """Async effect path with provenance, authority and revocation rechecks."""
+        fenced_executor = self._require_fenced_executor(executor)
         decision, snapshot, issued, accesses = self._authorize_effect(
             capability_token, request,
         )
@@ -1202,7 +1276,13 @@ class PACAAgentRuntime:
         self._revalidate_effect_snapshot(
             capability_token, decision, snapshot, issued, accesses,
         )
-        result = executor(snapshot)
+        if self.require_resource_commit_fence:
+            permit = self._issue_effect_commit_permit(
+                capability_token, decision, snapshot,
+            )
+            result = fenced_executor.aexecute_authorized(snapshot, permit)
+        else:
+            result = executor(snapshot)
         if inspect.isawaitable(result):
             # Only a newly-created native coroutine has a guaranteed lazy body.
             # An asyncio.Task/Future or arbitrary Awaitable may already be running
@@ -1264,6 +1344,7 @@ class PACAAgentRuntime:
         executor: Callable[[Request], Any],
     ) -> Tuple[Decision, Optional[Any]]:
         """Check signed authority and exact request provenance immediately before effect."""
+        fenced_executor = self._require_fenced_executor(executor)
         decision, snapshot, issued, accesses = self._authorize_effect(
             capability_token, request,
         )
@@ -1276,7 +1357,13 @@ class PACAAgentRuntime:
         self._revalidate_effect_snapshot(
             capability_token, decision, snapshot, issued, accesses,
         )
-        result = executor(snapshot)
+        if self.require_resource_commit_fence:
+            permit = self._issue_effect_commit_permit(
+                capability_token, decision, snapshot,
+            )
+            result = fenced_executor.execute_authorized(snapshot, permit)
+        else:
+            result = executor(snapshot)
         if inspect.isawaitable(result):
             # The synchronous entry point cannot perform the post-construction
             # async authority check. Reject and cancel anything awaitable rather
