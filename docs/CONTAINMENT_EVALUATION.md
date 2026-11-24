@@ -77,7 +77,7 @@ These incident reports motivate test cases; they are not a claim that the custom
 
 ### Capability-bound Docker worker identity
 
-The optional Docker executor requires a Tool manifest whose signed hash includes an implementation digest. Compute it from the exact image digest, explicit Docker platform, argv and sandbox resource/isolation profile before issuing the capability:
+The optional Docker executor requires a Tool manifest whose signed hash includes an implementation digest. Compute it from the exact image digest, explicit Docker platform, worker argv and the canonical Docker invocation (all container flags and in-container environment) before issuing the capability:
 
 ```python
 worker_command = ("/usr/local/bin/paca-worker", "--stdio")
@@ -99,7 +99,7 @@ executor = DockerSandboxExecutor(
 )
 ```
 
-The runtime checks the signed Tool hash, and the executor independently compares the configured worker identity before starting the container. The sandbox configuration and Docker CLI environment are immutable after initialization, preventing ordinary runtime mutation between the identity check and launch. Legacy Tool manifests keep their previous hash, but the Docker executor rejects a missing implementation digest. Changing the image, platform, command, CLI environment selection or enforced sandbox limits requires a newly issued tool pin. This does not attest the Docker daemon, host kernel, Docker CLI binary or registry trust, and it does not make isolated execution mandatory or close direct host/framework bypasses.
+The runtime checks the signed Tool hash, and the executor independently compares the configured worker identity before starting the container. The digest is derived from the same Docker argument builder used for launch, with only the ephemeral CID-file path normalized. The sandbox configuration and Docker CLI environment are immutable after initialization, preventing ordinary runtime mutation between the identity check and launch. Legacy Tool manifests keep their previous hash, but the Docker executor rejects a missing implementation digest. Changing the image, platform, command, CLI environment selection or enforced sandbox limits requires a newly issued tool pin. This does not attest the Docker daemon, host kernel, Docker CLI binary or registry trust, and it does not make isolated execution mandatory or close direct host/framework bypasses.
 
 ### Deterministic tests added in this tranche
 
