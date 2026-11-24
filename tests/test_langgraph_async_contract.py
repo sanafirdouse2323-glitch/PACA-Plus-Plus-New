@@ -110,3 +110,15 @@ def test_async_store_read_and_delete_wrappers_use_snapshotted_arguments(monkeypa
         ("get", ("acme", "memory"), "key", False),
         ("delete", ("acme", "memory"), "key"),
     ]
+
+
+def test_langchain_middleware_old_import_path_is_compatible():
+    pytest.importorskip("langchain")
+    from paca.integrations.langchain_middleware import (
+        PACALangChainToolMiddleware as ExtractedMiddleware,
+    )
+    from paca.integrations.langgraph import (
+        PACALangChainToolMiddleware as CompatibilityMiddleware,
+    )
+
+    assert CompatibilityMiddleware is ExtractedMiddleware

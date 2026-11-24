@@ -3205,3 +3205,61 @@ def test_registry_refuses_to_guess_quota_for_populated_v3_database(tmp_path):
         ).fetchone()[0]
     assert version == "3"
     assert count == 1
+
+
+def _langchain_middleware_fixture(tmp_path, *, request_id):
+    pytest.importorskip("langgraph")
+    pytest.importorskip("langchain")
+    from paca.integrations.langgraph import PACALangChainToolMiddleware
+
+    env = _environment(tmp_path)
+    capability = env["issuer"].verify(env["root"].token).capability
+    tool_request = SimpleNamespace(
+        tool_call={
+            "name": "read_file",
+            "args": {"path": "/acme/public/report.txt"},
+            "id": request_id,
+        },
+        state={"thread": {"phase": "before"}},
+        runtime=None,
+        tool=SimpleNamespace(name="read_file"),
+    )
+    middleware = PACALangChainToolMiddleware(
+        _allowing_runtime(env),
+        capability_token_provider=lambda _request: env["root"].token,
+        tool_manifest_provider=lambda _tool: _read_file_tool(),
+        request_factory=lambda _request: Request(
+            "read_file",
+            {
+                "path": _ingest_argument(
+                    env,
+                    "/acme/public/report.txt",
+                    object_id=f"mem/langchain-middleware-{request_id}",
+                )
+            },
+            capability,
+            1,
+            tool=_read_file_tool(),
+        ),
+    )
+    return tool_request, middleware
+
+
+def test_langchain_middleware_sync_success_uses_detached_tool_request(tmp_path):
+    tool_request, middleware = _langchain_middleware_fixture(
+        tmp_path,
+        request_id="sync-detached-request",
+    )
+    handled = []
+
+    result = middleware.wrap_tool_call(
+        tool_request,
+        lambda snapshot: handled.append(snapshot) or snapshot.tool_call["args"]["path"],
+    )
+
+    assert result == "/acme/public/report.txt"
+    assert len(handled) == 1
+    assert handled[0] is not tool_request
+    assert handled[0].tool_call is not tool_request.tool_call
+    assert handled[0].tool_call["args"] is not tool_request.tool_call["args"]
+    assert handled[0].state is not tool_request.state
