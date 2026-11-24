@@ -20,6 +20,7 @@ from paca.authority_runtime import (
     SQLiteAuthorityRegistry,
 )
 from paca.durable import SQLiteProvenanceRepository
+from paca.filesystem_commit import FilesystemFencedResourceExecutor
 from paca.memory import (
     HMACAgentMessageCodec,
     MemoryAccessDenied,
@@ -34,9 +35,8 @@ from paca.resource_commit import (
     ResourceCommitDenied,
     SQLiteFencedResourceExecutor,
 )
-from paca.filesystem_commit import FilesystemFencedResourceExecutor
-from paca.secure_io import SecurePathUnavailable
 from paca.runtime import Decision, Request, Tool
+from paca.secure_io import SecurePathUnavailable
 
 
 def _write_tool() -> Tool:
