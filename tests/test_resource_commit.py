@@ -804,7 +804,7 @@ def test_filesystem_commit_permit_replay_cannot_replace_file_twice(tmp_path, mon
         env["signed"].capability.cap_id
     )[0]
 
-    with pytest.raises(ResourceCommitDenied, match="atomic authority fence"):
+    with pytest.raises(ResourceCommitDenied, match="replay"):
         executor.execute_authorized(env["request"], issued[0])
 
     assert (root / "acme" / "reports" / "report.txt").read_bytes() == first_content
