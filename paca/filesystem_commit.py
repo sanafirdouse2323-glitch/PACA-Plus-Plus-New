@@ -210,7 +210,9 @@ class FilesystemFencedResourceExecutor(FencedResourceExecutor):
             not isinstance(tenant, str)
             or not tenant
             or "/" in tenant
+            or "\\" in tenant
             or tenant in {".", ".."}
+            or any(ord(character) < 32 for character in tenant)
             or not isinstance(task_id, str)
             or not task_id
         ):
