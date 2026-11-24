@@ -222,9 +222,7 @@ class FilesystemFencedResourceExecutor(FencedResourceExecutor):
             or not isinstance(task_id, str)
             or not task_id
         ):
-            raise ResourceCommitDenied(
-                "filesystem tenant or task namespace is invalid"
-            )
+            raise ResourceCommitDenied("filesystem tenant or task namespace is invalid")
         parts = resource[1:].split("/")
         if (
             len(parts) < 2
@@ -444,13 +442,9 @@ class FilesystemFencedResourceExecutor(FencedResourceExecutor):
                 "filesystem journal version or identity is invalid"
             )
         if value["temp_name"] != f".paca-{operation_id}.tmp":
-            raise ResourceCommitDenied(
-                "filesystem journal staging filename is invalid"
-            )
+            raise ResourceCommitDenied("filesystem journal staging filename is invalid")
         if value["backup_name"] != f"{operation_id}.bak":
-            raise ResourceCommitDenied(
-                "filesystem journal backup filename is invalid"
-            )
+            raise ResourceCommitDenied("filesystem journal backup filename is invalid")
         for field in (
             "nonce",
             "authority_id",
@@ -464,9 +458,7 @@ class FilesystemFencedResourceExecutor(FencedResourceExecutor):
             "new_digest",
         ):
             if not isinstance(value[field], str) or not value[field]:
-                raise ResourceCommitDenied(
-                    f"filesystem journal {field} is invalid"
-                )
+                raise ResourceCommitDenied(f"filesystem journal {field} is invalid")
         for field in ("request_digest", "payload_digest", "new_digest"):
             digest = value[field]
             if len(digest) != 64 or any(
@@ -476,9 +468,7 @@ class FilesystemFencedResourceExecutor(FencedResourceExecutor):
                     f"filesystem journal {field} is not a SHA-256 digest"
                 )
         if not isinstance(value["old_exists"], bool):
-            raise ResourceCommitDenied(
-                "filesystem journal old_exists flag is invalid"
-            )
+            raise ResourceCommitDenied("filesystem journal old_exists flag is invalid")
         if value["old_exists"]:
             digest = value["old_digest"]
             if (
@@ -486,9 +476,7 @@ class FilesystemFencedResourceExecutor(FencedResourceExecutor):
                 or len(digest) != 64
                 or any(character not in "0123456789abcdef" for character in digest)
             ):
-                raise ResourceCommitDenied(
-                    "filesystem journal old_digest is invalid"
-                )
+                raise ResourceCommitDenied("filesystem journal old_digest is invalid")
         elif value["old_digest"] is not None:
             raise ResourceCommitDenied(
                 "filesystem journal has an unexpected old digest"
@@ -519,10 +507,7 @@ class FilesystemFencedResourceExecutor(FencedResourceExecutor):
             ("request_digest", "request_digest"),
             ("payload_digest", "payload_digest"),
         )
-        return all(
-            record[left] == receipt.get(right)
-            for left, right in fields
-        )
+        return all(record[left] == receipt.get(right) for left, right in fields)
 
     def _restore_uncommitted(
         self,
@@ -605,9 +590,7 @@ class FilesystemFencedResourceExecutor(FencedResourceExecutor):
 
     def _recover_one_locked(self, journal_name: str) -> str:
         record = self._parse_journal(journal_name)
-        parent_fd, target_name = self._parent_and_name(
-            record["relative_path"]
-        )
+        parent_fd, target_name = self._parent_and_name(record["relative_path"])
         try:
             receipt = self.registry.get_resource_commit_receipt(record["nonce"])
             if receipt is not None:
@@ -664,9 +647,7 @@ class FilesystemFencedResourceExecutor(FencedResourceExecutor):
             )
         content = payload.get("content")
         if not isinstance(content, str):
-            raise ResourceCommitDenied(
-                "filesystem write_file content must be text"
-            )
+            raise ResourceCommitDenied("filesystem write_file content must be text")
         content_bytes = content.encode("utf-8")
         if len(content_bytes) > self.max_file_bytes:
             raise ResourceCommitDenied(
@@ -705,7 +686,9 @@ class FilesystemFencedResourceExecutor(FencedResourceExecutor):
                     "temp_name": temp_name,
                     "backup_name": backup_name,
                     "old_exists": previous is not None,
-                    "old_digest": self._digest(previous) if previous is not None else None,
+                    "old_digest": self._digest(previous)
+                    if previous is not None
+                    else None,
                     "new_digest": self._digest(content_bytes),
                     "request_digest": permit.request_digest,
                     "payload_digest": permit.payload_digest,
@@ -784,7 +767,10 @@ class FilesystemFencedResourceExecutor(FencedResourceExecutor):
                                     "durable commit receipt no longer identifies the current resource value"
                                 )
                             current = self._read_target(parent_fd, target_name)
-                            if current is None or self._digest(current) != journal["new_digest"]:
+                            if (
+                                current is None
+                                or self._digest(current) != journal["new_digest"]
+                            ):
                                 raise ResourceCommitDenied(
                                     "database committed but filesystem bytes need operator recovery"
                                 )
