@@ -34,12 +34,12 @@ paca = "paca.cli:main"
 paca-agentdojo = "paca.integrations.agentdojo_benchmark:main"
 
 [tool.setuptools]
-packages = ["paca", "paca.policies", "paca.integrations", "paca.contracts"]
+packages = ["paca", "paca.policies", "paca.integrations", "paca.contracts", "paca.contracts.schemas"]
 py-modules = ["paca_executor"]
 
 [tool.setuptools.package-data]
 paca = ["policies/*.paca"]
-"paca.contracts" = ["schemas/v1.0.0/*.json"]
+"paca.contracts.schemas" = ["v1.0.0/*.json"]
 
 [tool.pytest.ini_options]
 pythonpath = ["."]
