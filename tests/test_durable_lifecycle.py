@@ -132,6 +132,23 @@ def _ingest(env, value=None, *, object_id="mem/source-1", version_id="v1"):
     )
 
 
+def _ingest_argument(
+    env,
+    value,
+    *,
+    object_id="mem/runtime-path",
+    capability_token=None,
+):
+    """Capture a framework/tool input as untrusted, digest-bound ingress data."""
+    return env["connector"].ingest(
+        value,
+        object_id=object_id,
+        version_id="v1",
+        purpose="prepare-report",
+        capability_token=capability_token or env["root"].token,
+    )
+
+
 def test_durable_lineage_survives_restart_and_object_versions_are_immutable(tmp_path):
     graph = ProvenanceGraph()
     source = graph.add_source(
@@ -795,7 +812,7 @@ def test_runtime_rechecks_active_authority_after_monitor_verification(tmp_path):
     )
     request = Request(
         "read_file",
-        {"path": Arg("/acme/report.txt", Label("trusted", tenant="acme"))},
+        {"path": _ingest_argument(env, "/acme/report.txt")},
         capability,
         1,
         tool=_read_file_tool(),
@@ -1092,7 +1109,7 @@ def test_langchain_middleware_intercepts_tool_and_denial_never_calls_handler(tmp
     def request_factory(_request):
         return Request(
             "read_file",
-            {"path": Arg("/acme/report.txt", Label("trusted", tenant="acme"))},
+            {"path": _ingest_argument(env, "/acme/report.txt")},
             capability,
             1,
             tool=_read_file_tool(),
@@ -1164,7 +1181,7 @@ def test_langchain_async_middleware_waits_only_after_active_authority_check(tmp_
         tool_manifest_provider=lambda _tool: _read_file_tool(),
         request_factory=lambda _request: Request(
             "read_file",
-            {"path": Arg("/acme/report.txt", Label("trusted", tenant="acme"))},
+            {"path": _ingest_argument(env, "/acme/report.txt")},
             capability,
             1,
             tool=_read_file_tool(),
@@ -1214,7 +1231,7 @@ def test_langchain_async_middleware_revocation_before_handler_blocks_execution(t
         tool_manifest_provider=lambda _tool: _read_file_tool(),
         request_factory=lambda _request: Request(
             "read_file",
-            {"path": Arg("/acme/report.txt", Label("trusted", tenant="acme"))},
+            {"path": _ingest_argument(env, "/acme/report.txt")},
             capability,
             1,
             tool=_read_file_tool(),
@@ -1361,9 +1378,12 @@ def test_runtime_call_budget_cannot_be_reset_by_reverifying_the_token(tmp_path):
         tenant="acme",
         task_id="budgeted-task",
         purpose="prepare-report",
-        grants={"read_file": ("/acme/*",)},
+        grants={
+            "read_file": ("/acme/*",),
+            "mem_read": ("mem/*",),
+        },
         expires_at=1_900,
-        max_calls=1,
+        max_calls=2,
         max_fanout=1,
         tool_pins={"read_file": _read_file_tool().hash},
     )
@@ -1383,7 +1403,7 @@ def test_runtime_call_budget_cannot_be_reset_by_reverifying_the_token(tmp_path):
         cap = env["issuer"].verify(limited.token).capability
         return Request(
             "read_file",
-            {"path": Arg("/acme/report.txt", Label("trusted", tenant="acme"))},
+            {"path": _ingest_argument(env, "/acme/report.txt")},
             cap,
             1,
             tool=_read_file_tool(),
@@ -1402,7 +1422,8 @@ def test_runtime_call_budget_cannot_be_reset_by_reverifying_the_token(tmp_path):
             lambda request: executed.append(request) or "second-call",
         )
     assert len(executed) == 1
-    assert env["registry"].usage(limited.capability.cap_id)[0] == 1
+    # One lineage read plus one protected effect charge were committed.
+    assert env["registry"].usage(limited.capability.cap_id)[0] == 2
 
 
 
@@ -1469,7 +1490,7 @@ def test_langchain_middleware_rejects_unpinned_or_mismatched_tool_identity(tmp_p
         tool_manifest_provider=lambda _tool: _read_file_tool(),
         request_factory=lambda _request: Request(
             "read_file",
-            {"path": Arg("/acme/report.txt", Label("trusted", tenant="acme"))},
+            {"path": _ingest_argument(env, "/acme/report.txt")},
             capability,
             1,
             tool=_read_file_tool(),
@@ -1580,7 +1601,7 @@ def test_async_executor_revocation_during_awaitable_construction_blocks_coroutin
     )
     request = Request(
         "read_file",
-        {"path": Arg("/acme/report.txt", Label("trusted", tenant="acme"))},
+        {"path": _ingest_argument(env, "/acme/report.txt")},
         capability,
         1,
         tool=_read_file_tool(),
@@ -1794,6 +1815,47 @@ def _allowing_runtime(env):
     )
 
 
+def test_runtime_rejects_caller_constructed_arguments_without_ingress_lineage(tmp_path):
+    env = _environment(tmp_path)
+    capability = env["issuer"].verify(env["root"].token).capability
+    requests = [
+        Arg("/acme/public/report.txt", Label("trusted", tenant="acme")),
+        Arg("/acme/public/report.txt"),
+        Arg(
+            "/acme/public/report.txt",
+            Label("untrusted", sensitivity=0, origins=frozenset({"caller-claimed-source"})),
+        ),
+    ]
+    runtime = _allowing_runtime(env)
+    monitor_calls = []
+    runtime.monitor = SimpleNamespace(
+        decide=lambda request: monitor_calls.append(request) or Decision(
+            "allow", digest=request.digest,
+        ),
+        verify=lambda request, decision: True,
+    )
+    executions = []
+
+    for argument in requests:
+        request = Request(
+            "read_file",
+            {"path": argument},
+            capability,
+            1,
+            tool=_read_file_tool(),
+        )
+        with pytest.raises(MemoryAccessDenied, match="untracked"):
+            runtime.execute_effect(
+                env["root"].token,
+                request,
+                lambda snapshot: executions.append(snapshot) or "unsafe",
+            )
+
+    assert monitor_calls == []
+    assert executions == []
+    assert env["registry"].usage(capability.cap_id)[0] == 0
+
+
 def test_runtime_blocks_forged_argument_bytes_reusing_real_lineage(tmp_path):
     env = _environment(tmp_path)
     source = env["connector"].ingest(
@@ -1906,10 +1968,7 @@ def test_runtime_resource_lineage_must_be_authorized_and_labelled(tmp_path):
     request = Request(
         "read_file",
         {
-            "path": Arg(
-                "/acme/public/report.txt",
-                Label("trusted", tenant="acme"),
-            )
+            "path": _ingest_argument(env, "/acme/public/report.txt")
         },
         env["issuer"].verify(env["root"].token).capability,
         1,
@@ -2005,10 +2064,7 @@ def test_langchain_middleware_blocks_tool_call_mutated_after_authorization(tmp_p
         tool_manifest_provider=lambda _tool: _read_file_tool(),
         request_factory=lambda _request: Request(
             "read_file",
-            {"path": Arg(
-                "/acme/public/report.txt",
-                Label("trusted", tenant="acme"),
-            )},
+            {"path": _ingest_argument(env, "/acme/public/report.txt")},
             capability,
             1,
             tool=_read_file_tool(),
@@ -2045,10 +2101,7 @@ def test_langchain_middleware_rejects_request_factory_mutating_tool_args(tmp_pat
         request.tool_call["args"]["path"] = "/acme/private/secrets.txt"
         return Request(
             "read_file",
-            {"path": Arg(
-                "/acme/public/report.txt",
-                Label("trusted", tenant="acme"),
-            )},
+            {"path": _ingest_argument(env, "/acme/public/report.txt")},
             capability,
             1,
             tool=_read_file_tool(),
@@ -2222,10 +2275,7 @@ def test_async_langchain_handler_receives_frozen_tool_request(tmp_path):
         tool_manifest_provider=lambda _tool: _read_file_tool(),
         request_factory=lambda request: Request(
             "read_file",
-            {"path": Arg(
-                request.state["path"],
-                Label("trusted", tenant="acme"),
-            )},
+            {"path": _ingest_argument(env, request.state["path"])},
             capability,
             1,
             tool=_read_file_tool(),
@@ -2409,10 +2459,7 @@ def test_langchain_middleware_rejects_graph_state_mutation_during_request_factor
         request.state["path"] = "/acme/private/secrets.txt"
         return Request(
             "read_file",
-            {"path": Arg(
-                "/acme/public/report.txt",
-                Label("trusted", tenant="acme"),
-            )},
+            {"path": _ingest_argument(env, "/acme/public/report.txt")},
             capability,
             1,
             tool=_read_file_tool(),
