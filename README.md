@@ -4,7 +4,7 @@
 
 PAC++ New explores provenance-aware, capability-based authorization across selected LLM-agent boundaries. It contains a policy monitor, explicit provenance and authority records, durable memory/authority components, framework adapters, read-only provider connectors, a deterministic simulator and bounded TLA+ models.
 
-It does **not** provide a complete agent runtime or mediate every input, memory, planning, communication, tool or external-effect path. Security applies only where an integration actually routes the operation through PACA and where the host supplies trustworthy identity, provenance and resource adapters.
+It does **not** provide complete lifecycle mediation or a universal security boundary for every input, memory, planning, communication, tool or external-effect path. The repository includes a reference orchestration class, but it protects only calls routed through its configured adapters; security also depends on host-supplied identity, provenance and resource controls.
 
 **Repository boundary:** this repository is separate from the [PACA-Plus-Plus enterprise authorization gateway](https://github.com/sanafirdouse2323-glitch/PACA-Plus-Plus). Do not combine their code, deployment claims or research evidence.
 
@@ -27,10 +27,11 @@ The benchmark command writes `index.html` and `results.json` into the selected o
 | Area | Implemented reference components | Important boundary |
 |---|---|---|
 | Policy enforcement | `paca/monitor.py`, `paca/runtime.py`, packaged PACA policy | Covers selected, explicitly mapped actions; it is not a universal framework hook. |
-| Provenance and memory | `paca/provenance.py`, `paca/durable.py`, `paca/memory.py` | Labels and lineage depend on trusted connectors; not every hidden model-context dependency is tracked automatically. |
-| Authority and revocation | `paca/authority_runtime.py`, `paca/postgres_authority.py` | PostgreSQL shares authority state across clients on one primary; it does not make every other store distributed. |
-| Local resource commits | Opt-in `SQLiteFencedResourceExecutor` for `write_file` and `mem_write` | Not a remote provider commit protocol and not enabled for every executor. |
-| Framework adapters | AgentDojo, LangGraph store, LangChain middleware and PostgreSQL checkpoint adapters | Direct calls to underlying tools, stores or databases can bypass wrappers. |
+| Agent orchestration | `paca/agent_runtime.py` | The reference runtime mediates calls routed through its methods; direct clients and alternate execution paths can bypass it. |
+| Provenance and memory | `paca/provenance.py`, `paca/durable.py`, `paca/memory.py` | Memory, connector and message adapters depend on trusted host integrations; not every hidden model-context dependency is tracked automatically. |
+| Authority and revocation | `paca/authority_registry.py`, `paca/authority_runtime.py`, `paca/postgres_authority.py` | Registry state and credential issuance are separate modules; PostgreSQL shares authority state across clients on one primary, not every other store. |
+| Local resource commits | `paca/resource_commit.py`: opt-in backend-neutral `FencedResourceExecutor` for `write_file` and `mem_write` (with `SQLiteFencedResourceExecutor` retained as a compatibility alias) | SQLite and PostgreSQL fence selected logical resource writes in authority-registry transactions; this is not an actual OS filesystem write or a remote provider commit protocol, and the fence is not enabled for every executor. |
+| Framework adapters | `paca/integrations/agentdojo.py`, `paca/integrations/langgraph.py`, `paca/integrations/langchain_middleware.py`, `paca/integrations/langgraph_checkpoint.py` | Direct calls to underlying tools, stores, checkpointers or databases can bypass wrappers. |
 | Provider ingress | Read-only Gmail, Microsoft Graph, Slack and Qdrant connectors | CI uses mocked HTTP; production identity binding and live account validation remain deployment work. |
 | Process and network helpers | Optional Docker worker plus Linux filesystem/network primitives | The isolated worker is opt-in; helpers are not wired into every path. |
 | Formal models | `models/PACAAuth.tla` and `models/PACALifecycle.tla` | Bounded model checking is not a proof that Python code refines the model. |
@@ -79,7 +80,7 @@ The current simulated PACA++ failures include E02 (agent-message propagation, wi
 - **External effects:** provider adapters are read-only. Local resource-commit fencing covers only selected local writes; remote provider-side authorization, idempotency and commit fencing are not implemented.
 - **Isolation and approvals:** Docker worker isolation is optional, not mandatory for every executor. A production approval service is not included; approval verification must be supplied by trusted host code.
 - **Evaluation:** there is no independent security audit, comprehensive host-level bypass evaluation or completed live-agent effectiveness study.
-- **Repository governance:** `main` currently has no active branch-protection ruleset or required review/check policy. A repository administrator must apply and verify the settings in `docs/REPOSITORY_SECURITY_CONFIGURATION.md`.
+- **Repository governance:** the last confirmed repository-settings inspection on 24 November 2026 found no active branch-protection ruleset. The current GitHub connection cannot read the branch-protection endpoint (403), so the live setting could not be rechecked in this update. A repository administrator must apply and verify the settings in `docs/REPOSITORY_SECURITY_CONFIGURATION.md`.
 
 Do not deploy PAC++ New as the sole security control protecting company data, accounts or autonomous business operations.
 
