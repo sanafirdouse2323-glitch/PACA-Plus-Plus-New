@@ -535,7 +535,7 @@ Governance should provide:
 - documented deprecation and migration periods;
 - a clear distinction between normative requirements and optional examples.
 
-The current repository licence is the PACA++ Academic and Non-Commercial License, which expressly identifies itself as source-available and non-commercial rather than an OSI-approved open-source licence. This specification does not change that licence, grant commercial rights or settle future licensing. Public architecture openness, source availability and open-source licensing are separate decisions and must be described accurately.
+The current LICENSE explicitly states that the PACA++ Academic and Non-Commercial License is source-available, restricts commercial use and is not an OSI-approved open-source licence. This specification does not change that licence, grant commercial rights or settle future licensing. Public architecture openness, source availability and open-source licensing are separate decisions and must be described accurately.
 
 ## 17. Decision record
 
