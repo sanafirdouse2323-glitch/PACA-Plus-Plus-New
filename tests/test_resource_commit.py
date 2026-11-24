@@ -557,7 +557,9 @@ def test_filesystem_resource_commit_writes_real_file_under_authority_fence(tmp_p
     assert result["version"] == 1
     assert result["recovery_pending"] is False
     assert env["registry"].usage(env["signed"].capability.cap_id)[0] == 5
-    assert env["registry"].get_resource_commit_receipt(result["commit_nonce"]) is not None
+    assert (
+        env["registry"].get_resource_commit_receipt(result["commit_nonce"]) is not None
+    )
     assert sorted(path.name for path in state_dir.iterdir()) == ["broker.lock"]
     executor.close()
 
