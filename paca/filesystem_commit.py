@@ -751,6 +751,7 @@ class FilesystemFencedResourceExecutor(FencedResourceExecutor):
                             self._cleanup_journal(journal, journal_name, parent_fd)
                             return {
                                 **receipt,
+                                "commit_nonce": receipt["nonce"],
                                 "storage": "filesystem",
                                 "recovered_after_database_error": True,
                                 "recovery_pending": False,
