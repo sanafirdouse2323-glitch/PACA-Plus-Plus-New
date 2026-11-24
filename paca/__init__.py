@@ -27,6 +27,7 @@ from .durable import (
 )
 from .engine import PolicyEngine
 from .evaluator import evaluate_policy, evaluate_policy_set
+from .filesystem_commit import FilesystemFencedResourceExecutor
 from .memory import (
     HMACAgentMessageCodec,
     MemoryAccessContext,
@@ -45,7 +46,6 @@ from .resource_commit import (
     ResourceCommitDenied,
     SQLiteFencedResourceExecutor,
 )
-from .filesystem_commit import FilesystemFencedResourceExecutor
 from .sandbox import (
     DockerSandbox,
     DockerSandboxExecutor,
