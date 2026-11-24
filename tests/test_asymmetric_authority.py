@@ -347,3 +347,137 @@ def test_hmac_v2_tokens_with_legacy_payload_without_algorithm_remain_verifiable(
         + base64.urlsafe_b64encode(legacy_signature).rstrip(b"=").decode("ascii")
     )
     assert issuer.verify(legacy_token).capability.principal == "agent-a"
+
+
+def test_ed25519_key_ring_supports_rotation_overlap_and_retirement(tmp_path):
+    registry = SQLiteAuthorityRegistry(
+        tmp_path / "authority.sqlite3", clock=lambda: 1_000
+    )
+    old_private, old_public = _keypair()
+    new_private, new_public = _keypair()
+    old_issuer = _ed_issuer(registry, old_private, old_public)
+    old_signed = _capability(old_issuer)
+
+    rotated_issuer = Ed25519CapabilityAuthority(
+        registry,
+        issuer_id="ed-issuer",
+        key_id="ed-key-2",
+        audience="paca-test",
+        private_key=new_private,
+        verification_keys={
+            "ed-key-1": old_public,
+            "ed-key-2": new_public,
+        },
+        **_callbacks(),
+    )
+    overlapping_verifier = Ed25519CapabilityAuthority(
+        registry,
+        issuer_id="ed-issuer",
+        key_id="ed-key-2",
+        audience="paca-test",
+        verification_keys={
+            "ed-key-1": old_public,
+            "ed-key-2": new_public,
+        },
+        **_callbacks(),
+    )
+
+    # During rotation overlap, the new issuer/verifier can still validate
+    # credentials signed by the previous key while new credentials use key 2.
+    assert (
+        overlapping_verifier.verify(old_signed.token).capability.principal == "agent-a"
+    )
+    new_signed = _capability(rotated_issuer)
+    assert (
+        overlapping_verifier.verify(new_signed.token).capability.principal == "agent-a"
+    )
+
+    old_permit = old_issuer.issue_resource_commit_permit(
+        old_signed.token,
+        request_digest="a" * 64,
+        action="write_file",
+        resource="/acme/old.txt",
+        payload_digest="b" * 64,
+    )
+    new_permit = rotated_issuer.issue_resource_commit_permit(
+        old_signed.token,
+        request_digest="c" * 64,
+        action="write_file",
+        resource="/acme/new.txt",
+        payload_digest="d" * 64,
+    )
+    assert (
+        overlapping_verifier.verify_resource_commit_permit(old_permit).key_id
+        == "ed-key-1"
+    )
+    assert (
+        overlapping_verifier.verify_resource_commit_permit(new_permit).key_id
+        == "ed-key-2"
+    )
+
+    # Retirement is explicit: a verifier configured only with key 2 no longer
+    # accepts credentials or permits signed with key 1.
+    retired_verifier = _ed_verifier(
+        registry, new_public, key_id="ed-key-2", audience="paca-test"
+    )
+    with pytest.raises(CapabilityAuthenticationError):
+        retired_verifier.verify(old_signed.token)
+    with pytest.raises(CapabilityAuthenticationError):
+        retired_verifier.verify_resource_commit_permit(old_permit)
+
+
+def test_ed25519_key_ring_rejects_current_key_mismatch(tmp_path):
+    registry = SQLiteAuthorityRegistry(
+        tmp_path / "authority.sqlite3", clock=lambda: 1_000
+    )
+    private_key, public_key = _keypair()
+    _other_private, other_public = _keypair()
+
+    with pytest.raises(ValueError, match="does not match"):
+        Ed25519CapabilityAuthority(
+            registry,
+            issuer_id="ed-issuer",
+            key_id="ed-key-1",
+            audience="paca-test",
+            private_key=private_key,
+            verification_keys={"ed-key-1": other_public},
+            **_callbacks(),
+        )
+
+
+def test_ed25519_verification_key_ring_has_a_safe_size_limit(tmp_path):
+    registry = SQLiteAuthorityRegistry(
+        tmp_path / "authority.sqlite3", clock=lambda: 1_000
+    )
+    _private_key, public_key = _keypair()
+    keys = {f"ed-key-{index}": public_key for index in range(33)}
+
+    with pytest.raises(ValueError, match="limited to 32 keys"):
+        Ed25519CapabilityAuthority(
+            registry,
+            issuer_id="ed-issuer",
+            key_id="ed-key-0",
+            audience="paca-test",
+            verification_keys=keys,
+            **_callbacks(),
+        )
+
+
+def test_ed25519_key_ring_limit_includes_the_current_signing_key(tmp_path):
+    registry = SQLiteAuthorityRegistry(
+        tmp_path / "authority.sqlite3", clock=lambda: 1_000
+    )
+    _private_key, public_key = _keypair()
+    _current_private, current_public = _keypair()
+    keys = {f"ed-key-{index}": public_key for index in range(32)}
+
+    with pytest.raises(ValueError, match="limited to 32 keys"):
+        Ed25519CapabilityAuthority(
+            registry,
+            issuer_id="ed-issuer",
+            key_id="ed-current",
+            audience="paca-test",
+            public_key=current_public,
+            verification_keys=keys,
+            **_callbacks(),
+        )

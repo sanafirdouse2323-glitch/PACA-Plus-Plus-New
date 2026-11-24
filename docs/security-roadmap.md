@@ -1,6 +1,6 @@
 # PAC++ New — implementation status and engineering gates
 
-**Snapshot:** 24 November 2026, after PR #25 was merged to `main` (`0be9aded8c6ec542b00a4af4e727d20e62470cec`).
+**Snapshot:** 24 November 2026, after PR #26 was merged to `main` (`784b1205bc6f6bda0107bb3a99a970e0521f3f95`).
 
 **Maturity:** research prototype. The repository contains useful reference mechanisms and integrations, but does not mediate every agent lifecycle transition and is not production-ready.
 
@@ -13,7 +13,7 @@
 | Policy monitor | Selected action, target, provenance, sensitivity and tenant checks; strict consequential-monitor profile; digest-bound effect tokens | Complete mediation of every framework state transition, tool call or external side effect |
 | Information provenance | Typed lineage records, content digests, parent edges, durable SQLite provenance metadata, explicit derivation and revocation | Truth of source content, automatic capture of all model context or protection from compromised trusted adapters |
 | Memory | Separate immutable SQLite value store; mediated reads/writes; pre-fetch authority/tenant/purpose checks and post-fetch digest validation | Distributed memory service, cross-store atomicity or protection from direct raw-database access |
-| Authority | HMAC and Ed25519 capability envelopes; task/principal callbacks; policy epoch, delegated revocation, per-capability counters and tenant/task aggregate quota | Built-in OIDC/workload identity, protected key custody, rotation or independent issuer service |
+| Authority | HMAC and Ed25519 capability envelopes; static, key-ID-bound Ed25519 verification-key rings support planned overlap and explicit key retirement; task/principal callbacks; policy epoch, delegated revocation, per-capability counters and tenant/task aggregate quota | OIDC/workload identity, KMS/HSM custody, authenticated key distribution and coordinated production rollover/retirement |
 | Shared authority state | Optional PostgreSQL registry for authority, revocation, usage, task quotas, receipts and local resource-commit state on one primary | Multi-primary consensus, rollback-safe failover or distribution of provenance/value/Monitor-ledger state |
 | Resource commits | Opt-in local SQLite fence for `write_file` and `mem_write` with one-use permit and transactional quota/authority checks | Mandatory enforcement for all executors or commit authorization at Gmail, Graph, Slack, Qdrant or other remote providers |
 | Framework integrations | AgentDojo ToolsExecutor and limited workspace mapper; LangGraph BaseStore; LangChain middleware; PostgreSQL checkpoint wrapper | Prevention of direct calls to raw tools, stores, checkpointers, SQL connections or alternate frameworks |
@@ -37,7 +37,7 @@ Before further security-sensitive changes, a repository administrator must also 
 
 1. **Define and enforce the trusted execution boundary.** Keep raw provider clients, credentials, database handles, issuer keys and stores out of agent-controlled processes. Inventory every read and write path; block direct bypass with distinct OS identities and adversarial host-level tests.
 2. **Make effect authorization unavoidable.** Route every consequential mutation through a resource broker that rechecks current authority, policy epoch, provenance, target, payload and replay/idempotency at the destination commit boundary. The existing local SQLite fence is not a remote-provider solution.
-3. **Complete production identity and key management.** Bind issuer requests to an authenticated principal, tenant and orchestrator-owned task. Add OIDC/workload identity, KMS/HSM-backed Ed25519 signing, key rotation, authenticated public-key distribution and emergency revocation.
+3. **Complete production identity and key management.** Bind issuer requests to an authenticated principal, tenant and orchestrator-owned task. Add OIDC/workload identity, KMS/HSM-backed signing and authenticated public-key distribution. The code now supports static Ed25519 key-ring overlap and retirement by configuration; deployments still need coordinated key rollout, protected custody, rotation automation and emergency-revocation procedures.
 4. **Define state consistency and recovery.** Decide which state is authoritative, bring provenance/value/operation evidence behind a compatible shared persistence model, and test crash recovery, migrations, restore/rollback and primary failover. Do not call the current PostgreSQL registry a distributed lifecycle store.
 5. **Make isolation and approval boundaries explicit.** Require an isolated executor for untrusted tool code, prevent credential access from workers, and integrate a separately authenticated approval service for actions that require human approval.
 6. **Prove usefulness independently.** Run matched, reproducible live-agent experiments against maintained baselines (including CaMeL/Progent where applicable), add memory/delegation/revocation/bypass attacks, repeat stochastic runs and report confidence intervals, benign utility, false blocks, latency and cost.

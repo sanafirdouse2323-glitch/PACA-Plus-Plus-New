@@ -21,6 +21,7 @@ from collections.abc import Callable, Iterable, Mapping
 from contextlib import closing
 from dataclasses import dataclass
 from pathlib import Path
+from types import MappingProxyType
 
 from .authority import AuthorityLineage, AuthorityLineageGraph, grant_pattern_is_subset
 from .runtime import Capability
@@ -1133,8 +1134,20 @@ class HMACCapabilityAuthority:
         """Sign bytes with the configured issuer key."""
         return hmac.new(self._key, message, hashlib.sha256).digest()
 
-    def _verify_bytes(self, message: bytes, signature: bytes) -> bool:
-        """Verify bytes with the configured verification key."""
+    def _accepts_key_id(self, key_id: str) -> bool:
+        """Return whether this authority is configured to trust the key identifier."""
+        return isinstance(key_id, str) and key_id == self.key_id
+
+    def _verify_bytes(
+        self,
+        message: bytes,
+        signature: bytes,
+        *,
+        key_id: str | None = None,
+    ) -> bool:
+        """Verify bytes using the configured verification key."""
+        if key_id is not None and not self._accepts_key_id(key_id):
+            return False
         return hmac.compare_digest(self._sign_bytes(message), signature)
 
     def _encode(self, payload: Mapping[str, object]) -> str:
@@ -1227,7 +1240,7 @@ class HMACCapabilityAuthority:
             if not isinstance(token, str) or len(token) > 16_384:
                 raise ValueError("invalid resource commit permit size or type")
             version, key_id, body, signature = token.split(".")
-            if version != "resource-commit-v1" or key_id != self.key_id:
+            if version != "resource-commit-v1" or not self._accepts_key_id(key_id):
                 raise ValueError(
                     "resource commit permit version or key identifier mismatch"
                 )
@@ -1235,6 +1248,7 @@ class HMACCapabilityAuthority:
             if not self._verify_bytes(
                 signing_input.encode("ascii"),
                 _b64decode(signature),
+                key_id=key_id,
             ):
                 raise ValueError("resource commit permit signature mismatch")
             payload = json.loads(_b64decode(body))
@@ -1243,7 +1257,7 @@ class HMACCapabilityAuthority:
             if payload.get("issuer") != self.issuer_id:
                 raise ValueError("resource commit permit issuer mismatch")
             if (
-                payload.get("key_id") != self.key_id
+                payload.get("key_id") != key_id
                 or payload.get("audience") != self.audience
             ):
                 raise ValueError("resource commit permit key or audience mismatch")
@@ -1510,11 +1524,15 @@ class HMACCapabilityAuthority:
             if len(token) > 65536:
                 raise ValueError("token exceeds the maximum size")
             key_id, body, signature = token.split(".")
-            if key_id != self.key_id:
+            if not self._accepts_key_id(key_id):
                 raise ValueError("unknown signing key")
             signing_input = key_id + "." + body
             supplied = _b64decode(signature)
-            if not self._verify_bytes(signing_input.encode("ascii"), supplied):
+            if not self._verify_bytes(
+                signing_input.encode("ascii"),
+                supplied,
+                key_id=key_id,
+            ):
                 raise ValueError("signature mismatch")
             payload = json.loads(_b64decode(body))
             if not isinstance(payload, dict):
@@ -1532,7 +1550,7 @@ class HMACCapabilityAuthority:
                     "asymmetric token is missing its required signature algorithm"
                 )
             if (
-                payload.get("key_id") != self.key_id
+                payload.get("key_id") != key_id
                 or payload.get("issuer") != self.issuer_id
             ):
                 raise ValueError("issuer or key identifier mismatch")
@@ -1613,10 +1631,12 @@ class HMACCapabilityAuthority:
 class Ed25519CapabilityAuthority(HMACCapabilityAuthority):
     """Ed25519 authority with distinct private-key issuer and public-key verifier roles.
 
-    The verifier receives only a raw Ed25519 public key and cannot mint
-    capabilities or resource-commit permits. The optional cryptography dependency
-    is imported lazily. Key storage, rotation and authenticated public-key
-    distribution remain responsibilities of the deployment.
+    The verifier receives only public keys and cannot mint capabilities or
+    resource-commit permits. ``verification_keys`` can hold a bounded static
+    key ring for old/new key overlap; removing an ID retires that key for this
+    instance. The optional cryptography dependency is imported lazily. Private
+    key storage, coordinated rotation and authenticated key distribution remain
+    responsibilities of the deployment.
     """
 
     SIGNATURE_ALGORITHM = "Ed25519"
@@ -1632,10 +1652,22 @@ class Ed25519CapabilityAuthority(HMACCapabilityAuthority):
         task_context_verifier: Callable[[str, str, str, str], bool],
         public_key: bytes | None = None,
         private_key: bytes | None = None,
+        verification_keys: Mapping[str, bytes] | None = None,
         clock=time.time,
     ) -> None:
-        if public_key is None and private_key is None:
-            raise ValueError("Ed25519 authority requires a public or private key")
+        if not isinstance(key_id, str) or not key_id:
+            raise ValueError("key_id must be a non-empty string")
+        if len(key_id) > 128 or any(
+            not character.isascii() or not (character.isalnum() or character in "_-")
+            for character in key_id
+        ):
+            raise ValueError(
+                "key_id must contain 1-128 ASCII letters, digits, hyphens or underscores"
+            )
+        if public_key is None and private_key is None and verification_keys is None:
+            raise ValueError(
+                "Ed25519 authority requires a current public/private key or a verification key ring"
+            )
         if public_key is not None and (
             not isinstance(public_key, bytes) or len(public_key) != 32
         ):
@@ -1680,9 +1712,51 @@ class Ed25519CapabilityAuthority(HMACCapabilityAuthority):
             raise ValueError(
                 "Ed25519 public key does not match the supplied private key"
             )
+        configured_verification_keys: dict[str, bytes] = {}
+        if verification_keys is not None:
+            if not isinstance(verification_keys, Mapping):
+                raise TypeError(
+                    "verification_keys must be a mapping of key IDs to raw public keys"
+                )
+            configured_verification_keys = dict(verification_keys)
+        if len(configured_verification_keys) > 32:
+            raise ValueError("Ed25519 verification key rings are limited to 32 keys")
+        for (
+            configured_key_id,
+            configured_public_key,
+        ) in configured_verification_keys.items():
+            if (
+                not isinstance(configured_key_id, str)
+                or not configured_key_id
+                or len(configured_key_id) > 128
+                or any(
+                    not character.isascii()
+                    or not (character.isalnum() or character in "_-")
+                    for character in configured_key_id
+                )
+                or not isinstance(configured_public_key, bytes)
+                or len(configured_public_key) != 32
+            ):
+                raise ValueError(
+                    "verification key rings require non-empty key IDs and 32-byte public keys"
+                )
+
         verification_bytes = public_key or derived_public
-        if verification_bytes is None:
-            raise ValueError("Ed25519 verification key is missing")
+        if verification_bytes is not None:
+            configured_current = configured_verification_keys.get(key_id)
+            if configured_current is not None and not hmac.compare_digest(
+                configured_current, verification_bytes
+            ):
+                raise ValueError(
+                    "current Ed25519 key does not match the configured verification key ring"
+                )
+            configured_verification_keys[key_id] = verification_bytes
+        if len(configured_verification_keys) > 32:
+            raise ValueError("Ed25519 verification key rings are limited to 32 keys")
+        if key_id not in configured_verification_keys:
+            raise ValueError(
+                "verification key ring must contain the configured current key ID"
+            )
 
         # Satisfy the shared base configuration contract, then discard the
         # placeholder HMAC key. All cryptographic operations use Ed25519 hooks.
@@ -1698,9 +1772,19 @@ class Ed25519CapabilityAuthority(HMACCapabilityAuthority):
         )
         self._key = b""
         self._ed25519_signing_key = signing_key
-        self._ed25519_verification_key = Ed25519PublicKey.from_public_bytes(
-            verification_bytes,
+        self._ed25519_verification_keys = MappingProxyType(
+            {
+                configured_key_id: Ed25519PublicKey.from_public_bytes(
+                    configured_public_key
+                )
+                for configured_key_id, configured_public_key in (
+                    configured_verification_keys.items()
+                )
+            }
         )
+        # Retain the active-key attribute for compatibility with code that inspects
+        # the authority's configured current verification key.
+        self._ed25519_verification_key = self._ed25519_verification_keys[key_id]
         self._ed25519_invalid_signature = InvalidSignature
 
     def _sign_bytes(self, message: bytes) -> bytes:
@@ -1710,9 +1794,23 @@ class Ed25519CapabilityAuthority(HMACCapabilityAuthority):
             )
         return self._ed25519_signing_key.sign(message)
 
-    def _verify_bytes(self, message: bytes, signature: bytes) -> bool:
+    def _accepts_key_id(self, key_id: str) -> bool:
+        """Accept only key IDs explicitly present in this verifier's key ring."""
+        return isinstance(key_id, str) and key_id in self._ed25519_verification_keys
+
+    def _verify_bytes(
+        self,
+        message: bytes,
+        signature: bytes,
+        *,
+        key_id: str | None = None,
+    ) -> bool:
+        selected_key_id = self.key_id if key_id is None else key_id
+        verification_key = self._ed25519_verification_keys.get(selected_key_id)
+        if verification_key is None:
+            return False
         try:
-            self._ed25519_verification_key.verify(signature, message)
+            verification_key.verify(signature, message)
             return True
         except self._ed25519_invalid_signature:
             return False
