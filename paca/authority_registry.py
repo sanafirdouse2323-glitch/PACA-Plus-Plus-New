@@ -656,7 +656,18 @@ class SQLiteAuthorityRegistry:
         but before the shared database transaction commits. SQLite BEGIN
         IMMEDIATE and the PostgreSQL registry write lock remain held while the
         callback runs, serializing the filesystem rename against revocation.
+        The callback is trusted adapter code and must perform only the bounded
+        local destination operation; it must not execute model-controlled code
+        or call remote providers while holding the authority transaction.
         """
+        if not isinstance(permit, VerifiedResourceCommitPermit):
+            raise TypeError(
+                "filesystem commit requires a cryptographically verified permit"
+            )
+        if permit.action != "write_file":
+            raise AuthorityRegistryError(
+                "filesystem commit callback is restricted to write_file"
+            )
         if not callable(commit_callback):
             raise TypeError("filesystem commit callback must be callable")
         return self._commit_fenced_resource_write(
