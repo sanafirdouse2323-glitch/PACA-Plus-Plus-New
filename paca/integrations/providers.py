@@ -926,10 +926,11 @@ class QdrantVectorConnector:
             if len(encoded_filter) > 32_768:
                 raise ValueError("Qdrant query_filter is too large")
             if query_filter:
-                # Qdrant supports recursively nested filter clauses. Keeping the
-                # model/application filter inside its own condition prevents it
-                # from replacing or weakening the mandatory tenant predicate.
-                mandatory_filter["must"].append({"filter": dict(query_filter)})
+                # Qdrant accepts a Filter object recursively as a Condition
+                # inside "must". Keeping it as a separate conjunct prevents
+                # the caller filter (including must_not/should clauses) from
+                # replacing or weakening the mandatory tenant predicate.
+                mandatory_filter["must"].append(dict(query_filter))
         body["filter"] = mandatory_filter
         try:
             key = self.api_key_provider()
