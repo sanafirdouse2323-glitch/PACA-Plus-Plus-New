@@ -63,7 +63,7 @@ def test_digest_is_domain_separated_by_purpose() -> None:
     request = digest_object(value, purpose="request")
     payload = digest_object(value, purpose="payload")
     expected = hashlib.sha256(
-        b"PACA++/DIGEST/V1\\nrequest\\n" + canonicalize(value)
+        b"PACA++/DIGEST/V1\nrequest\n" + canonicalize(value)
     ).hexdigest()
     assert request == expected
     assert request != payload
