@@ -1,16 +1,12 @@
 from __future__ import annotations
 
 import paca
-from paca.authority_registry import (
-    AuthorityRegistryError as ExtractedRegistryError,
-    SQLiteAuthorityRegistry as ExtractedRegistry,
-    VerifiedResourceCommitPermit as ExtractedPermit,
-)
-from paca.authority_runtime import (
-    AuthorityRegistryError as LegacyRegistryError,
-    SQLiteAuthorityRegistry as LegacyRegistry,
-    VerifiedResourceCommitPermit as LegacyPermit,
-)
+from paca.authority_registry import AuthorityRegistryError as ExtractedRegistryError
+from paca.authority_registry import SQLiteAuthorityRegistry as ExtractedRegistry
+from paca.authority_registry import VerifiedResourceCommitPermit as ExtractedPermit
+from paca.authority_runtime import AuthorityRegistryError as LegacyRegistryError
+from paca.authority_runtime import SQLiteAuthorityRegistry as LegacyRegistry
+from paca.authority_runtime import VerifiedResourceCommitPermit as LegacyPermit
 
 
 def test_authority_registry_legacy_and_package_exports_are_compatible():
