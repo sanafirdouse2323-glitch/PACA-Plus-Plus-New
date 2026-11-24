@@ -10,6 +10,8 @@ authorization or a host kernel/container-runtime security review.
 from __future__ import annotations
 
 import contextlib
+import hashlib
+import hmac
 import json
 import math
 import re
@@ -21,6 +23,7 @@ import time
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
+from types import MappingProxyType
 from typing import Any
 
 
@@ -166,6 +169,47 @@ class DockerSandbox:
                 "sandbox executable must be an absolute path and arguments must be NUL-free strings"
             )
         return command
+
+    def implementation_digest(self, argv: Sequence[str]) -> str:
+        """Digest the exact worker image, command and enforced isolation profile.
+
+        Configure this value as Tool.implementation_digest before issuing the
+        capability. A changed image, command or sandbox limit requires a new
+        signed tool pin.
+        """
+        command = self._validate_argv(argv)
+        descriptor = {
+            "profile": "paca-docker-worker-v1",
+            "image": self.image,
+            "argv": list(command),
+            "isolation": {
+                "network": "none",
+                "read_only_root": True,
+                "capabilities_dropped": "ALL",
+                "no_new_privileges": True,
+                "seccomp": "default",
+                "user": "65534:65534",
+                "ipc": "private",
+                "pids_limit": self.pids_limit,
+                "memory_bytes": self.memory_bytes,
+                "cpu_limit": self.cpu_limit,
+                "nofile_limit": 64,
+                "core_limit": 0,
+                "file_size_limit": self.max_output_bytes,
+                "tmpfs_bytes": self.tmpfs_bytes,
+                "timeout_seconds": self.timeout_seconds,
+                "max_input_bytes": self.max_input_bytes,
+                "max_output_bytes": self.max_output_bytes,
+            },
+        }
+        encoded = json.dumps(
+            descriptor,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=False,
+            allow_nan=False,
+        ).encode("utf-8")
+        return hashlib.sha256(encoded).hexdigest()
 
     def _build_command(self, argv: Sequence[str], cidfile: str) -> tuple[str, ...]:
         command = self._validate_argv(argv)
@@ -368,7 +412,9 @@ class DockerSandboxExecutor:
                 raise ValueError("duplicate sandbox action mapping")
             normalized[action] = DockerSandbox._validate_argv(argv)
         self.sandbox = sandbox
-        self.commands = normalized
+        # Prevent runtime mutation of the trusted action-to-command map. The
+        # implementation-digest check also detects changed sandbox configuration.
+        self.commands = MappingProxyType(normalized)
 
     def __call__(self, request: Any) -> Any:
         from .provenance import Arg
@@ -381,6 +427,38 @@ class DockerSandboxExecutor:
             raise SandboxExecutionError(
                 "no isolated worker is registered for this action"
             )
+        tool_manifest = request.tool
+        if tool_manifest is None:
+            raise SandboxExecutionError(
+                "isolated tool execution requires a capability-pinned tool manifest"
+            )
+        implementation_digest = tool_manifest.implementation_digest
+        if implementation_digest is None:
+            raise SandboxExecutionError(
+                "isolated tool manifest has no signed implementation digest"
+            )
+        digest_builder = getattr(self.sandbox, "implementation_digest", None)
+        if not callable(digest_builder):
+            raise SandboxExecutionError(
+                "sandbox runner cannot attest its configured worker identity"
+            )
+        try:
+            actual_implementation_digest = digest_builder(command)
+        except Exception as exc:
+            raise SandboxExecutionError(
+                "sandbox worker identity could not be computed"
+            ) from exc
+        if (
+            not isinstance(actual_implementation_digest, str)
+            or not hmac.compare_digest(
+                actual_implementation_digest,
+                implementation_digest,
+            )
+        ):
+            raise SandboxExecutionError(
+                "tool implementation digest does not match the configured sandbox worker"
+            )
+
         arguments: dict[str, Any] = {}
         for name, argument in request.args.items():
             if not isinstance(name, str) or not name or not isinstance(argument, Arg):
@@ -388,15 +466,14 @@ class DockerSandboxExecutor:
                     "sandbox request contains an invalid typed argument"
                 )
             arguments[name] = argument.value
-        tool = None
-        if request.tool is not None:
-            tool = {
-                "name": request.tool.name,
-                "version": request.tool.version,
-                "description": request.tool.description,
-                "schema": list(request.tool.schema),
-                "hash": request.tool.hash,
-            }
+        tool = {
+            "name": tool_manifest.name,
+            "version": tool_manifest.version,
+            "description": tool_manifest.description,
+            "schema": list(tool_manifest.schema),
+            "implementation_digest": implementation_digest,
+            "hash": tool_manifest.hash,
+        }
         try:
             encoded = json.dumps(
                 {
