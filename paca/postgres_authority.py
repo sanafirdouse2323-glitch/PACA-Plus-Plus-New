@@ -12,6 +12,7 @@ rollback semantics are not supported by this reference implementation.
 """
 from __future__ import annotations
 
+import math
 import re
 import sqlite3
 from contextlib import closing
@@ -97,8 +98,13 @@ class PostgresAuthorityRegistry(SQLiteAuthorityRegistry):
             raise ValueError("PostgreSQL DSN must be a non-empty string")
         if not (dsn.startswith("postgresql://") or dsn.startswith("postgres://") or "host=" in dsn):
             raise ValueError("PostgreSQL DSN must identify a PostgreSQL connection")
-        if isinstance(timeout, bool) or not isinstance(timeout, (int, float)) or timeout <= 0:
-            raise ValueError("timeout must be positive")
+        if (
+            isinstance(timeout, bool)
+            or not isinstance(timeout, (int, float))
+            or not math.isfinite(timeout)
+            or timeout <= 0
+        ):
+            raise ValueError("timeout must be finite and positive")
         try:
             import psycopg
             from psycopg.rows import dict_row
@@ -109,9 +115,10 @@ class PostgresAuthorityRegistry(SQLiteAuthorityRegistry):
 
         import time
 
-        self.dsn = dsn
-        # Retain the familiar attribute for diagnostics. It is a DSN, not a file path.
-        self.database = dsn
+        # Never expose a connection string (which may contain a password) through
+        # the SQLite-compatible diagnostic attribute.
+        self._dsn = dsn
+        self.database = "<PostgreSQL authority database>"
         self.timeout = float(timeout)
         self.clock = clock if clock is not None else time.time
         self._psycopg = psycopg
@@ -121,7 +128,7 @@ class PostgresAuthorityRegistry(SQLiteAuthorityRegistry):
     def _connect(self) -> _PostgresConnection:
         try:
             raw = self._psycopg.connect(
-                self.dsn,
+                self._dsn,
                 autocommit=True,
                 row_factory=self._dict_row,
                 connect_timeout=max(1, int(self.timeout)),
@@ -282,9 +289,13 @@ class PostgresAuthorityRegistry(SQLiteAuthorityRegistry):
                 else:
                     resource_tables = connection.execute(
                         "SELECT to_regclass('paca_resource_commit_receipts') AS receipts,"
-                        "to_regclass('paca_resource_values') AS values"
+                        "to_regclass('paca_resource_values') AS resource_values"
                     ).fetchone()
-                    if resource_tables is None or not resource_tables["receipts"] or not resource_tables["values"]:
+                    if (
+                        resource_tables is None
+                        or not resource_tables["receipts"]
+                        or not resource_tables["resource_values"]
+                    ):
                         raise AuthorityRegistryError(
                             "PostgreSQL resource-commit schema is incomplete; refusing to recreate lost state"
                         )
