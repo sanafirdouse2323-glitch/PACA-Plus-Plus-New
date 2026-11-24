@@ -11,6 +11,7 @@ destination-side commit-fencing/idempotency protocol.
 from __future__ import annotations
 
 import hashlib
+import hmac
 import json
 import math
 import re
@@ -284,6 +285,16 @@ class ProviderCapture:
     provider_version: str
     value: Mapping[str, Any] = field(repr=False)
 
+    def __post_init__(self) -> None:
+        for name in ("provider", "connector_id", "object_id", "provider_version"):
+            value = getattr(self, name)
+            if not isinstance(value, str) or not value:
+                raise ValueError(f"{name} must be a non-empty string")
+        if not isinstance(self.version_id, str) or not re.fullmatch(r"[0-9a-f]{64}", self.version_id):
+            raise ValueError("version_id must be a lowercase SHA-256 digest")
+        if not isinstance(self.value, Mapping):
+            raise TypeError("provider capture value must be a mapping")
+
     def __repr__(self) -> str:
         return (
             "ProviderCapture("
@@ -309,10 +320,30 @@ class ProviderCapture:
             raise ProviderAuthenticationError(
                 "provider capture must use its fixed-identity untrusted external-content connector"
             )
+        # Snapshot the provider record before persistence. The record digest is
+        # checked against the digest captured by the connector, so a caller cannot
+        # mutate a nested response field and persist altered content under the
+        # original source-version identifier.
+        try:
+            record_bytes = json.dumps(
+                dict(self.value),
+                sort_keys=True,
+                separators=(",", ":"),
+                ensure_ascii=False,
+                allow_nan=False,
+            ).encode("utf-8")
+        except (TypeError, ValueError):
+            raise ProviderProtocolError("provider capture is not canonical JSON") from None
+        record_digest = hashlib.sha256(record_bytes).hexdigest()
+        if not hmac.compare_digest(record_digest, self.version_id):
+            raise ProviderAuthenticationError(
+                "provider capture content changed after capture"
+            )
+        record_snapshot = json.loads(record_bytes)
         captured_value = {
             "provider": self.provider,
             "provider_version": self.provider_version,
-            "record": dict(self.value),
+            "record": record_snapshot,
         }
         return connector.ingest(
             captured_value,
@@ -667,7 +698,7 @@ class MicrosoftGraphMailConnector:
             "GET",
             url,
             headers=self._headers(),
-            params={"$select": ",".join(self.SELECT)},
+            params={"$select": ",".join(self.selected_fields)},
         )
         if response.get("id") != message_id:
             raise ProviderProtocolError("Microsoft Graph returned a different message identifier")
@@ -759,21 +790,24 @@ class SlackHistoryConnector:
             if not isinstance(item, dict) or not isinstance(item.get("ts"), str):
                 raise ProviderProtocolError("Slack returned a message without a timestamp")
             ts = item["ts"]
+            captured_value = {**item, "channel": channel_id}
             captures.append(
                 ProviderCapture(
                     provider="slack",
                     connector_id=self.connector_id,
                     object_id=f"slack:{self.workspace_id}:{channel_id}:{ts}",
-                    version_id=_version_id(item),
+                    version_id=_version_id(captured_value),
                     provider_version=str(item.get("edited", {}).get("ts", ts)) if isinstance(item.get("edited"), dict) else ts,
-                    value={"channel": channel_id, **item},
+                    value=captured_value,
                 )
             )
         metadata = response.get("response_metadata", {})
         if metadata is not None and not isinstance(metadata, dict):
             raise ProviderProtocolError("Slack response_metadata was malformed")
         next_cursor = metadata.get("next_cursor") if isinstance(metadata, dict) else None
-        if next_cursor is not None and not isinstance(next_cursor, str):
+        if next_cursor is not None and (
+            not isinstance(next_cursor, str) or len(next_cursor) > 4_096
+        ):
             raise ProviderProtocolError("Slack next_cursor was invalid")
         return ProviderPage(tuple(captures), next_cursor or None)
 
@@ -866,7 +900,12 @@ class QdrantVectorConnector:
             if len(encoded_filter) > 32_768:
                 raise ValueError("Qdrant query_filter is too large")
             body["filter"] = dict(query_filter)
-        key = self.api_key_provider()
+        try:
+            key = self.api_key_provider()
+        except Exception:
+            # Secret-provider exceptions can contain backend details or secret
+            # material. Do not propagate them into logs or API responses.
+            raise ProviderAuthenticationError("Qdrant API key provider failed") from None
         if not isinstance(key, str) or not key:
             raise ProviderAuthenticationError("Qdrant API key provider returned no key")
         url = self.base_url + "/collections/" + quote(collection, safe="") + "/points/search"
@@ -884,14 +923,15 @@ class QdrantVectorConnector:
             if not isinstance(item, dict) or "id" not in item:
                 raise ProviderProtocolError("Qdrant returned a point without an identifier")
             point_id = str(item["id"])
+            captured_value = {**item, "collection": collection}
             captures.append(
                 ProviderCapture(
                     provider="qdrant",
                     connector_id=self.connector_id,
                     object_id=f"qdrant:{self.cluster_id}:{collection}:{point_id}",
-                    version_id=_version_id(item),
+                    version_id=_version_id(captured_value),
                     provider_version=str(item.get("version", "")),
-                    value={"collection": collection, **item},
+                    value=captured_value,
                 )
             )
         return ProviderPage(tuple(captures), None)
