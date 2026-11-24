@@ -197,6 +197,7 @@ def _authority(
     parent_digest: str | None = None,
     tenant: str = "acme",
     task_id: str = "task-report",
+    max_task_calls: int = 100,
 ) -> AuthorityLineage:
     return AuthorityLineage.create(
         authority_id=authority_id,
@@ -210,6 +211,7 @@ def _authority(
         grants=grants,
         parent_id=parent_id,
         parent_digest=parent_digest,
+        max_task_calls=max_task_calls,
     )
 
 
@@ -419,3 +421,25 @@ def test_capability_must_match_exact_authority_and_parent_ids():
 
     capability.parent = None
     assert request.digest == original_digest
+
+
+
+def test_authority_delegation_cannot_raise_or_change_task_wide_quota():
+    graph = AuthorityLineageGraph()
+    parent = _authority(
+        "quota-root",
+        grants={"delegate": ("worker-b",), "read_file": ("/acme/*",)},
+        max_task_calls=7,
+    )
+    graph.add(parent)
+    child = _authority(
+        "quota-child",
+        grants={"read_file": ("/acme/reports/*",)},
+        parent_id="quota-root",
+        parent_digest=graph.digest("quota-root"),
+        principal="worker-b",
+        max_task_calls=8,
+    )
+
+    with pytest.raises(ValueError, match="task-wide call quota"):
+        graph.add(child)

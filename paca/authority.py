@@ -78,6 +78,8 @@ class AuthorityLineage:
     parent_id: Optional[str] = None
     # Parent-chain digest makes this node transitively bind the entire grant chain.
     parent_digest: Optional[str] = None
+    # All capabilities for one tenant/task share this immutable aggregate call ceiling.
+    max_task_calls: int = 100
 
     def __post_init__(self) -> None:
         for field_name in ("authority_id", "issuer", "principal", "tenant", "task_id", "purpose"):
@@ -88,6 +90,12 @@ class AuthorityLineage:
             value = getattr(self, field_name)
             if isinstance(value, bool) or not isinstance(value, int) or value < 0:
                 raise ValueError(f"{field_name} must be a non-negative integer")
+        if (
+            isinstance(self.max_task_calls, bool)
+            or not isinstance(self.max_task_calls, int)
+            or self.max_task_calls < 1
+        ):
+            raise ValueError("max_task_calls must be a positive integer")
         if self.parent_id is not None and (
             not isinstance(self.parent_id, str) or not self.parent_id
         ):
@@ -132,6 +140,7 @@ class AuthorityLineage:
         grants: Mapping[str, Iterable[str]],
         parent_id: Optional[str] = None,
         parent_digest: Optional[str] = None,
+        max_task_calls: int = 100,
     ) -> "AuthorityLineage":
         return cls(
             authority_id=authority_id,
@@ -145,6 +154,7 @@ class AuthorityLineage:
             grants=normalise_grants(grants),
             parent_id=parent_id,
             parent_digest=parent_digest,
+            max_task_calls=max_task_calls,
         )
 
     def as_dict(self) -> Dict[str, object]:
@@ -154,6 +164,7 @@ class AuthorityLineage:
             "principal": self.principal,
             "tenant": self.tenant,
             "task_id": self.task_id,
+            "max_task_calls": self.max_task_calls,
             "purpose": self.purpose,
             "policy_epoch": self.policy_epoch,
             "expires": self.expires,
@@ -217,6 +228,8 @@ class AuthorityLineageGraph:
                 raise ValueError("delegated authority cannot change tenant or task")
             if record.purpose != parent.purpose:
                 raise ValueError("delegated authority cannot broaden or change purpose")
+            if record.max_task_calls != parent.max_task_calls:
+                raise ValueError("delegated authority must preserve the task-wide call quota")
             if record.policy_epoch < parent.policy_epoch:
                 raise ValueError("delegated authority cannot move to an older policy epoch")
             if record.expires > parent.expires:

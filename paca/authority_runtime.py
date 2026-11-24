@@ -56,6 +56,13 @@ def _record_from_dict(data: Mapping[str, object]) -> AuthorityLineage:
             raise TypeError("grants must be an object")
         parent_id = data.get("parent_id")
         parent_digest = data.get("parent_digest")
+        max_task_calls = data.get("max_task_calls")
+        if (
+            isinstance(max_task_calls, bool)
+            or not isinstance(max_task_calls, int)
+            or max_task_calls < 1
+        ):
+            raise ValueError("max_task_calls is missing or invalid")
         return AuthorityLineage.create(
             authority_id=str(data["authority_id"]),
             issuer=str(data["issuer"]),
@@ -68,6 +75,7 @@ def _record_from_dict(data: Mapping[str, object]) -> AuthorityLineage:
             grants={str(action): tuple(patterns) for action, patterns in grants.items()},
             parent_id=str(parent_id) if parent_id is not None else None,
             parent_digest=str(parent_digest) if parent_digest is not None else None,
+            max_task_calls=max_task_calls,
         )
     except (KeyError, TypeError, ValueError) as exc:
         raise AuthorityRegistryError("authority record is malformed") from exc
@@ -81,7 +89,7 @@ class SQLiteAuthorityRegistry:
     global policy epoch invalidates all capabilities issued at earlier epochs.
     """
 
-    SCHEMA_VERSION = 3
+    SCHEMA_VERSION = 4
 
     def __init__(
         self,
@@ -188,6 +196,27 @@ class SQLiteAuthorityRegistry:
                     connection.execute(
                         "UPDATE paca_authority_meta SET value='3' WHERE key='schema_version'"
                     )
+                if version < 4:
+                    populated = connection.execute(
+                        "SELECT 1 FROM authority_records LIMIT 1"
+                    ).fetchone()
+                    if populated is not None:
+                        raise AuthorityRegistryError(
+                            "authority database contains existing v3 or older capabilities without "
+                            "an aggregate task quota; an operator-reviewed offline migration is "
+                            "required, and automatic quota inference or usage reset is refused"
+                        )
+                    connection.execute(
+                        "CREATE TABLE IF NOT EXISTS task_usage ("
+                        "tenant TEXT NOT NULL,"
+                        "task_id TEXT NOT NULL,"
+                        "calls_used INTEGER NOT NULL DEFAULT 0 CHECK(calls_used>=0),"
+                        "max_task_calls INTEGER NOT NULL CHECK(max_task_calls>=1),"
+                        "PRIMARY KEY(tenant,task_id))"
+                    )
+                    connection.execute(
+                        "UPDATE paca_authority_meta SET value='4' WHERE key='schema_version'"
+                    )
                 connection.commit()
             except Exception:
                 connection.rollback()
@@ -272,56 +301,126 @@ class SQLiteAuthorityRegistry:
                     (record.authority_id,),
                 ).fetchone()
                 encoded = _canonical(record.as_dict()).decode("utf-8")
+
+                # One durable counter is shared by every authority with the same
+                # authenticated tenant/task pair. A missing row beside existing
+                # authority history is corruption, not a reason to start at zero.
+                task_row = connection.execute(
+                    "SELECT calls_used,max_task_calls FROM task_usage "
+                    "WHERE tenant=? AND task_id=?",
+                    (record.tenant, record.task_id),
+                ).fetchone()
+                if task_row is None:
+                    if record.parent_id is not None:
+                        raise AuthorityRegistryError(
+                            "task-wide usage state is missing before delegation"
+                        )
+                    prior_rows = connection.execute(
+                        "SELECT record_json FROM authority_records"
+                    ).fetchall()
+                    for stored in prior_rows:
+                        try:
+                            stored_record = json.loads(stored["record_json"])
+                        except json.JSONDecodeError as exc:
+                            raise AuthorityRegistryError(
+                                "stored authority history is malformed"
+                            ) from exc
+                        if (
+                            stored_record.get("tenant") == record.tenant
+                            and stored_record.get("task_id") == record.task_id
+                        ):
+                            raise AuthorityRegistryError(
+                                "task-wide usage state is missing for existing authority history; "
+                                "refusing to reset the aggregate counter"
+                            )
+                    connection.execute(
+                        "INSERT INTO task_usage(tenant,task_id,calls_used,max_task_calls) "
+                        "VALUES(?,?,0,?)",
+                        (record.tenant, record.task_id, record.max_task_calls),
+                    )
+                    task_calls_used = 0
+                else:
+                    if int(task_row["max_task_calls"]) != record.max_task_calls:
+                        raise AuthorityRegistryError(
+                            "task-wide call quota differs from the immutable task configuration"
+                        )
+                    task_calls_used = int(task_row["calls_used"])
+
                 if existing is not None:
                     if existing["record_json"] != encoded:
-                        raise AuthorityRegistryError("authority ID was reused with different immutable contents")
+                        raise AuthorityRegistryError(
+                            "authority ID was reused with different immutable contents"
+                        )
                     connection.commit()
                     return record
+
                 epoch_row = connection.execute(
                     "SELECT policy_epoch FROM authority_state WHERE singleton=1"
                 ).fetchone()
                 if epoch_row is None or record.policy_epoch != int(epoch_row["policy_epoch"]):
-                    raise AuthorityRegistryError("authority must be issued at the current policy epoch")
+                    raise AuthorityRegistryError(
+                        "authority must be issued at the current policy epoch"
+                    )
                 if int(self.clock()) >= record.expires:
                     raise AuthorityRegistryError("cannot register an expired authority")
+
                 graph = self._load_graph(connection)
                 if record.parent_id is not None:
                     if not self._is_active(connection, record.parent_id):
-                        raise AuthorityRegistryError("cannot delegate from a missing, expired, revoked or stale parent")
+                        raise AuthorityRegistryError(
+                            "cannot delegate from a missing, expired, revoked or stale parent"
+                        )
+                    if task_calls_used >= record.max_task_calls:
+                        raise AuthorityRegistryError(
+                            "task-wide call budget is exhausted before delegation"
+                        )
                     if (
                         isinstance(parent_max_fanout, bool)
                         or not isinstance(parent_max_fanout, int)
                         or parent_max_fanout < 1
                     ):
-                        raise AuthorityRegistryError("delegation requires the authenticated parent fan-out budget")
+                        raise AuthorityRegistryError(
+                            "delegation requires the authenticated parent fan-out budget"
+                        )
                     usage = connection.execute(
                         "SELECT fanout_used FROM authority_usage WHERE authority_id=?",
                         (record.parent_id,),
                     ).fetchone()
                     fanout_used = int(usage["fanout_used"]) if usage else 0
                     if fanout_used >= parent_max_fanout:
-                        raise AuthorityRegistryError("parent delegation fan-out budget is exhausted")
+                        raise AuthorityRegistryError(
+                            "parent delegation fan-out budget is exhausted"
+                        )
                     if (
                         isinstance(parent_max_calls, bool)
                         or not isinstance(parent_max_calls, int)
                         or parent_max_calls < 1
                     ):
-                        raise AuthorityRegistryError("delegation requires the authenticated parent call budget")
+                        raise AuthorityRegistryError(
+                            "delegation requires the authenticated parent call budget"
+                        )
                     usage = connection.execute(
                         "SELECT calls_used FROM authority_usage WHERE authority_id=?",
                         (record.parent_id,),
                     ).fetchone()
                     if usage is None:
-                        raise AuthorityRegistryError("parent durable usage state is missing")
+                        raise AuthorityRegistryError(
+                            "parent durable usage state is missing"
+                        )
                     if int(usage["calls_used"]) >= parent_max_calls:
-                        raise AuthorityRegistryError("parent call budget is exhausted before delegation")
+                        raise AuthorityRegistryError(
+                            "parent call budget is exhausted before delegation"
+                        )
+
                 graph.add(record)
                 connection.execute(
-                    "INSERT INTO authority_records(authority_id,parent_id,record_json) VALUES(?,?,?)",
+                    "INSERT INTO authority_records(authority_id,parent_id,record_json) "
+                    "VALUES(?,?,?)",
                     (record.authority_id, record.parent_id, encoded),
                 )
                 connection.execute(
-                    "INSERT INTO authority_usage(authority_id,calls_used,fanout_used) VALUES(?,0,0)",
+                    "INSERT INTO authority_usage(authority_id,calls_used,fanout_used) "
+                    "VALUES(?,0,0)",
                     (record.authority_id,),
                 )
                 if record.parent_id is not None:
@@ -330,6 +429,15 @@ class SQLiteAuthorityRegistry:
                         "calls_used=calls_used+1 WHERE authority_id=?",
                         (record.parent_id,),
                     )
+                    updated = connection.execute(
+                        "UPDATE task_usage SET calls_used=calls_used+1 "
+                        "WHERE tenant=? AND task_id=? AND calls_used<max_task_calls",
+                        (record.tenant, record.task_id),
+                    )
+                    if updated.rowcount != 1:
+                        raise AuthorityRegistryError(
+                            "task-wide call budget was exhausted during delegation"
+                        )
                 connection.commit()
                 return record
             except Exception:
@@ -378,14 +486,15 @@ class SQLiteAuthorityRegistry:
         return revoked is None
 
     def consume_effect(self, authority_id: str, *, max_calls: int) -> int:
-        """Atomically consume one call from the durable per-capability budget."""
+        """Atomically consume per-capability and tenant/task-wide call budgets."""
         if isinstance(max_calls, bool) or not isinstance(max_calls, int) or max_calls < 1:
             raise ValueError("max_calls must be a positive integer")
         with closing(self._connect()) as connection:
             connection.execute("BEGIN IMMEDIATE")
             try:
-                self._load_graph(connection)
-                if not self._is_active(connection, authority_id):
+                graph = self._load_graph(connection)
+                record = graph.get(authority_id)
+                if record is None or not self._is_active(connection, authority_id):
                     raise AuthorityRegistryError("cannot consume a call for inactive authority")
                 row = connection.execute(
                     "SELECT calls_used FROM authority_usage WHERE authority_id=?",
@@ -396,11 +505,37 @@ class SQLiteAuthorityRegistry:
                 used = int(row["calls_used"])
                 if used >= max_calls:
                     raise AuthorityRegistryError("capability call budget is exhausted")
+
+                task_row = connection.execute(
+                    "SELECT calls_used,max_task_calls FROM task_usage "
+                    "WHERE tenant=? AND task_id=?",
+                    (record.tenant, record.task_id),
+                ).fetchone()
+                if (
+                    task_row is None
+                    or int(task_row["max_task_calls"]) != record.max_task_calls
+                ):
+                    raise AuthorityRegistryError(
+                        "durable task-wide usage state is missing or inconsistent"
+                    )
+                task_used = int(task_row["calls_used"])
+                if task_used >= record.max_task_calls:
+                    raise AuthorityRegistryError("task-wide call budget is exhausted")
+
                 next_used = used + 1
                 connection.execute(
                     "UPDATE authority_usage SET calls_used=? WHERE authority_id=?",
                     (next_used, authority_id),
                 )
+                updated = connection.execute(
+                    "UPDATE task_usage SET calls_used=calls_used+1 "
+                    "WHERE tenant=? AND task_id=? AND calls_used<max_task_calls",
+                    (record.tenant, record.task_id),
+                )
+                if updated.rowcount != 1:
+                    raise AuthorityRegistryError(
+                        "task-wide call budget was exhausted during operation"
+                    )
                 connection.commit()
                 return next_used
             except Exception:
@@ -414,7 +549,7 @@ class SQLiteAuthorityRegistry:
         *,
         max_calls: int,
     ) -> int:
-        """Atomically enforce recipient budget and reject replay for a principal/task."""
+        """Atomically enforce replay, per-capability and task-wide receive budgets."""
         if not isinstance(message_id, str) or not message_id or len(message_id) > 256:
             raise ValueError("message_id must be a non-empty bounded string")
         if isinstance(max_calls, bool) or not isinstance(max_calls, int) or max_calls < 1:
@@ -422,25 +557,42 @@ class SQLiteAuthorityRegistry:
         with closing(self._connect()) as connection:
             connection.execute("BEGIN IMMEDIATE")
             try:
-                self._load_graph(connection)
-                if not self._is_active(connection, authority_id):
-                    raise AuthorityRegistryError("cannot receive a message with inactive authority")
-                record_row = connection.execute(
-                    "SELECT record_json FROM authority_records WHERE authority_id=?",
-                    (authority_id,),
-                ).fetchone()
-                if record_row is None:
-                    raise AuthorityRegistryError("recipient authority is unknown")
-                record = _record_from_dict(json.loads(record_row["record_json"]))
+                graph = self._load_graph(connection)
+                record = graph.get(authority_id)
+                if record is None or not self._is_active(connection, authority_id):
+                    raise AuthorityRegistryError(
+                        "cannot receive a message with inactive authority"
+                    )
                 usage = connection.execute(
                     "SELECT calls_used FROM authority_usage WHERE authority_id=?",
                     (authority_id,),
                 ).fetchone()
                 if usage is None:
-                    raise AuthorityRegistryError("recipient durable usage state is missing")
+                    raise AuthorityRegistryError(
+                        "recipient durable usage state is missing"
+                    )
                 used = int(usage["calls_used"])
                 if used >= max_calls:
-                    raise AuthorityRegistryError("recipient call budget is exhausted")
+                    raise AuthorityRegistryError(
+                        "recipient call budget is exhausted"
+                    )
+
+                task_row = connection.execute(
+                    "SELECT calls_used,max_task_calls FROM task_usage "
+                    "WHERE tenant=? AND task_id=?",
+                    (record.tenant, record.task_id),
+                ).fetchone()
+                if (
+                    task_row is None
+                    or int(task_row["max_task_calls"]) != record.max_task_calls
+                ):
+                    raise AuthorityRegistryError(
+                        "durable task-wide usage state is missing or inconsistent"
+                    )
+                task_used = int(task_row["calls_used"])
+                if task_used >= record.max_task_calls:
+                    raise AuthorityRegistryError("task-wide call budget is exhausted")
+
                 try:
                     connection.execute(
                         "INSERT INTO authority_message_receipts("
@@ -452,12 +604,24 @@ class SQLiteAuthorityRegistry:
                         ),
                     )
                 except sqlite3.IntegrityError as exc:
-                    raise AuthorityRegistryError("inter-agent message replay was rejected") from exc
+                    raise AuthorityRegistryError(
+                        "inter-agent message replay was rejected"
+                    ) from exc
+
                 next_used = used + 1
                 connection.execute(
                     "UPDATE authority_usage SET calls_used=? WHERE authority_id=?",
                     (next_used, authority_id),
                 )
+                updated = connection.execute(
+                    "UPDATE task_usage SET calls_used=calls_used+1 "
+                    "WHERE tenant=? AND task_id=? AND calls_used<max_task_calls",
+                    (record.tenant, record.task_id),
+                )
+                if updated.rowcount != 1:
+                    raise AuthorityRegistryError(
+                        "task-wide call budget was exhausted during message receipt"
+                    )
                 connection.commit()
                 return next_used
             except Exception:
@@ -473,6 +637,22 @@ class SQLiteAuthorityRegistry:
         if row is None:
             raise KeyError(authority_id)
         return int(row["calls_used"]), int(row["fanout_used"])
+    def task_usage(self, tenant: str, task_id: str) -> Tuple[int, int]:
+        """Return (calls_used, max_task_calls) for one authenticated tenant/task."""
+        if not isinstance(tenant, str) or not tenant:
+            raise ValueError("tenant must be a non-empty string")
+        if not isinstance(task_id, str) or not task_id:
+            raise ValueError("task_id must be a non-empty string")
+        with closing(self._connect()) as connection:
+            row = connection.execute(
+                "SELECT calls_used,max_task_calls FROM task_usage "
+                "WHERE tenant=? AND task_id=?",
+                (tenant, task_id),
+            ).fetchone()
+        if row is None:
+            raise KeyError((tenant, task_id))
+        return int(row["calls_used"]), int(row["max_task_calls"])
+
     def is_active(self, authority_id: str) -> bool:
         with closing(self._connect()) as connection:
             graph = self._load_graph(connection)
@@ -543,7 +723,8 @@ class SignedCapability:
 class HMACCapabilityAuthority:
     """Issue and verify audience-bound, HMAC-authenticated capability envelopes."""
 
-    TOKEN_VERSION = 1
+    TOKEN_VERSION = 2
+    DEFAULT_TASK_MAX_CALLS = 100
 
     def __init__(
         self,
@@ -589,6 +770,7 @@ class HMACCapabilityAuthority:
         role: str = "assistant",
         max_calls: int = 40,
         max_fanout: int = 5,
+        max_task_calls: Optional[int] = None,
         tool_pins: Optional[Mapping[str, str]] = None,
         parent_token: Optional[str] = None,
     ) -> SignedCapability:
@@ -599,6 +781,12 @@ class HMACCapabilityAuthority:
             raise ValueError("max_calls must be a positive integer")
         if isinstance(max_fanout, bool) or not isinstance(max_fanout, int) or max_fanout < 1:
             raise ValueError("max_fanout must be a positive integer")
+        if max_task_calls is not None and (
+            isinstance(max_task_calls, bool)
+            or not isinstance(max_task_calls, int)
+            or max_task_calls < 1
+        ):
+            raise ValueError("max_task_calls must be a positive integer")
         if not isinstance(principal, str) or not principal or not isinstance(role, str) or not role:
             raise ValueError("principal and role must be non-empty strings")
         pins = dict(tool_pins or {})
@@ -614,6 +802,14 @@ class HMACCapabilityAuthority:
                 raise CapabilityAuthenticationError("delegation parent lacks authority lineage")
             parent_id = parent_record.authority_id
             self.registry.assert_active(parent_id)
+            if (
+                max_task_calls is not None
+                and max_task_calls != parent_record.max_task_calls
+            ):
+                raise ValueError(
+                    "delegated capability must preserve its parent's task-wide call quota"
+                )
+            max_task_calls = parent_record.max_task_calls
             delegated_targets = dict(parent_record.grants).get("delegate", ())
             from .authority import grant_pattern_is_subset
             if not delegated_targets or not any(
@@ -633,6 +829,8 @@ class HMACCapabilityAuthority:
             if max_fanout > parent_signed.capability.max_fanout:
                 raise ValueError("delegated fan-out cannot exceed its parent")
             parent_digest = self.registry.chain_digest(parent_id)
+        if max_task_calls is None:
+            max_task_calls = self.DEFAULT_TASK_MAX_CALLS
         if any(value is None or not isinstance(value, str) or not value for value in (tenant, task_id, purpose)):
             raise ValueError("root capability issuance requires tenant, task_id and purpose")
         try:
@@ -654,6 +852,7 @@ class HMACCapabilityAuthority:
             grants=grants,
             parent_id=parent_id,
             parent_digest=parent_digest,
+            max_task_calls=max_task_calls,
         )
         self.registry.register_authority(
             record,
