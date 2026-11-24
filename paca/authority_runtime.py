@@ -1135,7 +1135,7 @@ class HMACCapabilityAuthority:
 
     def _accepts_key_id(self, key_id: str) -> bool:
         """Return whether this authority is configured to trust the key identifier."""
-        return isinstance(key_id, str) and hmac.compare_digest(key_id, self.key_id)
+        return isinstance(key_id, str) and key_id == self.key_id
 
     def _verify_bytes(
         self,
