@@ -242,6 +242,51 @@ class Monitor:
                 "consequential runtime requires a deny_overrides policy engine"
             )
 
+        # Constructor overrides are useful for simulator experiments, but a
+        # consequential runtime may only make these controls stricter than the
+        # packaged defaults. Otherwise a custom clearance, protected-path set
+        # or quarantine threshold could weaken enforcement without changing a
+        # single policy rule.
+        if not isinstance(self.clearance, dict):
+            raise ValueError("consequential runtime requires a valid destination-clearance mapping")
+        for host, clearance in self.clearance.items():
+            if (
+                not isinstance(host, str) or not host
+                or isinstance(clearance, bool)
+                or not isinstance(clearance, int)
+                or not 0 <= clearance <= 3
+            ):
+                raise ValueError("consequential runtime destination-clearance mapping is malformed")
+            baseline_clearance = max(
+                (
+                    value for suffix, value in DEFAULT_CLEARANCE.items()
+                    if host == suffix or host.endswith("." + suffix)
+                ),
+                default=0,
+            )
+            if clearance > baseline_clearance:
+                raise ValueError(
+                    f"consequential runtime destination clearance for {host!r} "
+                    "is more permissive than the packaged baseline"
+                )
+
+        if (
+            not isinstance(self.protected, list)
+            or any(not isinstance(pattern, str) or not pattern for pattern in self.protected)
+            or not set(PROTECTED).issubset(set(self.protected))
+        ):
+            raise ValueError(
+                "consequential runtime protected-path patterns cannot omit packaged protections"
+            )
+        if (
+            isinstance(self.quarantine_after, bool)
+            or not isinstance(self.quarantine_after, int)
+            or not 1 <= self.quarantine_after <= 3
+        ):
+            raise ValueError(
+                "consequential runtime quarantine threshold cannot be weaker than the packaged default"
+            )
+
         baseline_text = resources.files("paca").joinpath(
             "policies", "agent_policy.paca"
         ).read_text(encoding="utf-8")
