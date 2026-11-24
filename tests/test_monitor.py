@@ -207,3 +207,37 @@ def test_monitor_fails_closed_and_audits_invalid_tenant_or_task_identity(tenant,
     assert monitor.audit.verify()
     assert monitor.audit.entries[-1]["verdict"] == "deny"
     assert "invalid tenant/task identity" in monitor.audit.entries[-1]["reason"]
+
+
+
+def test_consequential_runtime_profile_rejects_ablations_and_policy_drift():
+    monitor = Monitor()
+    monitor.assert_consequential_safe()
+
+    ablated = Monitor(disable={"C5"})
+    with pytest.raises(ValueError, match="disabled checks: C5"):
+        ablated.assert_consequential_safe()
+
+    from importlib import resources
+
+    tampered_policy = Monitor(
+        policy_text=resources.files("paca").joinpath(
+            "policies", "agent_policy.paca",
+        ).read_text(encoding="utf-8").replace(
+            "flow.cross_tenant == true", "flow.cross_tenant == false",
+        )
+    )
+    with pytest.raises(ValueError, match="policy rule C6"):
+        tampered_policy.assert_consequential_safe()
+
+
+def test_consequential_runtime_profile_rejects_unknown_or_duplicate_required_rules():
+    from importlib import resources
+
+    default_policy = resources.files("paca").joinpath(
+        "policies", "agent_policy.paca",
+    ).read_text(encoding="utf-8")
+    duplicate = default_policy + "\\nC6: deny any when flow.cross_tenant == true\\n"
+    monitor = Monitor(policy_text=duplicate)
+    with pytest.raises(ValueError, match="missing or duplicates required policy rule C6"):
+        monitor.assert_consequential_safe()
