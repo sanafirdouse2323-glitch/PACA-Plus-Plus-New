@@ -911,6 +911,62 @@ def test_filesystem_executor_configuration_rejects_public_state_directory(tmp_pa
 
 
 @pytest.mark.skipif(sys.platform != "linux", reason="filesystem commit fence requires Linux openat2")
+def test_filesystem_executor_does_not_overwrite_out_of_band_target_change(
+    tmp_path,
+    monkeypatch,
+):
+    env = _environment(tmp_path)
+    root, state_dir, executor = _filesystem_executor(
+        env,
+        tmp_path,
+        initial_content=b"original report",
+    )
+    target = _filesystem_relative_target(root, env["signed"].capability.task_id)
+    original_commit = env["registry"].commit_fenced_filesystem_write
+
+    def change_destination_before_commit(permit, payload, *, commit_callback):
+        target.write_bytes(b"changed outside the broker")
+        return original_commit(
+            permit,
+            payload,
+            commit_callback=commit_callback,
+        )
+
+    monkeypatch.setattr(
+        env["registry"],
+        "commit_fenced_filesystem_write",
+        change_destination_before_commit,
+    )
+
+    with pytest.raises(ResourceCommitDenied, match="operator review"):
+        env["runtime"].execute_effect(
+            env["signed"].token,
+            env["request"],
+            executor,
+        )
+
+    assert target.read_bytes() == b"changed outside the broker"
+    assert _stored_resource(env["registry"]) is None
+    assert len(list(state_dir.glob("*.json"))) == 1
+    executor.close()
+
+
+@pytest.mark.skipif(sys.platform != "linux", reason="filesystem commit fence requires Linux openat2")
+def test_filesystem_executor_rejects_group_or_world_accessible_root(tmp_path):
+    env = _environment(tmp_path)
+    root = tmp_path / "public-resource-root"
+    _filesystem_relative_target(root).parent.mkdir(parents=True)
+    root.chmod(0o755)
+
+    with pytest.raises(ResourceCommitDenied, match="no group or other permissions"):
+        FilesystemFencedResourceExecutor(
+            env["executor"].authority,
+            root=root,
+            state_dir=tmp_path / "filesystem-state",
+        )
+
+
+@pytest.mark.skipif(sys.platform != "linux", reason="filesystem commit fence requires Linux openat2")
 def test_filesystem_resource_namespace_isolated_by_task_id(tmp_path):
     env_one = _environment(
         tmp_path / "task-one",
