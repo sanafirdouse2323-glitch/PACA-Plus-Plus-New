@@ -1112,13 +1112,6 @@ class HMACCapabilityAuthority:
         ):
             if not isinstance(value, str) or not value:
                 raise ValueError(name + " must be a non-empty string")
-        if len(key_id) > 128 or any(
-            not character.isascii() or not (character.isalnum() or character in "_-")
-            for character in key_id
-        ):
-            raise ValueError(
-                "key_id must contain 1-128 ASCII letters, digits, hyphens or underscores"
-            )
         self.registry = registry
         self.issuer_id = issuer_id
         self.key_id = key_id
@@ -1664,6 +1657,17 @@ class Ed25519CapabilityAuthority(HMACCapabilityAuthority):
     ) -> None:
         if not isinstance(key_id, str) or not key_id:
             raise ValueError("key_id must be a non-empty string")
+        if (
+            len(key_id) > 128
+            or any(
+                not character.isascii()
+                or not (character.isalnum() or character in "_-")
+                for character in key_id
+            )
+        ):
+            raise ValueError(
+                "key_id must contain 1-128 ASCII letters, digits, hyphens or underscores"
+            )
         if public_key is None and private_key is None and verification_keys is None:
             raise ValueError(
                 "Ed25519 authority requires a current public/private key or a verification key ring"
