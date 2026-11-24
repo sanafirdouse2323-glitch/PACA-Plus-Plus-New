@@ -394,7 +394,9 @@ def test_agentdojo_revalidates_policy_after_request_builder(tmp_path):
     )
 
     assert runtime.calls == []
-    assert "policy ablation" in messages[-1]["error"]
+    # The adapter deliberately redacts callback exception details; the absence
+    # of a dispatch and a generic integration denial are the public contract.
+    assert "integration error (ValueError)" in messages[-1]["error"]
 
 
 def test_agentdojo_adapter_fails_closed_when_request_builder_mutates_arguments():
