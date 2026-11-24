@@ -85,11 +85,11 @@ PR #14 scopes the aggregate counter by `(tenant, task_id)`. The issuer's identit
 **Severity:** Medium  
 **Status:** Open hardening item
 
-The receive path authenticates and traverses message provenance before the replay receipt is inserted. This ordering avoids burning a receipt for unauthenticated envelopes, but repeated delivery of an already-valid envelope can repeat signature, JSON, provenance-DAG and authority-registry work before the duplicate receipt is detected. The current implementation has no explicit per-sender ingress rate limit or bounded provenance traversal budget at this boundary.
+The phase-2 replay-hardening branch adds an indexed has_message_receipt(principal, tenant, task_id, message_id) pre-check after recipient-capability and envelope-MAC verification, recipient binding and bounded message-ID validation. A sequential duplicate is now rejected before sender-authority lookup, source-node loading, content-digest verification and provenance ancestry traversal. The check is read-only and is only an availability optimisation: the existing consume_message transaction remains authoritative, inserts the unique receipt and charges per-capability/task-wide quotas atomically, and therefore still rejects concurrent duplicate deliveries safely.
 
-**Impact:** A holder of a valid message can create avoidable CPU/database load by replaying it repeatedly. The replay receipt prevents successful duplicate delivery and does not repeatedly charge the memory-read budget, but it does not by itself provide denial-of-service protection.
+**Impact after phase-2 change:** sequential authenticated replays no longer repeat the expensive lineage path. Concurrent copies can still both pass the read-only pre-check and perform validation before one loses at the transactional insert. First-time messages can still reference a large existing ancestry. There is still no explicit per-principal ingress rate limiter or bounded database-backed lineage traversal budget.
 
-**Required control:** Add bounded message size and lineage-depth/node limits, per-principal/task receive rate limits, and a cheap authenticated replay lookup before expensive repeated ancestry work where the lookup can be made safe. Keep receipt insertion and quota consumption atomic. Add replay-flood tests that measure bounded work, not just final denial.
+**Remaining required controls:** add per-principal/task ingress rate limits and a database-level bounded ancestry traversal for first-time messages; exercise concurrent replay floods and measure worst-case work. Do not describe this item as fully closed.
 
 ### A-07 — Message acceptance can consume a receipt before memory-read authorization succeeds
 
