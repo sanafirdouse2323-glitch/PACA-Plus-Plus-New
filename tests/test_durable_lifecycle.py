@@ -1704,25 +1704,9 @@ def test_langgraph_store_update_requires_prior_version_as_a_dependency(tmp_path)
     assert latest is not None and latest.value["version"] == 2
 
 
-def test_async_executor_revocation_during_awaitable_construction_blocks_coroutine_body(
-    tmp_path,
-):
+def test_async_runtime_rejects_sync_executor_factory_before_invocation(tmp_path):
     env = _environment(tmp_path)
     capability = env["issuer"].verify(env["root"].token).capability
-
-    class AllowMonitor:
-        def decide(self, request):
-            return Decision("allow", digest=request.digest)
-
-        def verify(self, request, decision):
-            return True
-
-    runtime = PACAAgentRuntime(
-        env["issuer"],
-        env["memory"],
-        AllowMonitor(),
-        env["messages"],
-    )
     request = Request(
         "read_file",
         {"path": _ingest_argument(env, "/acme/report.txt")},
@@ -1730,24 +1714,34 @@ def test_async_executor_revocation_during_awaitable_construction_blocks_coroutin
         1,
         tool=_read_file_tool(),
     )
-    started = []
+    factory_calls = []
 
     def executor(_request):
+        factory_calls.append(True)
+        env["registry"].revoke(
+            capability.cap_id,
+            "a synchronous executor factory must never be entered",
+        )
+
         async def effect_body():
-            started.append(True)
             return "must-not-run"
 
-        # This synchronous setup runs after the first effect check but before
-        # the returned coroutine body is awaited.
-        env["registry"].revoke(capability.cap_id, "revoked during async setup")
         return effect_body()
 
     async def exercise():
-        with pytest.raises(AuthorityRegistryError):
-            await runtime.aexecute_effect(env["root"].token, request, executor)
+        with pytest.raises(
+            MemoryAccessDenied,
+            match="must be an async function or async callable object",
+        ):
+            await _allowing_runtime(env).aexecute_effect(
+                env["root"].token,
+                request,
+                executor,
+            )
 
     asyncio.run(exercise())
-    assert started == []
+    assert factory_calls == []
+    assert env["registry"].is_active(capability.cap_id)
 
 
 def test_derived_memory_cannot_change_source_purpose(tmp_path):
@@ -2333,24 +2327,12 @@ def test_runtime_rejects_incomplete_lineage_even_when_value_is_labelled(tmp_path
     assert executions == []
 
 
-def test_runtime_async_rechecks_source_revocation_after_awaitable_creation(tmp_path):
+def test_async_runtime_accepts_an_async_callable_object(tmp_path):
     env = _environment(tmp_path)
-    source = _ingest(env, "/acme/public/report.txt", object_id="mem/effect-async")
-    capability = env["issuer"].verify(env["root"].token).capability
-
-    class AllowMonitor:
-        def decide(self, request):
-            return Decision("allow", digest=request.digest)
-
-        def verify(self, request, decision):
-            return decision.digest == request.digest
-
-    runtime = PACAAgentRuntime(
-        env["issuer"],
-        env["memory"],
-        AllowMonitor(),
-        env["messages"],
+    source = _ingest(
+        env, "/acme/public/report.txt", object_id="mem/effect-async-object"
     )
+    capability = env["issuer"].verify(env["root"].token).capability
     request = Request(
         "read_file",
         {"path": source},
@@ -2358,29 +2340,21 @@ def test_runtime_async_rechecks_source_revocation_after_awaitable_creation(tmp_p
         1,
         tool=_read_file_tool(),
     )
-    started = []
 
-    def executor(_snapshot):
-        async def effect_body():
-            started.append(True)
-            return "must-not-run"
-
-        env["registry"].revoke(
-            env["root"].capability.cap_id,
-            "authority revoked after async awaitable construction",
-        )
-        return effect_body()
+    class AsyncExecutor:
+        async def __call__(self, _snapshot):
+            return "async-result"
 
     async def exercise():
-        with pytest.raises(AuthorityRegistryError):
-            await runtime.aexecute_effect(
-                env["root"].token,
-                request,
-                executor,
-            )
+        decision, result = await _allowing_runtime(env).aexecute_effect(
+            env["root"].token,
+            request,
+            AsyncExecutor(),
+        )
+        assert decision.verdict == "allow"
+        assert result == "async-result"
 
     asyncio.run(exercise())
-    assert started == []
 
 
 def test_memory_read_rechecks_application_policy_after_value_fetch(
@@ -2759,7 +2733,7 @@ def test_provenance_repository_rejects_indexed_identity_column_tampering(
         env["repo"].list_nodes()
 
 
-def test_async_runtime_rejects_already_scheduled_task_before_effect_body(tmp_path):
+def test_async_runtime_rejects_sync_factory_that_would_schedule_a_task(tmp_path):
     env = _environment(tmp_path)
     source = _ingest(env, "/acme/public/report.txt", object_id="mem/effect-task")
     request = Request(
@@ -2769,12 +2743,13 @@ def test_async_runtime_rejects_already_scheduled_task_before_effect_body(tmp_pat
         1,
         tool=_read_file_tool(),
     )
-    started = []
     tasks = []
+    factory_calls = []
 
     def executor(_snapshot):
+        factory_calls.append(True)
+
         async def effect_body():
-            started.append(True)
             return "must-not-run"
 
         task = asyncio.create_task(effect_body())
@@ -2782,17 +2757,19 @@ def test_async_runtime_rejects_already_scheduled_task_before_effect_body(tmp_pat
         return task
 
     async def exercise():
-        with pytest.raises(MemoryAccessDenied, match="unstarted native coroutine"):
+        with pytest.raises(
+            MemoryAccessDenied,
+            match="must be an async function or async callable object",
+        ):
             await _allowing_runtime(env).aexecute_effect(
                 env["root"].token,
                 request,
                 executor,
             )
-        await asyncio.gather(*tasks, return_exceptions=True)
 
     asyncio.run(exercise())
-    assert started == []
-    assert tasks and tasks[0].cancelled()
+    assert factory_calls == []
+    assert tasks == []
 
 
 def test_sync_runtime_rejects_already_scheduled_task_before_effect_body(tmp_path):
