@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
-from typing import Any, Dict, Mapping
+from typing import Any, Dict
 
 from .authority_runtime import HMACCapabilityAuthority
 from .memory import canonical_value_bytes
