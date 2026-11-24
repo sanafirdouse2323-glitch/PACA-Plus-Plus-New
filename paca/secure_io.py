@@ -243,6 +243,33 @@ class SecureRoot:
         finally:
             os.close(path_fd)
 
+    def open_directory_fd(self, relative_path: str | os.PathLike[str]) -> int:
+        """Open a real directory beneath the trusted root without following links.
+
+        The returned descriptor is owned by the caller and can be used with
+        dir_fd-aware filesystem operations such as openat/renameat/unlinkat.
+        """
+        with self._lock:
+            if self._closed:
+                raise SecurePathError(errno.EBADF, "SecureRoot is closed")
+            relative = _relative_path(relative_path)
+            fd = self._openat2(
+                relative,
+                os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC,
+            )
+            try:
+                metadata = os.fstat(fd)
+                if not stat.S_ISDIR(metadata.st_mode):
+                    raise SecurePathError(
+                        errno.ENOTDIR,
+                        "requested parent path is not a directory",
+                        relative,
+                    )
+            except Exception:
+                os.close(fd)
+                raise
+            return fd
+
     def close(self) -> None:
         with self._lock:
             if not self._closed:
