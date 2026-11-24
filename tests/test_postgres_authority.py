@@ -239,7 +239,6 @@ def test_postgres_resource_commit_serializes_before_revoke_across_clients(monkey
     assert registry_b.usage(authority_id) == (1, 0)
 
 
-
 def test_postgres_filesystem_commit_callback_serializes_with_revocation(
     tmp_path,
     monkeypatch,
