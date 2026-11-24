@@ -1,9 +1,10 @@
-"""Authenticated capability issuance and durable policy-epoch/revocation state.
+"""Authenticated HMAC and Ed25519 capability issuance and verification.
 
 HMAC is used as a dependency-free research reference mechanism. It is a shared-secret
 MAC, not a public-key credential format or an OAuth authorization server. Every party
 holding the verification key can also mint credentials, so key distribution and the
-issuer process remain part of the trusted computing base.
+issuer process remain part of the trusted computing base. Persistent authority state
+and SQLite resource-commit records live in :mod:`paca.authority_registry`.
 """
 
 from __future__ import annotations
