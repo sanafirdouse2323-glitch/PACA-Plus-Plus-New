@@ -241,9 +241,14 @@ class FilesystemFencedResourceExecutor(FencedResourceExecutor):
         )
         try:
             metadata = os.fstat(fd)
-            if not stat.S_ISREG(metadata.st_mode) or metadata.st_nlink != 1:
+            if (
+                not stat.S_ISREG(metadata.st_mode)
+                or metadata.st_nlink != 1
+                or metadata.st_uid != os.geteuid()
+                or metadata.st_mode & 0o077
+            ):
                 raise ResourceCommitDenied(
-                    "filesystem journal artifact is not a regular file"
+                    "filesystem journal artifact is not a private regular file"
                 )
             self._write_all(fd, data)
         finally:
