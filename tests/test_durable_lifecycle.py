@@ -3254,9 +3254,7 @@ def test_langchain_middleware_sync_success_uses_detached_tool_request(tmp_path):
 
     result = middleware.wrap_tool_call(
         tool_request,
-        lambda snapshot: (
-            handled.append(snapshot) or snapshot.tool_call["args"]["path"]
-        ),
+        lambda snapshot: handled.append(snapshot) or snapshot.tool_call["args"]["path"],
     )
 
     assert result == "/acme/public/report.txt"
