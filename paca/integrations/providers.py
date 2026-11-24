@@ -286,10 +286,12 @@ class ProviderCapture:
     value: Mapping[str, Any] = field(repr=False)
 
     def __post_init__(self) -> None:
-        for name in ("provider", "connector_id", "object_id", "provider_version"):
+        for name in ("provider", "connector_id", "object_id"):
             value = getattr(self, name)
             if not isinstance(value, str) or not value:
                 raise ValueError(f"{name} must be a non-empty string")
+        if not isinstance(self.provider_version, str):
+            raise TypeError("provider_version must be a string")
         if not isinstance(self.version_id, str) or not re.fullmatch(r"[0-9a-f]{64}", self.version_id):
             raise ValueError("version_id must be a lowercase SHA-256 digest")
         if not isinstance(self.value, Mapping):
