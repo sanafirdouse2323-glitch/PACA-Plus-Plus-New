@@ -96,7 +96,7 @@ def test_broker_write_requires_commit_permit_and_idempotency(
             "payload_digest": {"algorithm": "sha-256", "value": "b" * 64},
         }
     )
-    with pytest.raises(jsonschema.ValidationError):
+    with pytest.raises(importlib.import_module("jsonschema").ValidationError):
         validator.validate(message)
     message["commit_permit_ref"] = "permit-1"
     message["idempotency_key"] = "idem-1"
@@ -117,7 +117,7 @@ def test_broker_read_requires_authorisation_before_disclosure(
             "resource": {"resource_type": "document", "resource_id": "doc-1"},
         }
     )
-    with pytest.raises(jsonschema.ValidationError):
+    with pytest.raises(importlib.import_module("jsonschema").ValidationError):
         validator.validate(message)
     message["authorization_grant_ref"] = "grant-1"
     validator.validate(message)
@@ -128,5 +128,5 @@ def test_digest_must_be_lowercase_sha256_hex(
 ) -> None:
     message = valid_identity_context()
     message["authentication"]["credential_digest"]["value"] = "A" * 64
-    with pytest.raises(jsonschema.ValidationError):
+    with pytest.raises(importlib.import_module("jsonschema").ValidationError):
         validator.validate(message)

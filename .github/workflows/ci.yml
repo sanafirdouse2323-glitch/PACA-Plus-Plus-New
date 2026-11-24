@@ -67,9 +67,9 @@ jobs:
       - name: Install wheel outside the source tree
         run: |
           python -m venv /tmp/paca-wheel-env
-          /tmp/paca-wheel-env/bin/pip install dist/*.whl "fastapi>=0.110.0" "uvicorn[standard]>=0.30.0"
+          /tmp/paca-wheel-env/bin/pip install dist/*.whl "fastapi>=0.110.0" "uvicorn[standard]>=0.30.0" "jsonschema>=4.23,<5" "rfc8785>=0.1.4,<0.2"
           cd /tmp
-          /tmp/paca-wheel-env/bin/python -c "from paca.monitor import Monitor; m = Monitor(); assert m.rules.policies; from paca_executor import app; assert app.title == 'PACA++ Reference Decision API'"
+          /tmp/paca-wheel-env/bin/python -c "from paca.monitor import Monitor; m = Monitor(); assert m.rules.policies; from paca_executor import app; assert app.title == 'PACA++ Reference Decision API'; from paca.contracts import ContractValidationError, canonicalize, validate_message; assert canonicalize({'z': 1}) == b'{\\\"z\\\":1}'; \ntry: validate_message({'message_type': 'unsupported'})\nexcept ContractValidationError: pass\nelse: raise AssertionError('packaged protocol schema did not reject an unsupported message type')"
 
 
   agentdojo-integration:
