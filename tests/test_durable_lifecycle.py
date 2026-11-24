@@ -2323,8 +2323,19 @@ def test_runtime_refuses_monitor_with_effect_token_verification_disabled(tmp_pat
             env["messages"],
         )
 
+    # Every other mandatory policy control is equally non-ablatable in a
+    # consequential runtime, even though the simulator still permits research
+    # ablations.
+    with pytest.raises(ValueError, match="disabled checks: C5"):
+        PACAAgentRuntime(
+            env["issuer"],
+            env["memory"],
+            Monitor(disable=("C5",)),
+            env["messages"],
+        )
+
     # Changing an ablation setting after runtime construction must not disable
-    # the final single-use decision-token check.
+    # the final single-use decision-token check or any other mandatory policy.
     monitor = Monitor()
     runtime = PACAAgentRuntime(
         env["issuer"], env["memory"], monitor, env["messages"],
@@ -2338,6 +2349,16 @@ def test_runtime_refuses_monitor_with_effect_token_verification_disabled(tmp_pat
         tool=_read_file_tool(),
     )
     with pytest.raises(MemoryAccessDenied, match="requires C13 effect-token verification"):
+        runtime.execute_effect(
+            env["root"].token, request, lambda _snapshot: "must-not-run",
+        )
+
+    monitor = Monitor()
+    runtime = PACAAgentRuntime(
+        env["issuer"], env["memory"], monitor, env["messages"],
+    )
+    monitor.disable.add("C5")
+    with pytest.raises(MemoryAccessDenied, match="monitor configuration is unsafe"):
         runtime.execute_effect(
             env["root"].token, request, lambda _snapshot: "must-not-run",
         )
