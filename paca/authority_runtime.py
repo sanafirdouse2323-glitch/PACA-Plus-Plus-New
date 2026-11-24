@@ -1657,13 +1657,9 @@ class Ed25519CapabilityAuthority(HMACCapabilityAuthority):
     ) -> None:
         if not isinstance(key_id, str) or not key_id:
             raise ValueError("key_id must be a non-empty string")
-        if (
-            len(key_id) > 128
-            or any(
-                not character.isascii()
-                or not (character.isalnum() or character in "_-")
-                for character in key_id
-            )
+        if len(key_id) > 128 or any(
+            not character.isascii() or not (character.isalnum() or character in "_-")
+            for character in key_id
         ):
             raise ValueError(
                 "key_id must contain 1-128 ASCII letters, digits, hyphens or underscores"
