@@ -75,6 +75,32 @@ These incident reports motivate test cases; they are not a claim that the custom
 | SBX-09 | Cross-VM communication and hardware side channels | Unauthorized communication paths are detected or excluded under a stated hardware threat model | Not simulated or claimed; requires dedicated infrastructure and side-channel expertise |
 | SBX-10 | Host-kernel escape and lateral movement | Isolation holds against the pinned kernel and threat model, or containment detects and stops the breach | Not tested by this repository; requires a dedicated VM / kernel security test environment |
 
+### Capability-bound Docker worker identity
+
+The optional Docker executor requires a Tool manifest whose signed hash includes an implementation digest. Compute it from the exact image digest, argv and sandbox resource/isolation profile before issuing the capability:
+
+```python
+worker_command = ("/usr/local/bin/paca-worker", "--stdio")
+sandbox = DockerSandbox(
+    "ghcr.io/example/paca-worker@sha256:" + ("a" * 64)
+)
+tool = Tool(
+    "read_file",
+    "1.0",
+    "Read a file",
+    ("path",),
+    implementation_digest=sandbox.implementation_digest(worker_command),
+)
+# Include this exact value when issuing the capability:
+tool_pins = {tool.name: tool.hash}
+executor = DockerSandboxExecutor(
+    sandbox,
+    commands={"read_file": worker_command},
+)
+```
+
+The runtime checks the signed Tool hash, and the executor independently compares the configured worker identity before starting the container. Legacy Tool manifests keep their previous hash, but the Docker executor rejects a missing implementation digest. Changing the image, command, CLI environment selection or enforced sandbox limits requires a newly issued tool pin. This does not attest the Docker daemon, host kernel, Docker CLI binary or registry trust, and it does not make isolated execution mandatory or close direct host/framework bypasses.
+
 ### Deterministic tests added in this tranche
 
 - `tests/test_sandbox_boundary_cases.py::test_cross_session_artifact_reuse_keeps_untrusted_label_and_blocks_effect` writes an untrusted value through the reference monitor, transfers the labelled value through a test-only shared-store fixture, applies a derivation/compaction step, and checks that PAC++ New denies the resulting command. It also shows that the repository's hand-authored `SandboxScoped` comparator permits the command because that comparator checks a command allow-list but does not inspect the data's provenance.
