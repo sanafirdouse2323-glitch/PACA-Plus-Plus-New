@@ -47,16 +47,18 @@ The regression suite covers trusted-looking, default-untrusted and caller-origin
 
 **Residual trust boundary:** Python code already running with access to the trusted connector, capability-token provider, filesystem and authority registry can still misuse those interfaces. A trusted ingress adapter must obtain source metadata from the provider/framework boundary; it must not merely relabel model-supplied bytes. Process isolation and provider-authenticated source capture remain necessary. Static literals that influence protected effects must also be registered as explicit, digest-bound inputs.
 
-### A-03 — Framework/tool mediation does not cover alternative execution paths
+### A-03 — Framework/tool adapters do not cover alternative execution paths
 
-**Severity:** High if the agent shares a process with raw capabilities  
-**Status:** Open integration boundary
+**Severity:** High  
+**Status:** Partially mitigated by an explicit Docker worker adapter; runtime-wide mandatory isolation remains open
 
-The middleware and adapters cannot prevent code with access to raw objects from bypassing them. Examples include direct `Tool.invoke`/tool callables, direct LangGraph node callbacks, direct `PostgresSaver` or SQL connection use, direct SQLite value-store/repository access, subprocess/shell execution, arbitrary Python, and separately-created HTTP/filesystem/database clients. The checkpoint wrapper itself documents that its raw delegate and credentials must remain in a trusted process.
+The repository now includes `DockerSandbox` and `DockerSandboxExecutor`. The sandbox requires an immutable image digest and launches a worker with `--network=none`, a read-only root filesystem, a non-root UID, all Linux capabilities dropped, `no-new-privileges`, the default seccomp profile, private IPC, PID limits, memory/CPU limits, a no-exec/no-suid temporary filesystem, bounded stdin/stdout/stderr and a wall-clock timeout. The command is a trusted action-to-executable mapping; model input is passed as JSON arguments, never shell text. No host volume, device, Docker socket, capability token, grant set, authority record, signing key or provider credential is mounted or serialized into the worker.
 
-**Impact:** Any unmediated path can create effects or disclose state without PACA policy, budget, replay or audit checks.
+The adapter can be supplied as the executor callback to `PACAAgentRuntime`. Its deterministic tests inspect the actual Docker command and verify the worker payload excludes authority material.
 
-**Required control:** Run agent code in a process/container boundary that does not expose raw database credentials, provider clients, tool implementations or host filesystem handles. Expose only narrow RPC/tool endpoints that enforce authorization at the resource boundary. Inventory and test every registered tool and callback path; a middleware unit test is not proof that all runtime paths are intercepted.
+**Residual risk:** this adapter is opt-in, not a mandatory runtime policy. Existing Python executors, direct tool clients, framework callbacks, subprocesses, raw database clients and network/filesystem APIs remain possible if the application does not route them through the isolated executor. A worker can return a proposed result, but a consequential host-resource write still needs resource-side commit authorization. The Docker daemon, pinned image and host kernel remain trusted; the deployment must restrict access to the Docker socket and verify cgroup enforcement. This is not proof against kernel/container-runtime vulnerabilities.
+
+**Required control:** make isolated execution mandatory for untrusted tool code in the production deployment profile, route all consequential mutations through a commit-fenced resource broker, pin and scan worker images, and test direct/bypass execution from an adversarial worker.
 
 ### A-04 — Async executor factory has an unenforceable synchronous-prefix assumption
 
