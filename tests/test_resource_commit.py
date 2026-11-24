@@ -756,6 +756,7 @@ def test_filesystem_executor_rejects_hard_link_target(tmp_path):
     root = tmp_path / "filesystem-root"
     target_parent = root / "acme" / "reports"
     target_parent.mkdir(parents=True)
+    root.chmod(0o700)
     outside = tmp_path / "outside.txt"
     outside.write_bytes(b"outside content")
     os.link(outside, target_parent / "report.txt")
