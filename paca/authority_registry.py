@@ -906,13 +906,11 @@ class SQLiteAuthorityRegistry:
                 "WHERE r.nonce=?",
                 (nonce,),
             ).fetchone()
-        if row is None:
-            return None
-        if row["version"] is None:
-            raise AuthorityRegistryError(
-                "resource commit receipt exists without its matching committed resource value"
-            )
-        return dict(row)
+        # The receipt is append-only, while paca_resource_values keeps only
+        # the latest value for a (tenant, task, resource) key. A legitimate
+        # later write can therefore leave an older receipt with no joined
+        # current-value row. Replay detection must still see that old nonce.
+        return dict(row) if row is not None else None
 
     def has_message_receipt(
         self,
