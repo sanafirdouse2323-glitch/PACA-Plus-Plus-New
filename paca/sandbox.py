@@ -240,9 +240,7 @@ class DockerSandbox:
             "profile": "paca-docker-worker-v1",
             "docker_cli_executable": self.docker_binary,
             "docker_cli_environment": dict(sorted(self.docker_env.items())),
-            "docker_invocation": list(
-                self._build_command(command, "<PACA_CIDFILE>")
-            ),
+            "docker_invocation": list(self._build_command(command, "<PACA_CIDFILE>")),
         }
 
     def implementation_digest(self, argv: Sequence[str]) -> str:
