@@ -6,6 +6,7 @@ from .authority_runtime import (
     CapabilityAuthenticationError,
     HMACCapabilityAuthority,
     SignedCapability,
+    VerifiedResourceCommitPermit,
     SQLiteAuthorityRegistry,
 )
 from .durable import (
@@ -39,6 +40,7 @@ from .sandbox import (
     SandboxTimeout,
     SandboxUnavailable,
 )
+from .resource_commit import ResourceCommitDenied, SQLiteFencedResourceExecutor
 
 __version__ = "0.3.2"
 __all__ = [n for n in dir() if not n.startswith("_")]
