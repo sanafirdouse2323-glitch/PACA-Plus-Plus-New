@@ -81,7 +81,9 @@ The optional Docker executor requires a Tool manifest whose signed hash includes
 
 ```python
 worker_command = ("/usr/local/bin/paca-worker", "--stdio")
-sandbox = DockerSandbox("ghcr.io/example/paca-worker@sha256:" + ("a" * 64), platform="linux/amd64")
+sandbox = DockerSandbox(
+    "ghcr.io/example/paca-worker@sha256:" + ("a" * 64), platform="linux/amd64"
+)
 tool = Tool(
     "read_file",
     "1.0",
