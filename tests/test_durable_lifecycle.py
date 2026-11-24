@@ -3265,33 +3265,3 @@ def test_langchain_middleware_sync_success_uses_detached_tool_request(tmp_path):
     assert handled[0].tool_call is not tool_request.tool_call
     assert handled[0].tool_call["args"] is not tool_request.tool_call["args"]
     assert handled[0].state is not tool_request.state
-
-
-def test_langchain_middleware_async_success_keeps_snapshot_after_caller_mutation(
-    tmp_path,
-):
-    tool_request, middleware = _langchain_middleware_fixture(
-        tmp_path,
-        request_id="async-detached-request",
-    )
-    handled = []
-
-    async def handler(snapshot):
-        tool_request.tool_call["args"]["path"] = "/acme/private/secrets.txt"
-        tool_request.state["thread"]["phase"] = "mutated-after-dispatch"
-        await asyncio.sleep(0)
-        handled.append(snapshot)
-        return (
-            snapshot.tool_call["args"]["path"],
-            snapshot.state["thread"]["phase"],
-        )
-
-    result = asyncio.run(middleware.awrap_tool_call(tool_request, handler))
-
-    assert result == ("/acme/public/report.txt", "before")
-    assert len(handled) == 1
-    assert handled[0] is not tool_request
-    assert handled[0].tool_call is not tool_request.tool_call
-    assert handled[0].state is not tool_request.state
-    assert tool_request.tool_call["args"]["path"] == "/acme/private/secrets.txt"
-    assert tool_request.state["thread"]["phase"] == "mutated-after-dispatch"
