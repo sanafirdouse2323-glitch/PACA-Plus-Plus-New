@@ -721,6 +721,22 @@ class FilesystemFencedResourceExecutor(FencedResourceExecutor):
                     ) from exc
 
                 def commit_filesystem_rename() -> None:
+                    # Detect an out-of-band same-identity writer that changed
+                    # the destination after staging. Never silently overwrite
+                    # bytes that were not the snapshot covered by this permit.
+                    current = self._read_target(parent_fd, target_name)
+                    if journal["old_exists"]:
+                        if (
+                            current is None
+                            or self._digest(current) != journal["old_digest"]
+                        ):
+                            raise ResourceCommitDenied(
+                                "filesystem destination changed after the commit snapshot"
+                            )
+                    elif current is not None:
+                        raise ResourceCommitDenied(
+                            "filesystem destination appeared after the commit snapshot"
+                        )
                     os.replace(
                         temp_name,
                         target_name,
