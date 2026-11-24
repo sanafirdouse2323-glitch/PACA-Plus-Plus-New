@@ -278,6 +278,12 @@ AuthenticatedPrincipalBound ==
         operationState[op] \in {"authorised", "permit_issued", "read_released", "committed"}
         => opPrincipal[op] = sessionPrincipal[op]
 
+RequestPrincipalClaimIgnored ==
+    \A op \in Ops:
+        operationState[op] \in {"authorised", "permit_issued", "read_released", "committed"}
+        => /\ opPrincipal[op] = sessionPrincipal[op]
+           /\ opPrincipal[op] # claimedPrincipal[op]
+
 ReadRequiresAuthorisationBeforeDisclosure ==
     \A op \in Ops: readReleased[op] => readAuthAtDisclosure[op]
 

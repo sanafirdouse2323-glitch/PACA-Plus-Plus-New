@@ -90,7 +90,7 @@ The initial broker TLA+ model is intended to exercise permit/request binding, on
 It does not yet model cryptographic algorithms, real clocks, distributed consensus, all resource predicate languages, multi-provider transactions or refinement of Python implementations. Those remain separate proof and test obligations.
 ## 8. Executable finite-state model suite
 
-The formal workflow now runs four existing/new finite-state models:
+The formal workflow now runs five finite-state models:
 
 | Model | Properties under test | Explicit exclusions |
 |---|---|---|

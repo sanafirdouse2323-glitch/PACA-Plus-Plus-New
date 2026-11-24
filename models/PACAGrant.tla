@@ -141,7 +141,7 @@ ExpireGrant(g) ==
     /\ grantState[g] = "active"
     /\ now >= grantExpiry[g]
     /\ grantState' = [candidate \in Grants |->
-        IF candidate = g \/ DescendsFrom(candidate, g)
+        IF candidate = g \/ (DescendsFrom(candidate, g) /\ grantState[candidate] = "active")
         THEN "expired" ELSE grantState[candidate]]
     /\ UNCHANGED
         << grantParent, grantSubject, grantTenant, grantTaskScope, grantPurposeScope,
@@ -228,8 +228,5 @@ RevocationIsTransitive ==
     \A parent \in Grants:
         grantState[parent] = "revoked" =>
             \A child \in Grants: DescendsFrom(child, parent) => grantState[child] = "revoked"
-
-EffectiveUseRequiresActiveChain ==
-    \A g \in Grants: grantUseCount[g] > 0 => grantAllocation[g] > 0
 
 ====

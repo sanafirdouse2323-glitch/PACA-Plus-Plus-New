@@ -3,8 +3,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-import pytest
 from jsonschema import Draft202012Validator, FormatChecker, ValidationError
+import pytest
 
 
 SCHEMA_PATH = (
