@@ -155,6 +155,23 @@ def test_ed25519_wrong_key_id_audience_public_key_and_tampering_fail_closed(tmp_
         _ed_verifier(registry, public_key).verify(tampered)
 
 
+def test_ed25519_rejects_mismatched_private_and_public_keys(tmp_path):
+    registry = SQLiteAuthorityRegistry(tmp_path / "authority.sqlite3", clock=lambda: 1_000)
+    private_key, _public_key = _keypair()
+    _, mismatched_public = _keypair()
+
+    with pytest.raises(ValueError, match="does not match"):
+        Ed25519CapabilityAuthority(
+            registry,
+            issuer_id="ed-issuer",
+            key_id="ed-key-1",
+            audience="paca-test",
+            private_key=private_key,
+            public_key=mismatched_public,
+            **_callbacks(),
+        )
+
+
 def test_ed25519_issuer_can_derive_verification_key_from_private_seed(tmp_path):
     registry = SQLiteAuthorityRegistry(tmp_path / "authority.sqlite3", clock=lambda: 1_000)
     private_key, public_key = _keypair()
