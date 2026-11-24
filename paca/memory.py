@@ -20,7 +20,7 @@ from collections.abc import Callable, Iterable
 from contextlib import closing
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from .authority import grant_pattern_is_subset
 from .authority_runtime import (
@@ -29,6 +29,10 @@ from .authority_runtime import (
 )
 from .durable import SQLiteProvenanceRepository
 from .provenance import Arg, Label, LineageNode
+
+
+if TYPE_CHECKING:
+    from .agent_runtime import PACAAgentRuntime
 
 
 def _b64encode(value: bytes) -> str:
