@@ -1531,8 +1531,28 @@ class PACAAgentRuntime:
         request: Request,
         executor: Callable[[Request], Any],
     ) -> tuple[Decision, Any | None]:
-        """Async effect path with provenance, authority and revocation rechecks."""
+        """Run only a declared async executor after PACA's effect checks.
+
+        A synchronous callable that returns a coroutine is rejected before it is
+        invoked: its synchronous prefix could otherwise perform effects before
+        the runtime can revalidate authority and provenance.
+        """
         fenced_executor = self._require_fenced_executor(executor)
+        async_executor = (
+            fenced_executor.aexecute_authorized
+            if self.require_resource_commit_fence
+            else executor
+        )
+        if not (
+            inspect.iscoroutinefunction(async_executor)
+            or inspect.iscoroutinefunction(
+                getattr(type(async_executor), "__call__", None)
+            )
+        ):
+            raise MemoryAccessDenied(
+                "async effect executor must be an async function or async callable object; "
+                "use execute_effect for synchronous executors"
+            )
         decision, snapshot, issued, accesses = self._authorize_effect(
             capability_token,
             request,
@@ -1557,9 +1577,9 @@ class PACAAgentRuntime:
                 decision,
                 snapshot,
             )
-            result = fenced_executor.aexecute_authorized(snapshot, permit)
+            result = async_executor(snapshot, permit)
         else:
-            result = executor(snapshot)
+            result = async_executor(snapshot)
         if inspect.isawaitable(result):
             # Only a newly-created native coroutine has a guaranteed lazy body.
             # An asyncio.Task/Future or arbitrary Awaitable may already be running
