@@ -182,26 +182,35 @@ class OAuth2RefreshTokenProvider:
             if self._include_scope_parameter:
                 form["scope"] = " ".join(sorted(requested or self._granted_scopes))
             try:
-                response = self._client.post(
+                with self._client.stream(
+                    "POST",
                     self._token_url,
                     data=form,
                     headers={"Accept": "application/json"},
-                )
-            except Exception as exc:
+                    follow_redirects=False,
+                ) as response:
+                    if 300 <= response.status_code < 400:
+                        raise ProviderAuthenticationError("OAuth token endpoint redirects are refused")
+                    if response.status_code != 200:
+                        raise ProviderAuthenticationError(
+                            f"OAuth token endpoint rejected refresh (HTTP {response.status_code})"
+                        )
+                    token_body = bytearray()
+                    for chunk in response.iter_bytes():
+                        if len(token_body) + len(chunk) > 262_144:
+                            raise ProviderResponseTooLarge(
+                                "OAuth token response exceeded the byte limit"
+                            )
+                        token_body.extend(chunk)
+            except ProviderConnectorError:
+                raise
+            except Exception:
                 raise ProviderAuthenticationError(
                     "OAuth token endpoint request failed"
                 ) from None
-            if 300 <= response.status_code < 400:
-                raise ProviderAuthenticationError("OAuth token endpoint redirects are refused")
-            if response.status_code != 200:
-                raise ProviderAuthenticationError(
-                    f"OAuth token endpoint rejected refresh (HTTP {response.status_code})"
-                )
-            if len(response.content) > 262_144:
-                raise ProviderResponseTooLarge("OAuth token response exceeded the byte limit")
             try:
-                payload = response.json()
-            except Exception:
+                payload = json.loads(bytes(token_body))
+            except (UnicodeDecodeError, json.JSONDecodeError):
                 raise ProviderProtocolError("OAuth token endpoint returned invalid JSON") from None
             if not isinstance(payload, dict):
                 raise ProviderProtocolError("OAuth token endpoint returned an invalid object")
@@ -598,10 +607,7 @@ class MicrosoftGraphMailConnector:
             or parsed.username is not None
             or parsed.password is not None
             or parsed.fragment
-            or not (
-                parsed.path == "/v1.0/me/messages"
-                or parsed.path.startswith("/v1.0/me/messages/")
-            )
+            or parsed.path != "/v1.0/me/messages"
         ):
             raise ProviderProtocolError("Microsoft Graph returned an unsafe @odata.nextLink")
         return next_link
