@@ -208,6 +208,50 @@ def test_resource_write_and_effect_budget_commit_in_one_authority_transaction(tm
     assert env["registry"].task_usage("acme", "task-fence")[0] == 5
 
 
+def test_strict_ed25519_runtime_rejects_non_public_only_or_mismatched_verifier(tmp_path):
+    env = _environment(tmp_path, asymmetric=True)
+    issuer = env["issuer"]
+    verifier = env["verifier"]
+    assert verifier is not None
+
+    # A signer is not accepted as its own resource-side verifier in Ed25519 mode.
+    with pytest.raises(ValueError, match="separate public-key-only"):
+        PACAAgentRuntime(
+            issuer,
+            env["memory"],
+            env["runtime"].monitor,
+            env["runtime"].messages,
+            require_resource_commit_fence=True,
+            resource_commit_verifier=issuer,
+        )
+
+    # A verifier using another key ID must not be bound to the issuer's fence.
+    mismatched_verifier = Ed25519CapabilityAuthority(
+        env["registry"],
+        issuer_id="fenced-test-issuer",
+        key_id="different-key-id",
+        audience="fenced-test-runtime",
+        public_key=b"\x31" * 32,
+        identity_verifier=lambda principal, tenant: bool(principal and tenant == "acme"),
+        task_context_verifier=lambda principal, tenant, task_id, purpose: (
+            principal == "agent-a"
+            and tenant == "acme"
+            and task_id == "task-fence"
+            and purpose == "write-report"
+        ),
+        clock=env["clock"],
+    )
+    with pytest.raises(ValueError, match="must match the issuer identity"):
+        PACAAgentRuntime(
+            issuer,
+            env["memory"],
+            env["runtime"].monitor,
+            env["runtime"].messages,
+            require_resource_commit_fence=True,
+            resource_commit_verifier=mismatched_verifier,
+        )
+
+
 def test_ed25519_private_issuer_and_public_only_resource_verifier_commit_write(tmp_path):
     env = _environment(tmp_path, asymmetric=True)
     verifier = env["verifier"]
