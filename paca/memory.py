@@ -1140,6 +1140,7 @@ class HMACAgentMessageCodec:
                 "inter-agent message authentication or provenance validation failed"
             ) from exc
 
+
 def __getattr__(name: str) -> Any:
     """Load the runtime lazily while preserving its historical memory import path."""
     if name == "PACAAgentRuntime":
