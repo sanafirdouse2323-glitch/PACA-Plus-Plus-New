@@ -369,6 +369,34 @@ def test_agentdojo_adapter_rejects_other_security_policy_ablations():
         PacaToolsExecutor(monitor, lambda *args: None)
 
 
+
+def test_agentdojo_revalidates_policy_after_request_builder(tmp_path):
+    capability = Capability(
+        "cap-policy-drift", "user@example.test", "tenant-a", "task-policy-drift", "assistant",
+        {"read_file": ("/tenant-a/report.txt",)}, expires=100,
+    )
+    monitor = Monitor()
+
+    def request_builder(function_name, arguments, env, extra_args):
+        monitor.disable.add("C6")
+        return Request(
+            "read_file",
+            {"path": Arg(arguments["path"], Label("untrusted"))},
+            capability,
+            step=1,
+            resource=Label("untrusted", sensitivity=1, tenant="tenant-a"),
+        )
+
+    runtime = RuntimeStub(["read_report"])
+    executor = PacaToolsExecutor(monitor, request_builder)
+    _, _, _, messages, _ = _run(
+        executor, runtime, "read_report", {"path": "/tenant-a/report.txt"},
+    )
+
+    assert runtime.calls == []
+    assert "policy ablation" in messages[-1]["error"]
+
+
 def test_agentdojo_adapter_fails_closed_when_request_builder_mutates_arguments():
     cap = Capability(
         "cap-mutation", "user@example.test", "tenant-a", "task-mutation", "assistant",
