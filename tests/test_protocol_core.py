@@ -74,6 +74,39 @@ def test_digest_purpose_is_a_fixed_ascii_protocol_token() -> None:
         digest_object({"a": 1}, purpose="../request")
 
 
+
+
+def test_validator_accepts_valid_identity_context_message() -> None:
+    message = {
+        "message_id": "msg-valid",
+        "message_type": "paca.identity-context.v1",
+        "contract_version": "1.0.0",
+        "created_at": "2026-11-24T12:00:00Z",
+        "issuer": "identity-authority",
+        "audience": "paca-core",
+        "proof": {
+            "key_id": "key-1",
+            "algorithm": "Ed25519",
+            "signature": "A" * 86,
+        },
+        "subject": {"kind": "agent", "id": "agent-1"},
+        "workload": {"kind": "workload", "id": "worker-1"},
+        "tenant_id": "tenant-1",
+        "task_id": "task-1",
+        "purpose": "report-generation",
+        "session_id": "session-1",
+        "authentication": {
+            "method": "workload_identity",
+            "issuer": "https://identity.example.test/",
+            "subject_id": "agent-1",
+            "credential_digest": {"algorithm": "sha-256", "value": "a" * 64},
+            "authenticated_at": "2026-11-24T12:00:00Z",
+            "expires_at": "2026-11-24T12:05:00Z",
+        },
+    }
+    validate_message(message)
+
+
 def test_validator_rejects_unknown_fields() -> None:
     message = {
         "message_id": "msg-001",

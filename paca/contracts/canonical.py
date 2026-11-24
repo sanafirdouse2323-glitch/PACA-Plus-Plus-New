@@ -116,7 +116,10 @@ def parse_json(data: str | bytes) -> Any:
         raise
     except (json.JSONDecodeError, RecursionError, ValueError) as exc:
         raise InvalidJSONError("invalid JSON message") from exc
-    _validate_value(value)
+    try:
+        _validate_value(value)
+    except CanonicalizationError as exc:
+        raise InvalidJSONError("JSON value is outside the accepted I-JSON subset") from exc
     return value
 
 
