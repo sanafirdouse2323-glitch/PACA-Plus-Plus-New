@@ -28,6 +28,11 @@ from .secure_io import SecurePathError, SecurePathUnavailable, SecureRoot
 class FilesystemFencedResourceExecutor(FencedResourceExecutor):
     """Commit write_file requests to a real filesystem under a DB fence.
 
+    This class is an in-process adapter; it does not create a separate broker
+    process or IPC boundary. The host deployment must run it in a trusted
+    resource-broker identity and keep the root/state directories inaccessible
+    to agent-controlled processes.
+
     The configured root is a private service-owned resource namespace. A target
     such as /acme/reports/report.txt maps to
     <root>/acme/tasks/<sha256(task_id)>/reports/report.txt. This keeps the
