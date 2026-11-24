@@ -1,9 +1,9 @@
 from __future__ import annotations
 
+import importlib
 import json
 from pathlib import Path
 
-import jsonschema
 import pytest
 
 
@@ -16,10 +16,13 @@ SCHEMA_PATH = (
 
 
 @pytest.fixture(scope="module")
-def validator() -> jsonschema.Draft202012Validator:
+def validator():
+    jsonschema = importlib.import_module("jsonschema")
     schema = json.loads(SCHEMA_PATH.read_text(encoding="utf-8"))
-    jsonschema.Draft202012Validator.check_schema(schema)
-    return jsonschema.Draft202012Validator(schema, format_checker=jsonschema.FormatChecker())
+    importlib.import_module("jsonschema").Draft202012Validator.check_schema(schema)
+    return jsonschema.Draft202012Validator(
+        schema, format_checker=jsonschema.FormatChecker()
+    )
 
 
 def envelope(message_type: str) -> dict[str, object]:
@@ -72,7 +75,7 @@ def test_unknown_security_fields_are_rejected(
 ) -> None:
     message = valid_identity_context()
     message["is_admin"] = True
-    with pytest.raises(jsonschema.ValidationError):
+    with pytest.raises(importlib.import_module("jsonschema").ValidationError):
         validator.validate(message)
 
 
