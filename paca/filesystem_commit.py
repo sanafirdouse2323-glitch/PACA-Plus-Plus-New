@@ -28,8 +28,11 @@ from .secure_io import SecurePathError, SecurePathUnavailable, SecureRoot
 class FilesystemFencedResourceExecutor(FencedResourceExecutor):
     """Commit write_file requests to a real filesystem under a DB fence.
 
-    The configured root is a service-owned resource namespace. A target such as
-    /acme/reports/report.txt maps to <root>/acme/reports/report.txt. Existing
+    The configured root is a private service-owned resource namespace. A target
+    such as /acme/reports/report.txt maps to
+    <root>/acme/tasks/<sha256(task_id)>/reports/report.txt. This keeps the
+    physical namespace consistent with the authority store's (tenant, task_id,
+    resource) key. Existing
     parent directories are required; traversal, symlinks, hard links, special
     files and oversized files are rejected.
 
@@ -187,7 +190,11 @@ class FilesystemFencedResourceExecutor(FencedResourceExecutor):
         return hashlib.sha256(data).hexdigest()
 
     @staticmethod
-    def _validate_relative_resource(resource: str, tenant: str) -> str:
+    def _validate_relative_resource(
+        resource: str,
+        tenant: str,
+        task_id: str,
+    ) -> str:
         if (
             not isinstance(resource, str)
             or not resource.startswith("/")
@@ -199,8 +206,18 @@ class FilesystemFencedResourceExecutor(FencedResourceExecutor):
             raise ResourceCommitDenied(
                 "filesystem resource must be a normalized tenant path"
             )
-        relative = resource[1:]
-        parts = relative.split("/")
+        if (
+            not isinstance(tenant, str)
+            or not tenant
+            or "/" in tenant
+            or tenant in {".", ".."}
+            or not isinstance(task_id, str)
+            or not task_id
+        ):
+            raise ResourceCommitDenied(
+                "filesystem tenant or task namespace is invalid"
+            )
+        parts = resource[1:].split("/")
         if (
             len(parts) < 2
             or any(part in {"", ".", ".."} for part in parts)
@@ -209,7 +226,8 @@ class FilesystemFencedResourceExecutor(FencedResourceExecutor):
             raise ResourceCommitDenied(
                 "filesystem resource must stay beneath its capability tenant directory"
             )
-        return relative
+        task_namespace = hashlib.sha256(task_id.encode("utf-8")).hexdigest()
+        return "/".join((tenant, "tasks", task_namespace, *parts[1:]))
 
     def _parent_and_name(self, relative: str) -> tuple[int, str]:
         parts = relative.split("/")
@@ -470,6 +488,7 @@ class FilesystemFencedResourceExecutor(FencedResourceExecutor):
         relative = self._validate_relative_resource(
             value["resource"],
             value["tenant"],
+            value["task_id"],
         )
         if relative != value["relative_path"]:
             raise ResourceCommitDenied(
@@ -645,6 +664,7 @@ class FilesystemFencedResourceExecutor(FencedResourceExecutor):
         relative = self._validate_relative_resource(
             permit.resource,
             permit.tenant,
+            permit.task_id,
         )
         operation_id = secrets.token_hex(16)
         temp_name = f".paca-{operation_id}.tmp"
