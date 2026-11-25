@@ -89,6 +89,9 @@ class AuthorityLineage:
     parent_digest: str | None = None
     # All capabilities for one tenant/task share this immutable aggregate call ceiling.
     max_task_calls: int = 100
+    # Persist the per-capability effect ceiling so a broker can resolve it without
+    # trusting a caller-supplied token claim. None is retained only for legacy records.
+    max_calls: int | None = None
 
     def __post_init__(self) -> None:
         for field_name in (
@@ -112,6 +115,12 @@ class AuthorityLineage:
             or self.max_task_calls < 1
         ):
             raise ValueError("max_task_calls must be a positive integer")
+        if self.max_calls is not None and (
+            isinstance(self.max_calls, bool)
+            or not isinstance(self.max_calls, int)
+            or self.max_calls < 1
+        ):
+            raise ValueError("max_calls must be a positive integer or None")
         if self.parent_id is not None and (
             not isinstance(self.parent_id, str) or not self.parent_id
         ):
@@ -162,6 +171,7 @@ class AuthorityLineage:
         parent_id: str | None = None,
         parent_digest: str | None = None,
         max_task_calls: int = 100,
+        max_calls: int | None = None,
     ) -> AuthorityLineage:
         return cls(
             authority_id=authority_id,
@@ -176,10 +186,11 @@ class AuthorityLineage:
             parent_id=parent_id,
             parent_digest=parent_digest,
             max_task_calls=max_task_calls,
+            max_calls=max_calls,
         )
 
     def as_dict(self) -> dict[str, object]:
-        return {
+        result: dict[str, object] = {
             "authority_id": self.authority_id,
             "issuer": self.issuer,
             "principal": self.principal,
@@ -193,6 +204,11 @@ class AuthorityLineage:
             "parent_id": self.parent_id,
             "parent_digest": self.parent_digest,
         }
+        # Omit the absent field for historical records so their canonical bytes
+        # and parent-chain digests remain stable across this additive extension.
+        if self.max_calls is not None:
+            result["max_calls"] = self.max_calls
+        return result
 
     @property
     def digest(self) -> str:
@@ -211,6 +227,7 @@ class AuthorityLineage:
         grants: Mapping[str, Iterable[str]],
         expires: int,
         parent_id: str | None,
+        max_calls: int,
     ) -> None:
         """Fail if a mutable Capability has drifted from this immutable grant record."""
         if (
@@ -221,6 +238,10 @@ class AuthorityLineage:
             or expires != self.expires
             or parent_id != self.parent_id
             or normalise_grants(grants) != self.grants
+            or (
+                self.max_calls is not None
+                and max_calls != self.max_calls
+            )
         ):
             raise ValueError(
                 "capability fields do not match their authority-lineage record"
@@ -262,6 +283,12 @@ class AuthorityLineageGraph:
             if record.max_task_calls != parent.max_task_calls:
                 raise ValueError(
                     "delegated authority must preserve the task-wide call quota"
+                )
+            if parent.max_calls is not None and (
+                record.max_calls is None or record.max_calls > parent.max_calls
+            ):
+                raise ValueError(
+                    "delegated authority cannot exceed or omit the persisted parent call limit"
                 )
             if record.policy_epoch < parent.policy_epoch:
                 raise ValueError(
