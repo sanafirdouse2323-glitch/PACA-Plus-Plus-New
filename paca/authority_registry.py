@@ -683,7 +683,9 @@ class SQLiteAuthorityRegistry:
         registry. Both this method and revoke()/advance_policy_epoch() use
         BEGIN IMMEDIATE on this SQLite database, so they have a serial order:
         a write commits before revocation, or the write observes the revocation
-        and fails. This guarantee does not extend to a remote provider/API.
+        and fails. When supplied, expected_principal is compared with the
+        immutable grant principal inside this transaction. This guarantee does
+        not extend to a remote provider/API.
         """
         if not isinstance(permit, VerifiedResourceCommitPermit):
             raise TypeError(
@@ -1030,10 +1032,13 @@ class SQLiteAuthorityRegistry:
         """Read one logical resource under current authority and replay state.
 
         Authority revalidation, quota consumption, receipt insertion and the
-        resource snapshot occur in one registry transaction. This method returns
-        the snapshot to its caller; it is not a broker or process trust boundary.
-        Its caller must be trusted mediation code and must complete any required
-        provenance and disclosure checks before forwarding the returned content.
+        resource snapshot occur in one registry transaction. When supplied,
+        expected_principal is checked against the immutable grant principal and
+        max_bytes is enforced against the actual canonical value plus provenance
+        metadata (with a raw stored-size check before JSON decoding). Both values
+        must come from the authenticated session and signed request, respectively.
+        This method is not a broker or process trust boundary; provenance
+        authenticity, lineage and release/declassification checks remain separate.
         """
         for name, value in (
             ("authority_id", authority_id),
