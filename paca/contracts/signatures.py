@@ -155,7 +155,9 @@ class MessageVerifier:
         normalized: dict[str, TrustedMessageKey] = {}
         for key_id, key in keys.items():
             if not isinstance(key_id, str) or not key_id:
-                raise ValueError("message verification key IDs must be non-empty strings")
+                raise ValueError(
+                    "message verification key IDs must be non-empty strings"
+                )
             if not isinstance(key, TrustedMessageKey):
                 raise TypeError("key ring entries must be TrustedMessageKey instances")
             normalized[key_id] = key
@@ -169,7 +171,9 @@ class MessageVerifier:
             raise MessageAuthenticationError("message proof is missing or malformed")
         key_id = proof.get("key_id")
         if not isinstance(key_id, str) or key_id not in self._keys:
-            raise MessageAuthenticationError("message proof references an untrusted key")
+            raise MessageAuthenticationError(
+                "message proof references an untrusted key"
+            )
         if proof.get("algorithm") != "Ed25519":
             raise MessageAuthenticationError("message proof algorithm is not permitted")
         encoded = proof.get("signature")
@@ -180,9 +184,13 @@ class MessageVerifier:
         audience = message.get("audience")
         message_type = message.get("message_type")
         if issuer != trusted.issuer:
-            raise MessageAuthenticationError("message issuer is not trusted for this key")
+            raise MessageAuthenticationError(
+                "message issuer is not trusted for this key"
+            )
         if audience not in trusted.audiences:
-            raise MessageAuthenticationError("message audience is not trusted for this key")
+            raise MessageAuthenticationError(
+                "message audience is not trusted for this key"
+            )
         if message_type not in trusted.message_types:
             raise MessageAuthenticationError("message type is not trusted for this key")
         unsigned = dict(message)
@@ -194,7 +202,9 @@ class MessageVerifier:
             signing_input = _signing_input(unsigned, message_type)
             trusted.public_key.verify(signature, signing_input)
         except (ValueError, binascii.Error, TypeError) as exc:
-            raise MessageAuthenticationError("message signature verification failed") from exc
+            raise MessageAuthenticationError(
+                "message signature verification failed"
+            ) from exc
         except Exception as exc:
             # Cryptography's InvalidSignature is intentionally normalised at this
             # trust boundary without leaking implementation details.
