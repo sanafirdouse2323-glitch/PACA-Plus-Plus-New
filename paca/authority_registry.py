@@ -817,6 +817,18 @@ class SQLiteAuthorityRegistry:
                 raise ValueError(f"commit permit {name} must be a non-negative integer")
         if permit.max_calls < 1:
             raise ValueError("commit permit max_calls must be positive")
+        if permit.permit_id is not None and (
+            not isinstance(permit.permit_id, str)
+            or not permit.permit_id
+            or len(permit.permit_id) > 256
+        ):
+            raise ValueError("commit permit permit_id is invalid")
+        if permit.idempotency_key is not None and (
+            not isinstance(permit.idempotency_key, str)
+            or not permit.idempotency_key
+            or len(permit.idempotency_key) > 256
+        ):
+            raise ValueError("commit permit idempotency_key is invalid")
         for name, digest in (
             ("request_digest", permit.request_digest),
             ("payload_digest", permit.payload_digest),
@@ -843,6 +855,16 @@ class SQLiteAuthorityRegistry:
             or expected_resource_version < 0
         ):
             raise ValueError("expected_resource_version must be a non-negative integer")
+        if permit.permit_id is not None and (
+            expected_principal is None
+            or access_receipt is None
+            or permit.idempotency_key is None
+            or not protocol_payload_digest
+        ):
+            raise ValueError(
+                "protocol commit permits require principal, broker receipt, "
+                "idempotency key and protocol payload digest binding"
+            )
         if access_receipt is not None:
             required_receipt_fields = {
                 "session_id",
@@ -946,6 +968,12 @@ class SQLiteAuthorityRegistry:
                     raise AuthorityRegistryError(
                         "resource commit permit exceeds the persisted capability call limit"
                     )
+                if permit.permit_id is not None and (
+                    record.audience is None or record.audience != permit.audience
+                ):
+                    raise AuthorityRegistryError(
+                        "protocol commit permit audience does not match the active grant"
+                    )
                 patterns = dict(record.grants).get(permit.action, ())
                 if not any(
                     grant_pattern_is_subset(permit.resource, pattern)
@@ -954,6 +982,68 @@ class SQLiteAuthorityRegistry:
                     raise AuthorityRegistryError(
                         "active authority does not grant the fenced resource target"
                     )
+
+                if permit.idempotency_key is not None:
+                    prior_commit = connection.execute(
+                        "SELECT nonce,authority_id,action,resource_key,request_digest,"
+                        "payload_digest,committed_at,result_version "
+                        "FROM paca_resource_commit_receipts "
+                        "WHERE tenant=? AND task_id=? AND idempotency_key=?",
+                        (permit.tenant, permit.task_id, permit.idempotency_key),
+                    ).fetchone()
+                    if prior_commit is not None:
+                        same_commit = (
+                            prior_commit["authority_id"] == permit.authority_id
+                            and prior_commit["action"] == permit.action
+                            and prior_commit["resource_key"] == permit.resource
+                            and hmac.compare_digest(
+                                prior_commit["request_digest"], permit.request_digest
+                            )
+                            and hmac.compare_digest(
+                                prior_commit["payload_digest"], permit.payload_digest
+                            )
+                        )
+                        if not same_commit or access_receipt is None:
+                            raise AuthorityRegistryError(
+                                "resource idempotency key was reused for a different operation"
+                            )
+                        prior_access = connection.execute(
+                            "SELECT session_id,nonce_digest,operation_id,authority_id,"
+                            "tenant,task_id,action,resource_key,request_digest,"
+                            "payload_digest,outcome FROM paca_resource_access_receipts "
+                            "WHERE operation_id=?",
+                            (access_receipt["operation_id"],),
+                        ).fetchone()
+                        same_access = (
+                            prior_access is not None
+                            and prior_access["session_id"] == access_receipt["session_id"]
+                            and prior_access["nonce_digest"] == access_receipt["nonce_digest"]
+                            and prior_access["operation_id"] == access_receipt["operation_id"]
+                            and prior_access["authority_id"] == permit.authority_id
+                            and prior_access["tenant"] == permit.tenant
+                            and prior_access["task_id"] == permit.task_id
+                            and prior_access["action"] == permit.action
+                            and prior_access["resource_key"] == permit.resource
+                            and prior_access["request_digest"] == permit.request_digest
+                            and prior_access["payload_digest"] == permit.payload_digest
+                            and prior_access["outcome"] == "committed"
+                        )
+                        if not same_access or prior_commit["result_version"] is None:
+                            raise AuthorityRegistryError(
+                                "resource idempotency retry does not match the original broker receipt"
+                            )
+                        connection.commit()
+                        return {
+                            "tenant": permit.tenant,
+                            "task_id": permit.task_id,
+                            "resource": permit.resource,
+                            "action": permit.action,
+                            "version": int(prior_commit["result_version"]),
+                            "payload_digest": permit.payload_digest,
+                            "commit_nonce": prior_commit["nonce"],
+                            "committed_at": int(prior_commit["committed_at"]),
+                            "idempotent_replay": True,
+                        }
 
                 usage = connection.execute(
                     "SELECT calls_used FROM authority_usage WHERE authority_id=?",
@@ -982,8 +1072,9 @@ class SQLiteAuthorityRegistry:
                     connection.execute(
                         "INSERT INTO paca_resource_commit_receipts("
                         "nonce,authority_id,tenant,task_id,action,resource_key,"
-                        "request_digest,payload_digest,committed_at) "
-                        "VALUES(?,?,?,?,?,?,?,?,?)",
+                        "request_digest,payload_digest,committed_at,permit_id,"
+                        "idempotency_key,result_version) "
+                        "VALUES(?,?,?,?,?,?,?,?,?,?,?,NULL)",
                         (
                             permit.nonce,
                             permit.authority_id,
@@ -994,11 +1085,13 @@ class SQLiteAuthorityRegistry:
                             permit.request_digest,
                             permit.payload_digest,
                             now,
+                            permit.permit_id,
+                            permit.idempotency_key,
                         ),
                     )
                 except sqlite3.IntegrityError as exc:
                     raise AuthorityRegistryError(
-                        "resource commit permit replay was rejected"
+                        "resource commit permit, nonce or idempotency replay was rejected"
                     ) from exc
 
                 connection.execute(
@@ -1031,6 +1124,10 @@ class SQLiteAuthorityRegistry:
                         "resource version precondition did not match at commit"
                     )
                 version = current_version + 1
+                connection.execute(
+                    "UPDATE paca_resource_commit_receipts SET result_version=? WHERE nonce=?",
+                    (version, permit.nonce),
+                )
                 connection.execute(
                     "INSERT INTO paca_resource_values("
                     "tenant,task_id,resource_key,action,value_json,payload_digest,"
@@ -1105,6 +1202,7 @@ class SQLiteAuthorityRegistry:
                     "payload_digest": permit.payload_digest,
                     "commit_nonce": permit.nonce,
                     "committed_at": now,
+                    "idempotent_replay": False,
                 }
             except Exception:
                 connection.rollback()
