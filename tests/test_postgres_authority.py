@@ -364,6 +364,7 @@ def test_postgres_fenced_runtime_commits_through_shared_primary_registry(tmp_pat
     assert row["version"] == 1
     assert row["authority_id"] == env["root"].capability.cap_id
 
+
 def _broker_access_receipt(
     session_id: str,
     operation_id: str,
