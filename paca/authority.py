@@ -92,6 +92,8 @@ class AuthorityLineage:
     # Persist the per-capability effect ceiling so a broker can resolve it without
     # trusting a caller-supplied token claim. None is retained only for legacy records.
     max_calls: int | None = None
+    # Audience is persisted for broker-side grant resolution. None is legacy-only.
+    audience: str | None = None
 
     def __post_init__(self) -> None:
         for field_name in (
@@ -121,6 +123,10 @@ class AuthorityLineage:
             or self.max_calls < 1
         ):
             raise ValueError("max_calls must be a positive integer or None")
+        if self.audience is not None and (
+            not isinstance(self.audience, str) or not self.audience
+        ):
+            raise ValueError("audience must be a non-empty string or None")
         if self.parent_id is not None and (
             not isinstance(self.parent_id, str) or not self.parent_id
         ):
@@ -172,6 +178,7 @@ class AuthorityLineage:
         parent_digest: str | None = None,
         max_task_calls: int = 100,
         max_calls: int | None = None,
+        audience: str | None = None,
     ) -> AuthorityLineage:
         return cls(
             authority_id=authority_id,
@@ -187,6 +194,7 @@ class AuthorityLineage:
             parent_digest=parent_digest,
             max_task_calls=max_task_calls,
             max_calls=max_calls,
+            audience=audience,
         )
 
     def as_dict(self) -> dict[str, object]:
@@ -208,6 +216,8 @@ class AuthorityLineage:
         # and parent-chain digests remain stable across this additive extension.
         if self.max_calls is not None:
             result["max_calls"] = self.max_calls
+        if self.audience is not None:
+            result["audience"] = self.audience
         return result
 
     @property
@@ -289,6 +299,10 @@ class AuthorityLineageGraph:
             ):
                 raise ValueError(
                     "delegated authority cannot exceed or omit the persisted parent call limit"
+                )
+            if parent.audience is not None and record.audience != parent.audience:
+                raise ValueError(
+                    "delegated authority cannot change or omit its parent's audience"
                 )
             if record.policy_epoch < parent.policy_epoch:
                 raise ValueError(
