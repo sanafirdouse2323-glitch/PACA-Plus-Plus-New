@@ -28,7 +28,6 @@ from .contracts.canonical import CanonicalizationError, canonicalize, parse_json
 from .contracts.permits import CommitPermitError, ProtocolCommitPermitVerifier
 from .contracts.signatures import MessageVerifier
 
-
 PermitResolver = Callable[[str], Mapping[str, Any]]
 ProvenanceCommitCheck = Callable[
     [
