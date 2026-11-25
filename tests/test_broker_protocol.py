@@ -134,7 +134,9 @@ def test_verifier_accepts_signed_operation_bound_to_authenticated_session():
     assert verified.authorization_grant_ref == "grant-001"
     assert verified.intent_digest == digest_object(intent, purpose="request")
     assert verified.commit_permit_ref == "permit-001"
-    assert verified.payload_digest == digest_object(message["payload"], purpose="payload")
+    assert verified.payload_digest == digest_object(
+        message["payload"], purpose="payload"
+    )
 
 
 def test_verifier_accepts_bounded_read_without_commit_permit():
