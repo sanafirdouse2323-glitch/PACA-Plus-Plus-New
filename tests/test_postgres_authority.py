@@ -6,6 +6,7 @@ import threading
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import closing
+from dataclasses import replace
 
 import pytest
 
@@ -417,7 +418,11 @@ def test_postgres_resource_read_and_write_receipts_are_shared_and_replay_safe():
         resource=resource,
         payload_digest=payload_digest,
     )
-    permit = env["issuer_b"].verify_resource_commit_permit(permit_token)
+    permit = replace(
+        env["issuer_b"].verify_resource_commit_permit(permit_token),
+        permit_id="protocol-commit-" + uuid.uuid4().hex,
+        idempotency_key=write_operation_id,
+    )
     provenance = {
         "tenant": env["tenant"],
         "task_id": env["task_id"],
@@ -435,12 +440,59 @@ def test_postgres_resource_read_and_write_receipts_are_shared_and_replay_safe():
     committed = env["registry_a"].commit_fenced_resource_write(
         permit,
         payload,
+        expected_principal="agent-a",
         access_receipt=write_receipt,
         provenance_metadata=provenance,
         protocol_payload_digest=True,
         expected_resource_version=0,
     )
     assert committed["version"] == 1
+    assert committed["idempotent_replay"] is False
+
+    exact_retry = env["registry_b"].commit_fenced_resource_write(
+        permit,
+        payload,
+        expected_principal="agent-a",
+        access_receipt=write_receipt,
+        provenance_metadata=provenance,
+        protocol_payload_digest=True,
+        expected_resource_version=0,
+    )
+    assert exact_retry["version"] == 1
+    assert exact_retry["idempotent_replay"] is True
+
+    replacement_permit = replace(
+        permit,
+        nonce="replacement-nonce-" + uuid.uuid4().hex,
+        permit_id="replacement-commit-" + uuid.uuid4().hex,
+    )
+    replacement_retry = env["registry_b"].commit_fenced_resource_write(
+        replacement_permit,
+        payload,
+        expected_principal="agent-a",
+        access_receipt=write_receipt,
+        provenance_metadata=provenance,
+        protocol_payload_digest=True,
+        expected_resource_version=0,
+    )
+    assert replacement_retry["version"] == 1
+    assert replacement_retry["idempotent_replay"] is True
+    assert env["registry_a"].usage(authority_id) == (1, 0)
+
+    with closing(env["registry_b"]._connect()) as connection:
+        commit_rows = connection.execute(
+            "SELECT permit_id,idempotency_key,result_version "
+            "FROM paca_resource_commit_receipts "
+            "WHERE tenant=? AND task_id=? AND resource_key=?",
+            (env["tenant"], env["task_id"], resource),
+        ).fetchall()
+    assert len(commit_rows) == 2
+    assert {row["permit_id"] for row in commit_rows} == {
+        permit.permit_id,
+        replacement_permit.permit_id,
+    }
+    assert sum(row["idempotency_key"] == write_operation_id for row in commit_rows) == 1
+    assert all(row["result_version"] == 1 for row in commit_rows)
 
     read_operation_id = "read-" + uuid.uuid4().hex
     read_request_digest = digest_object(
