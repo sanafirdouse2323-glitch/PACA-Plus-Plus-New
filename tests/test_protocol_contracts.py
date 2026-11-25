@@ -7,7 +7,6 @@ from typing import Any
 
 import pytest
 
-
 SCHEMA_PATH = (
     Path(__file__).resolve().parents[1]
     / "contracts"
