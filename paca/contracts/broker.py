@@ -9,9 +9,12 @@ execute operations. Those responsibilities remain separate enforcement layers.
 from __future__ import annotations
 
 import hashlib
+import math
 import re
-from collections.abc import Mapping
+import time
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Any
 
 from .canonical import CanonicalizationError, canonicalize, digest_object, parse_json
@@ -149,6 +152,9 @@ class BrokerOperationVerifier:
         *,
         max_message_bytes: int = 1_048_576,
         max_read_bytes: int = 1_048_576,
+        clock: Callable[[], float] = time.time,
+        max_message_age_seconds: int = 300,
+        clock_skew_seconds: int = 30,
     ) -> None:
         if not isinstance(message_verifier, MessageVerifier):
             raise TypeError("message_verifier must be a configured MessageVerifier")
@@ -162,9 +168,28 @@ class BrokerOperationVerifier:
                 or not 1 <= value <= maximum
             ):
                 raise ValueError(f"{name} must be an integer between 1 and {maximum}")
+        if not callable(clock):
+            raise TypeError("clock must be a trusted callable")
+        if (
+            isinstance(max_message_age_seconds, bool)
+            or not isinstance(max_message_age_seconds, int)
+            or not 1 <= max_message_age_seconds <= 86_400
+        ):
+            raise ValueError(
+                "max_message_age_seconds must be between 1 and 86400"
+            )
+        if (
+            isinstance(clock_skew_seconds, bool)
+            or not isinstance(clock_skew_seconds, int)
+            or not 0 <= clock_skew_seconds <= 300
+        ):
+            raise ValueError("clock_skew_seconds must be between 0 and 300")
         self._message_verifier = message_verifier
         self._max_message_bytes = max_message_bytes
         self._max_read_bytes = max_read_bytes
+        self._clock = clock
+        self._max_message_age_seconds = max_message_age_seconds
+        self._clock_skew_seconds = clock_skew_seconds
 
     def verify(
         self,
@@ -225,6 +250,34 @@ class BrokerOperationVerifier:
             raise BrokerOperationError(
                 "broker operation audience does not match the authenticated session"
             )
+        created_at = snapshot.get("created_at")
+        try:
+            if not isinstance(created_at, str):
+                raise ValueError("created_at must be a timestamp string")
+            parsed_created_at = datetime.fromisoformat(
+                created_at.replace("Z", "+00:00")
+            )
+            if (
+                parsed_created_at.tzinfo is None
+                or parsed_created_at.utcoffset() is None
+            ):
+                raise ValueError("created_at must include a timezone")
+            created_timestamp = parsed_created_at.timestamp()
+            now = self._clock()
+            if (
+                isinstance(now, bool)
+                or not isinstance(now, (int, float))
+                or not math.isfinite(now)
+            ):
+                raise ValueError("trusted clock returned an invalid timestamp")
+            if created_timestamp > now + self._clock_skew_seconds:
+                raise ValueError("broker operation timestamp is in the future")
+            if created_timestamp < now - self._max_message_age_seconds:
+                raise ValueError("broker operation timestamp is stale")
+        except (OverflowError, OSError, TypeError, ValueError) as exc:
+            raise BrokerOperationError(
+                "broker operation timestamp is invalid or outside the freshness window"
+            ) from exc
         if snapshot.get("session_id") != session.session_id:
             raise BrokerOperationError(
                 "broker operation session does not match the authenticated session"
