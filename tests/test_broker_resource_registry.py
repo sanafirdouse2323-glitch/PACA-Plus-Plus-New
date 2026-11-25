@@ -154,10 +154,16 @@ def test_fenced_read_enforces_actual_disclosure_size_before_receipt_and_quota(
     resource, payload, provenance = _seed_resource(registry, authority, signed)
     used_before = registry.usage(signed.capability.cap_id)[0]
     receipt = _receipt("bounded-read")
-    response_bytes = canonical_value_bytes(
-        {"value": payload, "provenance_metadata": provenance}
-    )
-    byte_limit = len(response_bytes) - 1
+    response = {
+        "found": True,
+        "resource": resource,
+        "version": 1,
+        "action": "write_file",
+        "value": payload,
+        "payload_digest": hashlib.sha256(canonical_value_bytes(payload)).hexdigest(),
+        "provenance_metadata": provenance,
+    }
+    byte_limit = len(canonical_value_bytes(response)) - 1
 
     with pytest.raises(AuthorityRegistryError, match="disclosure byte limit"):
         registry.read_fenced_resource(
