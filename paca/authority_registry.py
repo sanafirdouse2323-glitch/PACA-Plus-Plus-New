@@ -1049,7 +1049,10 @@ class SQLiteAuthorityRegistry:
             "operation_id",
             "request_digest",
         }
-        if not isinstance(access_receipt, Mapping) or set(access_receipt) != required_receipt_fields:
+        if (
+            not isinstance(access_receipt, Mapping)
+            or set(access_receipt) != required_receipt_fields
+        ):
             raise ValueError("broker access receipt has an invalid field set")
         for name in ("session_id", "nonce_digest", "operation_id"):
             value = access_receipt.get(name)
@@ -1057,8 +1060,10 @@ class SQLiteAuthorityRegistry:
                 raise ValueError(f"broker access receipt {name} is invalid")
         for name in ("nonce_digest", "request_digest"):
             value = access_receipt.get(name)
-            if not isinstance(value, str) or len(value) != 64 or any(
-                character not in "0123456789abcdef" for character in value
+            if (
+                not isinstance(value, str)
+                or len(value) != 64
+                or any(character not in "0123456789abcdef" for character in value)
             ):
                 raise ValueError(f"broker access receipt {name} must be SHA-256")
 
