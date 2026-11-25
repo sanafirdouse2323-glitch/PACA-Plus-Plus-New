@@ -1561,14 +1561,13 @@ class SQLiteAuthorityRegistry:
         with closing(self._connect()) as connection:
             row = connection.execute(
                 "SELECT r.nonce,r.authority_id,r.tenant,r.task_id,r.action,r.resource_key,"
-                "r.request_digest,r.payload_digest,r.committed_at,"
-                "COALESCE(r.result_version,v.version) AS version "
+                "r.request_digest,r.payload_digest,r.committed_at,v.version AS version "
                 "FROM paca_resource_commit_receipts r "
                 "LEFT JOIN paca_resource_values v ON v.commit_nonce=r.nonce "
                 "WHERE r.nonce=?",
                 (nonce,),
             ).fetchone()
-        # Prefer the immutable schema-v7 result version to a mutable current-value join.
+        # The receipt is append-only; the resource-value row identifies whether it is still current.
         return dict(row) if row is not None else None
 
     def has_message_receipt(
