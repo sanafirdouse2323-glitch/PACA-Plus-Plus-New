@@ -257,6 +257,35 @@ def test_ed25519_message_key_is_scoped_to_issuer_audience_and_type() -> None:
         verifier.verify(signed)
 
 
+def test_message_verifier_binds_signature_to_key_identifier() -> None:
+    from paca.contracts import (
+        MessageAuthenticationError,
+        MessageSigner,
+        MessageVerifier,
+        TrustedMessageKey,
+    )
+
+    private_key = Ed25519PrivateKey.generate()
+    signed = MessageSigner(
+        key_id="key-1",
+        issuer="identity-authority",
+        audiences=frozenset({"paca-core"}),
+        private_key=private_key,
+    ).sign(_base_message())
+    trusted = TrustedMessageKey(
+        public_key=private_key.public_key(),
+        issuer="identity-authority",
+        audiences=frozenset({"paca-core"}),
+        message_types=frozenset({"paca.identity-context.v1"}),
+    )
+    verifier = MessageVerifier({"key-1": trusted, "key-2": trusted})
+
+    signed["proof"]["key_id"] = "key-2"
+
+    with pytest.raises(MessageAuthenticationError):
+        verifier.verify(signed)
+
+
 def test_trusted_message_key_copies_mutable_scopes() -> None:
     from paca.contracts import TrustedMessageKey
 
