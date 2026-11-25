@@ -24,7 +24,7 @@ from .contracts.broker import (
     BrokerSessionContext,
     VerifiedBrokerOperation,
 )
-from .contracts.canonical import CanonicalizationError, parse_json
+from .contracts.canonical import CanonicalizationError, canonicalize, parse_json
 from .contracts.permits import CommitPermitError, ProtocolCommitPermitVerifier
 from .contracts.signatures import MessageVerifier
 
