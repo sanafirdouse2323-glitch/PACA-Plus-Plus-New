@@ -289,6 +289,7 @@ def test_digest_must_be_lowercase_sha256_hex(
 def test_protocol_identifiers_accept_url_safe_authority_references(
     validator: Any,
 ) -> None:
-    message = _valid_broker_operation("read")
-    message["authorization_grant_ref"] = "capability_abC_123-url_safe"
-    validator.validate(message)
+    for grant_ref in ("_capability_abC_123", "-capability-abC_123"):
+        message = _valid_broker_operation("read")
+        message["authorization_grant_ref"] = grant_ref
+        validator.validate(message)
