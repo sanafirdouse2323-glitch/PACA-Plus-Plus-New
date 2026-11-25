@@ -75,8 +75,6 @@ def test_digest_purpose_is_a_fixed_ascii_protocol_token() -> None:
         digest_object({"a": 1}, purpose="../request")
 
 
-
-
 def test_validator_accepts_valid_identity_context_message() -> None:
     message = {
         "message_id": "msg-valid",
@@ -144,18 +142,21 @@ def test_validator_rejects_unknown_fields() -> None:
 def test_packaged_schema_matches_source_contract_schema() -> None:
     source_schema = (
         Path(__file__).resolve().parents[1]
-        / "contracts" / "v1.0.0" / "paca-contracts.schema.json"
+        / "contracts"
+        / "v1.0.0"
+        / "paca-contracts.schema.json"
     )
     packaged_schema = (
         Path(__file__).resolve().parents[1]
-        / "paca" / "contracts" / "schemas" / "v1.0.0"
+        / "paca"
+        / "contracts"
+        / "schemas"
+        / "v1.0.0"
         / "paca-contracts.schema.json"
     )
     assert json.loads(source_schema.read_text(encoding="utf-8")) == json.loads(
         packaged_schema.read_text(encoding="utf-8")
     )
-
-
 
 
 def _base_message() -> dict[str, object]:
@@ -278,7 +279,9 @@ def test_message_signer_rejects_preexisting_proof_and_wrong_audience() -> None:
 def test_source_schema_itself_is_valid() -> None:
     source_schema = (
         Path(__file__).resolve().parents[1]
-        / "contracts" / "v1.0.0" / "paca-contracts.schema.json"
+        / "contracts"
+        / "v1.0.0"
+        / "paca-contracts.schema.json"
     )
     Draft202012Validator.check_schema(
         json.loads(source_schema.read_text(encoding="utf-8"))
