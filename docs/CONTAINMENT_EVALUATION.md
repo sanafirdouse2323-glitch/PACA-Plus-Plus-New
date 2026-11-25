@@ -126,7 +126,36 @@ These are unit-level protocol fixtures. They do **not** prove that a real distri
 
 Existing `tests/test_secure_execution_primitives.py` covers Linux `openat2` path confinement and DNS/IP-pinned socket primitives. Those helpers are not automatically wired into every agent connector, executor or HTTP client.
 
-## 4. Fair-comparison protocol
+## 4. Optional filesystem resource-commit reference adapter
+
+The branch adds `FilesystemFencedResourceExecutor` for one narrow path: a protected `write_file` request can replace a real local regular file. This is distinct from `FencedResourceExecutor`, which stores a logical value in `paca_resource_values`.
+
+Example configuration inside the trusted resource-broker process:
+
+```python
+from paca.filesystem_commit import FilesystemFencedResourceExecutor
+
+filesystem_writer = FilesystemFencedResourceExecutor(
+    resource_commit_verifier,
+    root="/srv/paca/resources",
+    state_dir="/var/lib/paca/filesystem-commit-state",
+    max_file_bytes=8 * 1024 * 1024,
+)
+```
+
+The root and state directory must be separate directories owned by the broker's OS identity, with mode `0700` or stricter. The root itself must be private; the agent worker must not run as the broker UID or have the root mounted or otherwise accessible. Existing tenant/task/parent directories must be provisioned before writing. All writer instances serving the same root must use the same private `state_dir` so they share the journal lock and recovery queue. Use a local Linux/POSIX filesystem with the required same-directory atomic rename, `fsync` and `flock` semantics; network filesystem and multi-host recovery behavior has not been validated. A resource such as `/acme/reports/report.txt` maps to:
+
+```text
+/srv/paca/resources/acme/tasks/<sha256(task_id)>/reports/report.txt
+```
+
+The task namespace mirrors the authority store's `(tenant, task_id, resource)` key, so separate tasks do not overwrite the same physical target. The adapter uses Linux `openat2` path resolution, rejects symlinks, hard links and non-regular targets, stages bounded UTF-8 content, writes a private recovery journal, and invokes the atomic same-directory rename while the SQLite transaction or PostgreSQL single-primary registry lock remains held. Recovery compares that journal with the durable one-use commit receipt: an uncommitted rename is rolled back; a committed rename is verified before the journal is removed.
+
+**Important limits:** this adapter is opt-in and write-only. It is an in-process library component; it does not launch a broker process or create an IPC boundary. The host deployment must place the adapter in a trusted resource-broker process under a distinct OS identity, keep the root/state paths away from agent workers, and route reader access through an independently enforced brokered read path. It does not force every host/framework/subprocess path through the writer or stop a process with the same OS identity from accessing the files directly. A same-UID agent or an exposed host mount defeats the OS boundary. A crash can leave a journal pending until the broker restarts and recovery runs, so direct consumers must not bypass the broker. The PostgreSQL guarantee applies only to clients using the same primary; it is not multi-primary consensus or failover proof. No Gmail, Microsoft Graph, Slack, Qdrant or other remote-provider write/commit protocol is implemented by this adapter.
+
+The adapter is a reference implementation for adversarial testing, not a production security certification. Validate it in a dedicated broker/worker OS-identity deployment and include real process-bypass and crash/power-loss tests before making stronger claims.
+
+## 5. Fair-comparison protocol
 
 Before running any product comparison:
 
@@ -139,7 +168,7 @@ Before running any product comparison:
 7. Evaluate NVIDIA Sentry only on the supported hardware and configuration. Do not substitute a software mock for DPU evidence.
 8. Do not use a successful PAC++ New unit test as evidence of successful integration with an external sandbox.
 
-## 5. Required metrics
+## 6. Required metrics
 
 - Unauthorized protected-effect rate and attack success rate.
 - Cross-session artifact influence and cross-tenant value-release rate.
@@ -152,7 +181,7 @@ Before running any product comparison:
 - Benign task completion, false blocks, approvals, task utility, model/tool cost and end-to-end latency.
 - Error, timeout, unsupported and skipped denominators.
 
-## 6. Interpretation rules and non-claims
+## 7. Interpretation rules and non-claims
 
 - The repository's `SandboxScoped` is a hand-authored, simplified comparator. It is not NVIDIA OpenShell, NVIDIA Sentry, an OpenAI-hosted environment, or a faithful implementation of any vendor's sandbox.
 - PAC++ New does not currently launch or control OpenShell or OpenAI sandbox environments.
@@ -161,7 +190,7 @@ Before running any product comparison:
 - An application-level monitor cannot claim to prevent CPU-cache, shared-resource or other microarchitectural communication without a separate hardware threat model and tests.
 - No benchmark superiority, escape resistance, production readiness or complete lifecycle coverage is claimed until the actual external integrations and experiments are implemented and independently reviewed.
 
-## 7. Next implementation gates
+## 8. Next implementation gates
 
 1. Define a versioned memory/artifact adapter contract that stores trusted provenance metadata separately from model-controlled content and enforces authorization before value release.
 2. Add a durable provenance lineage representation and ensure memory transformations preserve parent references; do not equate the present flat origin labels with a full provenance graph.
