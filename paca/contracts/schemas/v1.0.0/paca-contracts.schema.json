@@ -1578,8 +1578,20 @@
             "required": [
               "commit_permit_ref",
               "idempotency_key",
-              "payload_digest"
-            ]
+              "payload_digest",
+              "provenance_refs"
+            ],
+            "properties": {
+              "provenance_refs": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/provenance_ref"
+                },
+                "uniqueItems": true,
+                "minItems": 1,
+                "maxItems": 256
+              }
+            }
           }
         },
         {
@@ -1658,7 +1670,10 @@
           "if": {
             "properties": {
               "operation": {
-                "const": "read"
+                "enum": [
+                  "read",
+                  "query"
+                ]
               }
             },
             "required": [
@@ -1676,6 +1691,47 @@
                 ]
               }
             }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "operation": {
+                "const": "delete"
+              }
+            },
+            "required": [
+              "operation"
+            ]
+          },
+          "then": {
+            "properties": {
+              "resource": {
+                "required": [
+                  "version_id"
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "operation": {
+                "enum": [
+                  "send",
+                  "execute"
+                ]
+              }
+            },
+            "required": [
+              "operation"
+            ]
+          },
+          "then": {
+            "required": [
+              "payload"
+            ]
           }
         }
       ]
