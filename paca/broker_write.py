@@ -249,6 +249,7 @@ class InProcessBrokerWriteMediator:
                 or record.tenant != operation.tenant_id
                 or record.task_id != operation.task_id
                 or record.purpose != operation.purpose
+                or self._registry.current_epoch() != record.policy_epoch
             ):
                 raise BrokerResourceDenied(
                     "resolved grant does not match trusted issuer, audience or identity"
