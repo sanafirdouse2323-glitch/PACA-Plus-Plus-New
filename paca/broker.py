@@ -74,7 +74,9 @@ class InProcessBrokerReadMediator:
             ("grant_audience", grant_audience),
         ):
             if not isinstance(value, str) or not value:
-                raise ValueError(f"{name} must be a non-empty trusted configuration value")
+                raise ValueError(
+                    f"{name} must be a non-empty trusted configuration value"
+                )
         if not callable(provenance_release_check):
             raise TypeError("provenance_release_check must be a trusted callable")
         self._verifier = verifier
@@ -174,7 +176,13 @@ class InProcessBrokerReadMediator:
             return dict(result)
         except BrokerResourceDenied:
             raise
-        except (BrokerOperationError, AuthorityRegistryError, KeyError, TypeError, ValueError) as exc:
+        except (
+            BrokerOperationError,
+            AuthorityRegistryError,
+            KeyError,
+            TypeError,
+            ValueError,
+        ) as exc:
             raise BrokerResourceDenied(
                 "broker read operation failed verification or authority enforcement"
             ) from exc
