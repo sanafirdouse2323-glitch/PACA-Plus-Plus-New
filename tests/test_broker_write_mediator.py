@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import hashlib
 import sqlite3
-from datetime import datetime, timezone
 
 import pytest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
@@ -469,8 +468,6 @@ def test_broker_write_rejects_idempotency_key_different_from_operation_id(tmp_pa
 
 def test_broker_write_rejects_expired_commit_permit(tmp_path):
     env = _environment(tmp_path)
-    original = env["permit_signer"]
-    expired_signer = original
     message = _signed_write(env, permit_overrides={"expires_at": "2026-11-25T09:59:59Z"})
 
     with pytest.raises(BrokerResourceDenied, match="validity window"):
