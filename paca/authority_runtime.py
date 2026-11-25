@@ -446,6 +446,7 @@ class HMACCapabilityAuthority:
             parent_id=parent_id,
             parent_digest=parent_digest,
             max_task_calls=max_task_calls,
+            max_calls=max_calls,
         )
         self.registry.register_authority(
             record,
