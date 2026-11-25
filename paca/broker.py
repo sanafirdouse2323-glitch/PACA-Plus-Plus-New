@@ -201,7 +201,7 @@ class InProcessBrokerReadMediator:
 
 
 class InProcessBrokerMediator(InProcessBrokerReadMediator):
-    """Read/write local-resource mediator; unsupported operations fail closed."""
+    """Compatibility name for the read-only in-process broker mediator."""
 
 
 __all__ = [
