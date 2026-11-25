@@ -57,6 +57,10 @@ class VerifiedResourceCommitPermit:
     resource: str
     request_digest: str
     payload_digest: str
+    # Protocol permits expose stable identifiers and an idempotency key.
+    # Legacy permits leave these fields unset.
+    permit_id: str | None = None
+    idempotency_key: str | None = None
 
 
 def _canonical(value: object) -> bytes:
@@ -123,7 +127,7 @@ class SQLiteAuthorityRegistry:
     global policy epoch invalidates all capabilities issued at earlier epochs.
     """
 
-    SCHEMA_VERSION = 6
+    SCHEMA_VERSION = 7
 
     def __init__(
         self,
@@ -329,6 +333,63 @@ class SQLiteAuthorityRegistry:
                     connection.execute(
                         "UPDATE paca_authority_meta SET value='6' WHERE key='schema_version'"
                     )
+                if version < 7:
+                    commit_columns = {
+                        row["name"]
+                        for row in connection.execute(
+                            "PRAGMA table_info(paca_resource_commit_receipts)"
+                        ).fetchall()
+                    }
+                    for column, declaration in (
+                        ("permit_id", "TEXT"),
+                        ("idempotency_key", "TEXT"),
+                        ("result_version", "INTEGER"),
+                    ):
+                        if column not in commit_columns:
+                            connection.execute(
+                                "ALTER TABLE paca_resource_commit_receipts "
+                                f"ADD COLUMN {column} {declaration}"
+                            )
+                    connection.execute(
+                        "CREATE UNIQUE INDEX IF NOT EXISTS "
+                        "paca_resource_commit_permit_id_idx "
+                        "ON paca_resource_commit_receipts(permit_id) "
+                        "WHERE permit_id IS NOT NULL"
+                    )
+                    connection.execute(
+                        "CREATE UNIQUE INDEX IF NOT EXISTS "
+                        "paca_resource_commit_idempotency_idx "
+                        "ON paca_resource_commit_receipts(tenant,task_id,idempotency_key) "
+                        "WHERE idempotency_key IS NOT NULL"
+                    )
+                    connection.execute(
+                        "UPDATE paca_authority_meta SET value='7' WHERE key='schema_version'"
+                    )
+                else:
+                    commit_columns = {
+                        row["name"]
+                        for row in connection.execute(
+                            "PRAGMA table_info(paca_resource_commit_receipts)"
+                        ).fetchall()
+                    }
+                    indexes = {
+                        row["name"]
+                        for row in connection.execute(
+                            "PRAGMA index_list(paca_resource_commit_receipts)"
+                        ).fetchall()
+                    }
+                    if (
+                        not {"permit_id", "idempotency_key", "result_version"}
+                        <= commit_columns
+                        or not {
+                            "paca_resource_commit_permit_id_idx",
+                            "paca_resource_commit_idempotency_idx",
+                        }
+                        <= indexes
+                    ):
+                        raise AuthorityRegistryError(
+                            "version-7 resource commit idempotency schema is incomplete"
+                        )
                 connection.execute(
                     "INSERT OR IGNORE INTO paca_authority_meta(key,value) VALUES(?,?)",
                     ("authority_store_id", secrets.token_hex(16)),
