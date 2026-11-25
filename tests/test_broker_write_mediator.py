@@ -478,11 +478,16 @@ def test_broker_write_fails_closed_on_worker_or_permit_signature_tampering(tmp_p
 
 def test_broker_write_rejects_stale_resource_version_without_charging_quota(tmp_path):
     env = _environment(tmp_path)
-    message = _signed_write(env, operation_overrides={"resource": {
-        "resource_type": "file",
-        "resource_id": RESOURCE,
-        "version_id": "0",
-    }})
+    message = _signed_write(
+        env,
+        operation_overrides={
+            "resource": {
+                "resource_type": "file",
+                "resource_id": RESOURCE,
+                "version_id": "0",
+            }
+        },
+    )
 
     with pytest.raises(BrokerResourceDenied, match="atomic resource enforcement"):
         env["mediator"].write(message, session=env["session"])
@@ -535,7 +540,9 @@ def test_broker_write_rejects_expired_commit_permit(tmp_path):
         permit_overrides={"expires_at": "2026-11-25T09:59:59Z"},
     )
 
-    with pytest.raises(BrokerResourceDenied, match="expired or has an invalid lifetime"):
+    with pytest.raises(
+        BrokerResourceDenied, match="expired or has an invalid lifetime"
+    ):
         env["mediator"].write(message, session=env["session"])
 
     assert _read_value(env["registry"])[2] == 1
