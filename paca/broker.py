@@ -173,6 +173,17 @@ class InProcessBrokerReadMediator:
                 raise BrokerResourceDenied(
                     "resource provenance or disclosure policy denied the read"
                 )
+
+            # The registry transaction linearizes the resource snapshot and its
+            # replay/quota receipt. Revalidate the grant after the potentially
+            # slow release callback so a revocation during that callback blocks
+            # the final disclosure. This is the last in-process authorization
+            # check before the result leaves the mediator.
+            current_record = self._registry.assert_active(record.authority_id)
+            if current_record != record:
+                raise BrokerResourceDenied(
+                    "resolved grant changed before resource disclosure"
+                )
             return dict(result)
         except BrokerResourceDenied:
             raise
