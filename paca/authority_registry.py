@@ -747,10 +747,16 @@ class SQLiteAuthorityRegistry:
             raise ValueError("expected_resource_version must be a non-negative integer")
         if access_receipt is not None:
             required_receipt_fields = {
-                "session_id", "nonce_digest", "operation_id", "request_digest",
+                "session_id",
+                "nonce_digest",
+                "operation_id",
+                "request_digest",
                 "payload_digest",
             }
-            if not isinstance(access_receipt, Mapping) or set(access_receipt) != required_receipt_fields:
+            if (
+                not isinstance(access_receipt, Mapping)
+                or set(access_receipt) != required_receipt_fields
+            ):
                 raise ValueError("broker access receipt has an invalid field set")
             for name in ("session_id", "nonce_digest", "operation_id"):
                 value = access_receipt.get(name)
@@ -758,20 +764,33 @@ class SQLiteAuthorityRegistry:
                     raise ValueError(f"broker access receipt {name} is invalid")
             for name in ("nonce_digest", "request_digest", "payload_digest"):
                 value = access_receipt.get(name)
-                if not isinstance(value, str) or len(value) != 64 or any(
-                    character not in "0123456789abcdef" for character in value
+                if (
+                    not isinstance(value, str)
+                    or len(value) != 64
+                    or any(character not in "0123456789abcdef" for character in value)
                 ):
                     raise ValueError(f"broker access receipt {name} must be SHA-256")
-            if not hmac.compare_digest(access_receipt["request_digest"], permit.request_digest):
-                raise AuthorityRegistryError("broker access receipt request binding mismatch")
-            if not hmac.compare_digest(access_receipt["payload_digest"], permit.payload_digest):
-                raise AuthorityRegistryError("broker access receipt payload binding mismatch")
-        if provenance_metadata is not None and not isinstance(provenance_metadata, Mapping):
+            if not hmac.compare_digest(
+                access_receipt["request_digest"], permit.request_digest
+            ):
+                raise AuthorityRegistryError(
+                    "broker access receipt request binding mismatch"
+                )
+            if not hmac.compare_digest(
+                access_receipt["payload_digest"], permit.payload_digest
+            ):
+                raise AuthorityRegistryError(
+                    "broker access receipt payload binding mismatch"
+                )
+        if provenance_metadata is not None and not isinstance(
+            provenance_metadata, Mapping
+        ):
             raise TypeError("provenance_metadata must be a JSON object")
         try:
             encoded_payload = _canonical(payload)
             if protocol_payload_digest:
                 from .contracts.canonical import digest_object
+
                 payload_digest = digest_object(dict(payload), purpose="payload")
             else:
                 payload_digest = hashlib.sha256(encoded_payload).hexdigest()
@@ -781,7 +800,9 @@ class SQLiteAuthorityRegistry:
                 else None
             )
         except (TypeError, ValueError) as exc:
-            raise ValueError("fenced resource payload or provenance must be canonical JSON") from exc
+            raise ValueError(
+                "fenced resource payload or provenance must be canonical JSON"
+            ) from exc
         if not hmac.compare_digest(payload_digest, permit.payload_digest):
             raise AuthorityRegistryError(
                 "resource payload does not match the signed commit permit"
@@ -893,7 +914,9 @@ class SQLiteAuthorityRegistry:
                     "WHERE tenant=? AND task_id=? AND resource_key=?",
                     (record.tenant, record.task_id, permit.resource),
                 ).fetchone()
-                current_version = int(existing["version"]) if existing is not None else 0
+                current_version = (
+                    int(existing["version"]) if existing is not None else 0
+                )
                 if (
                     expected_resource_version is not None
                     and current_version != expected_resource_version
@@ -1021,7 +1044,10 @@ class SQLiteAuthorityRegistry:
         ):
             raise ValueError("expected_resource_version must be a non-negative integer")
         required_receipt_fields = {
-            "session_id", "nonce_digest", "operation_id", "request_digest",
+            "session_id",
+            "nonce_digest",
+            "operation_id",
+            "request_digest",
         }
         if not isinstance(access_receipt, Mapping) or set(access_receipt) != required_receipt_fields:
             raise ValueError("broker access receipt has an invalid field set")
