@@ -432,6 +432,7 @@ def test_verifier_rejects_future_signed_broker_messages_outside_clock_skew():
             expected_grant_ref="grant-001",
         )
 
+
 def test_verifier_accepts_messages_within_configured_freshness_window():
     message = _message("read")
     signer, verifier, session = _verifier_and_session()
