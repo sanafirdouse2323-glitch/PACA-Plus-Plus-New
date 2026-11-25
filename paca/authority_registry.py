@@ -1016,11 +1016,13 @@ class SQLiteAuthorityRegistry:
         access_receipt: Mapping[str, object],
         expected_resource_version: int | None = None,
     ) -> dict[str, object]:
-        """Read one logical file under current authority and durable replay state.
+        """Read one logical resource under current authority and replay state.
 
-        Authority revalidation, quota consumption, request receipt and resource
-        snapshot occur in one registry transaction. Returned bytes are still
-        withheld by the broker until its trusted provenance guard approves them.
+        Authority revalidation, quota consumption, receipt insertion and the
+        resource snapshot occur in one registry transaction. This method returns
+        the snapshot to its caller; it is not a broker or process trust boundary.
+        Its caller must be trusted mediation code and must complete any required
+        provenance and disclosure checks before forwarding the returned content.
         """
         for name, value in (
             ("authority_id", authority_id),
