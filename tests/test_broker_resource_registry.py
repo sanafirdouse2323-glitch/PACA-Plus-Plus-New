@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import hashlib
-import json
 import sqlite3
 
 import pytest
@@ -16,7 +15,9 @@ from paca.memory import canonical_value_bytes
 
 def _environment(tmp_path):
     now = [1_000]
-    clock = lambda: now[0]
+
+    def clock():
+        return now[0]
     registry = SQLiteAuthorityRegistry(tmp_path / "authority.sqlite3", clock=clock)
     authority = HMACCapabilityAuthority(
         registry,
