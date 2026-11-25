@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from types import MappingProxyType
 from typing import Any, Mapping
 
 from .canonical import digest_object
@@ -214,13 +213,14 @@ class BrokerOperationVerifier:
         elif supplied_payload_digest is not None:
             if not isinstance(supplied_payload_digest, Mapping):
                 raise BrokerOperationError("broker operation payload digest is malformed")
+            digest_value = supplied_payload_digest.get("value")
             if (
                 supplied_payload_digest.get("algorithm") != _DIGEST_ALGORITHM
-                or not isinstance(supplied_payload_digest.get("value"), str)
-                or not _SHA256_RE.fullmatch(supplied_payload_digest["value"])
+                or not isinstance(digest_value, str)
+                or not _SHA256_RE.fullmatch(digest_value)
             ):
                 raise BrokerOperationError("broker operation payload digest is malformed")
-            payload_digest_value = supplied_payload_digest["value"]
+            payload_digest_value = digest_value
 
         resource = message["resource"]
         if not isinstance(resource, Mapping):
