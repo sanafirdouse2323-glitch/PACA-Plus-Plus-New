@@ -158,6 +158,122 @@ def test_broker_read_requires_authorisation_before_disclosure(
     validator.validate(message)
 
 
+def _valid_broker_operation(operation: str) -> dict[str, object]:
+    message = envelope("paca.broker-operation.v1")
+    resource: dict[str, object] = {
+        "resource_type": "file",
+        "resource_id": "report-1",
+    }
+    message.update(
+        {
+            "operation_id": "op-" + operation,
+            "session_id": "session-1",
+            "channel_binding_digest": {
+                "algorithm": "sha-256",
+                "value": "a" * 64,
+            },
+            "request_nonce": "nonce-000000000001",
+            "operation": operation,
+            "resource": resource,
+            "authorization_grant_ref": "grant-1",
+        }
+    )
+    if operation in {"read", "query"}:
+        message["read_constraints"] = {"max_bytes": 4096}
+    if operation in {"write", "delete"}:
+        resource["version_id"] = "version-1"
+    if operation in {"write", "delete", "send", "execute"}:
+        message.update(
+            {
+                "commit_permit_ref": "permit-1",
+                "idempotency_key": "idem-1",
+                "payload_digest": {
+                    "algorithm": "sha-256",
+                    "value": "b" * 64,
+                },
+                "provenance_refs": [
+                    {
+                        "object_id": "source-1",
+                        "version_id": "source-version-1",
+                        "content_digest": {
+                            "algorithm": "sha-256",
+                            "value": "c" * 64,
+                        },
+                    }
+                ],
+            }
+        )
+    if operation in {"write", "send", "execute"}:
+        message["payload"] = {"content": "approved"}
+    return message
+
+
+def test_broker_mutations_require_permit_replay_binding_and_provenance(
+    validator: Any,
+) -> None:
+    validation_error = importlib.import_module("jsonschema").ValidationError
+    for operation in ("write", "delete", "send", "execute"):
+        message = _valid_broker_operation(operation)
+        validator.validate(message)
+
+        for required_field in (
+            "commit_permit_ref",
+            "idempotency_key",
+            "payload_digest",
+            "provenance_refs",
+        ):
+            incomplete = dict(message)
+            incomplete.pop(required_field)
+            with pytest.raises(validation_error):
+                validator.validate(incomplete)
+
+        no_provenance = dict(message)
+        no_provenance["provenance_refs"] = []
+        with pytest.raises(validation_error):
+            validator.validate(no_provenance)
+
+        if operation in {"write", "send", "execute"}:
+            no_payload = dict(message)
+            no_payload.pop("payload")
+            with pytest.raises(validation_error):
+                validator.validate(no_payload)
+
+        if operation == "delete":
+            no_version = dict(message)
+            no_version["resource"] = {"resource_type": "file", "resource_id": "report-1"}
+            with pytest.raises(validation_error):
+                validator.validate(no_version)
+
+
+def test_broker_reads_and_queries_require_bounded_authorised_disclosure(
+    validator: Any,
+) -> None:
+    validation_error = importlib.import_module("jsonschema").ValidationError
+    for operation in ("read", "query"):
+        message = _valid_broker_operation(operation)
+        validator.validate(message)
+
+        no_constraints = dict(message)
+        no_constraints.pop("read_constraints")
+        with pytest.raises(validation_error):
+            validator.validate(no_constraints)
+
+        no_bound = dict(message)
+        no_bound["read_constraints"] = {}
+        with pytest.raises(validation_error):
+            validator.validate(no_bound)
+
+        unbounded = dict(message)
+        unbounded["read_constraints"] = {"max_bytes": 0}
+        with pytest.raises(validation_error):
+            validator.validate(unbounded)
+
+        with_commit_permit = dict(message)
+        with_commit_permit["commit_permit_ref"] = "permit-read-forbidden"
+        with pytest.raises(validation_error):
+            validator.validate(with_commit_permit)
+
+
 def test_digest_must_be_lowercase_sha256_hex(
     validator: Any,
 ) -> None:
