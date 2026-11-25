@@ -136,6 +136,7 @@ class InProcessBrokerWriteMediator:
             max_lifetime_seconds=max_permit_lifetime_seconds,
             max_message_age_seconds=300,
             clock_skew_seconds=clock_skew_seconds,
+            max_message_bytes=max_permit_bytes,
         )
         self._registry = registry
         self._grant_issuer = grant_issuer
