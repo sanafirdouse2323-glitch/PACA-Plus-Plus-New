@@ -29,6 +29,7 @@ except ImportError:  # pragma: no cover - depends on optional crypto installatio
 
 _SIGNATURE_DOMAIN = b"PACA++/MESSAGE/V1\n"
 _SIGNATURE_PATTERN = re.compile(r"^[A-Za-z0-9_-]{86}$")
+_KEY_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/@+-]{0,255}$")
 
 
 class MessageAuthenticationError(PermissionError):
@@ -112,8 +113,8 @@ class MessageSigner:
             )
         if not isinstance(private_key, Ed25519PrivateKey):
             raise TypeError("private_key must be a cryptography Ed25519PrivateKey")
-        if not isinstance(key_id, str) or not key_id:
-            raise ValueError("key_id must be non-empty")
+        if not isinstance(key_id, str) or not _KEY_ID_PATTERN.fullmatch(key_id):
+            raise ValueError("key_id must match the protocol identifier syntax")
         if not isinstance(issuer, str) or not issuer:
             raise ValueError("issuer must be non-empty")
         self._key_id = key_id
@@ -135,7 +136,7 @@ class MessageSigner:
         if not isinstance(audience, str) or audience not in self._audiences:
             raise ValueError("message audience is outside the configured signer scope")
         unsigned = dict(message)
-        signing_input = _signing_input(unsigned, message_type)
+        signing_input = _signing_input(unsigned, message_type, self._key_id)
         signature = self._private_key.sign(signing_input)
         encoded = base64.urlsafe_b64encode(signature).decode("ascii").rstrip("=")
         signed = dict(unsigned)
@@ -163,9 +164,9 @@ class MessageVerifier:
             raise ValueError("message verification key ring must not be empty")
         normalized: dict[str, TrustedMessageKey] = {}
         for key_id, key in keys.items():
-            if not isinstance(key_id, str) or not key_id:
+            if not isinstance(key_id, str) or not _KEY_ID_PATTERN.fullmatch(key_id):
                 raise ValueError(
-                    "message verification key IDs must be non-empty strings"
+                    "message verification key IDs must match protocol identifier syntax"
                 )
             if not isinstance(key, TrustedMessageKey):
                 raise TypeError("key ring entries must be TrustedMessageKey instances")
@@ -216,7 +217,7 @@ class MessageVerifier:
                 != encoded
             ):
                 raise ValueError("invalid or non-canonical Ed25519 signature encoding")
-            signing_input = _signing_input(unsigned, message_type)
+            signing_input = _signing_input(unsigned, message_type, key_id)
             trusted.public_key.verify(signature, signing_input)
         except (ValueError, binascii.Error, TypeError) as exc:
             raise MessageAuthenticationError(
@@ -238,9 +239,19 @@ class MessageVerifier:
         )
 
 
-def _signing_input(message: Mapping[str, Any], message_type: str) -> bytes:
+def _signing_input(
+    message: Mapping[str, Any], message_type: str, key_id: str
+) -> bytes:
     try:
         type_bytes = message_type.encode("ascii", errors="strict")
+        key_id_bytes = key_id.encode("ascii", errors="strict")
     except UnicodeEncodeError as exc:
-        raise ValueError("message_type must be ASCII") from exc
-    return _SIGNATURE_DOMAIN + type_bytes + b"\n" + canonicalize(dict(message))
+        raise ValueError("message_type and key_id must be ASCII") from exc
+    return (
+        _SIGNATURE_DOMAIN
+        + type_bytes
+        + b"\n"
+        + key_id_bytes
+        + b"\n"
+        + canonicalize(dict(message))
+    )
