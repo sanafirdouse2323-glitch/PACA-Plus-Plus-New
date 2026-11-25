@@ -6,7 +6,6 @@ from .broker import (
     BrokerSessionContext,
     VerifiedBrokerOperation,
 )
-
 from .canonical import (
     CanonicalizationError,
     InvalidJSONError,
