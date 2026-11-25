@@ -343,3 +343,44 @@ def test_verified_result_is_detached_from_later_caller_mutation():
     assert verified.resource_id == "reports/report.txt"
     snapshot = parse_json(verified.canonical_message)
     assert snapshot["resource"]["resource_id"] == "reports/report.txt"
+
+
+def test_verifier_rejects_message_above_configured_size_limit():
+    message = _message("write")
+    payload = {"content": "x" * 4096}
+    message["payload"] = payload
+    message["payload_digest"] = {
+        "algorithm": "sha-256",
+        "value": digest_object(payload, purpose="payload"),
+    }
+    signer, verifier, session = _verifier_and_session()
+    signed = signer.sign(message)
+
+    with pytest.raises(BrokerOperationError, match="message-size limit"):
+        BrokerOperationVerifier(verifier, max_message_bytes=1024).verify(
+            signed,
+            session=session,
+            expected_grant_ref="grant-001",
+        )
+
+
+def test_verifier_rejects_read_bound_above_configured_disclosure_limit():
+    message = _message("read")
+    message["read_constraints"] = {"max_bytes": 4097}
+    signer, verifier, session = _verifier_and_session()
+    signed = signer.sign(message)
+
+    with pytest.raises(BrokerOperationError, match="disclosure limit"):
+        BrokerOperationVerifier(verifier, max_read_bytes=4096).verify(
+            signed,
+            session=session,
+            expected_grant_ref="grant-001",
+        )
+
+
+def test_verifier_size_limits_reject_booleans_and_unbounded_configuration():
+    _, verifier, _ = _verifier_and_session()
+    with pytest.raises(ValueError, match="max_message_bytes"):
+        BrokerOperationVerifier(verifier, max_message_bytes=True)
+    with pytest.raises(ValueError, match="max_read_bytes"):
+        BrokerOperationVerifier(verifier, max_read_bytes=64 * 1024 * 1024 + 1)
