@@ -274,7 +274,7 @@ def test_commit_permit_reference_is_signature_bound_but_not_in_intent_digest():
     assert first.intent_digest == second.intent_digest
 
 
-def test_verifier_rejects_wrong_signing_key_for_session():
+def test_verifier_rejects_valid_but_session_unbound_signing_key():
     message = _message("read")
     private_key = Ed25519PrivateKey.generate()
     signer = MessageSigner(
@@ -283,10 +283,20 @@ def test_verifier_rejects_wrong_signing_key_for_session():
         audiences=frozenset({AUDIENCE}),
         private_key=private_key,
     )
-    _, verifier, session = _verifier_and_session()
+    _, _, session = _verifier_and_session()
+    verifier = MessageVerifier(
+        {
+            "other-key": TrustedMessageKey(
+                public_key=private_key.public_key(),
+                issuer=ISSUER,
+                audiences=frozenset({AUDIENCE}),
+                message_types=frozenset({MESSAGE_TYPE}),
+            )
+        }
+    )
     signed = signer.sign(message)
 
-    with pytest.raises(BrokerOperationError, match="signature"):
+    with pytest.raises(BrokerOperationError, match="key"):
         BrokerOperationVerifier(verifier).verify(
             signed,
             session=session,
