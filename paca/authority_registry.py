@@ -1016,9 +1016,12 @@ class SQLiteAuthorityRegistry:
                         ).fetchone()
                         same_access = (
                             prior_access is not None
-                            and prior_access["session_id"] == access_receipt["session_id"]
-                            and prior_access["nonce_digest"] == access_receipt["nonce_digest"]
-                            and prior_access["operation_id"] == access_receipt["operation_id"]
+                            and prior_access["session_id"]
+                            == access_receipt["session_id"]
+                            and prior_access["nonce_digest"]
+                            == access_receipt["nonce_digest"]
+                            and prior_access["operation_id"]
+                            == access_receipt["operation_id"]
                             and prior_access["authority_id"] == permit.authority_id
                             and prior_access["tenant"] == permit.tenant
                             and prior_access["task_id"] == permit.task_id
