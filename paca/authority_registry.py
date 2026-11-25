@@ -1034,9 +1034,9 @@ class SQLiteAuthorityRegistry:
         Authority revalidation, quota consumption, receipt insertion and the
         resource snapshot occur in one registry transaction. When supplied,
         expected_principal is checked against the immutable grant principal and
-        max_bytes is enforced against the actual canonical value plus provenance
-        metadata (with a raw stored-size check before JSON decoding). Both values
-        must come from the authenticated session and signed request, respectively.
+        max_bytes is enforced against the complete canonical result object
+        (with a raw stored-size check before JSON decoding). Both values must come
+        from the authenticated session and signed request, respectively.
         This method is not a broker or process trust boundary; provenance
         authenticity, lineage and release/declassification checks remain separate.
         """
@@ -1231,13 +1231,8 @@ class SQLiteAuthorityRegistry:
                 # the caller-supplied max_bytes field. This check happens before
                 # receipt insertion and quota charging; failure rolls back the
                 # transaction without disclosing any bytes.
-                if max_bytes is not None and result["found"]:
-                    disclosed = _canonical(
-                        {
-                            "value": result["value"],
-                            "provenance_metadata": result["provenance_metadata"],
-                        }
-                    )
+                if max_bytes is not None:
+                    disclosed = _canonical(result)
                     if len(disclosed) > max_bytes:
                         raise AuthorityRegistryError(
                             "resource read exceeds the requested disclosure byte limit"
