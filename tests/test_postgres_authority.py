@@ -320,6 +320,7 @@ def test_postgres_filesystem_commit_callback_serializes_with_revocation(
     assert receipt is not None
     assert receipt["task_id"] == env["task_id"]
 
+
 def test_postgres_fenced_runtime_commits_through_shared_primary_registry(tmp_path):
     from paca.durable import SQLiteProvenanceRepository
     from paca.memory import (
