@@ -128,3 +128,32 @@ Schema validation and signature verification are separate operations. A caller s
 For `paca.broker-operation.v1`, compute the permit request digest from the complete message object after removing exactly `proof` and `commit_permit_ref`, then apply the `request` digest domain. All other fields, including operation ID, session ID, nonce, resource and version, authority grant reference, payload, provenance references, payload digest and idempotency key, remain bound.
 
 The worker's Ed25519 signature covers the full message including `commit_permit_ref`. The commit permit is separately signed by the capability issuer and binds the operation-intent digest and payload digest. The broker verifies both signatures and all cross-bindings. A permit reference cannot be swapped without invalidating the worker signature.
+
+## 13. Reference broker-operation verifier
+
+The reference core now exposes `BrokerSessionContext`, `BrokerOperationVerifier` and `VerifiedBrokerOperation` from `paca.contracts`. The verifier performs the following checks on a v1.0.0 broker-operation message:
+
+1. Takes a detached canonical JSON/I-JSON snapshot before verification, so subsequent semantic checks do not read a caller-mutable mapping.
+2. Validates the closed v1.0.0 broker-operation schema.
+3. Verifies the Ed25519 proof against the configured issuer, key ID, audience and message-type key scope.
+4. Requires the signing issuer/key ID, audience, session ID and channel-binding digest to match the supplied session context.
+5. Requires the request's grant reference to match the grant reference resolved by the caller.
+6. Recomputes the request-intent digest after removing exactly `proof` and `commit_permit_ref`.
+7. Recomputes the domain-separated payload digest when a payload is present.
+
+`BrokerSessionContext` is a trusted hand-off value, not an authentication mechanism. A transport adapter must authenticate the peer and derive the channel-binding digest from the live transport before constructing it. Principal, workload, tenant, task and purpose values must come from that trusted session/identity context, never from the worker's broker-operation body.
+
+The verifier is intentionally stateless and does not:
+- establish or authenticate a network connection or worker session;
+- persist or atomically consume request nonces or idempotency keys;
+- resolve a grant, check its current status, delegation chain, policy epoch, scope or quota;
+- resolve or release provenance evidence;
+- authenticate or consume a commit permit;
+- enforce `read_constraints.max_bytes` against returned resource bytes;
+- access a database, filesystem, memory store or external provider; or
+- execute a broker operation.
+
+For `delete`, the schema carries a digest of the canonical deletion intent but no payload object; the verifier therefore preserves that digest for later comparison with the separately authenticated commit permit rather than pretending it can recompute it. The verifier returns structured request facts only. A caller MUST NOT treat `VerifiedBrokerOperation` as an authorization decision or permit resource access based on it alone.
+
+This increment is a protocol-verification primitive, not the broker process/IPC boundary. A production-facing ingress still needs authenticated transport/session establishment, authoritative grant and provenance checks, persistent replay protection, a resource PEP, commit-time revalidation, bounded read disclosure and adversarial bypass tests.
+
