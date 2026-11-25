@@ -496,4 +496,3 @@ def test_postgres_resource_read_and_write_receipts_are_shared_and_replay_safe():
         )
 
     assert env["registry_b"].usage(authority_id)[0] == 2
-\n
