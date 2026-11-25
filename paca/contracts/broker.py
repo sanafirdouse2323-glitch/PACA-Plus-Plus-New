@@ -21,7 +21,7 @@ from .validation import ContractValidationError, validate_message
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 _BROKER_MESSAGE_TYPE = "paca.broker-operation.v1"
 _DIGEST_ALGORITHM = "sha-256"
-_BROKER_NONCE_DOMAIN = b"PACA++/BROKER-NONCE/V1\\n"
+_BROKER_NONCE_DOMAIN = b"PACA++/BROKER-NONCE/V1\n"
 _MUTATING_OPERATIONS = frozenset({"write", "delete", "send", "execute"})
 
 
@@ -295,7 +295,7 @@ class BrokerOperationVerifier:
         nonce_digest = hashlib.sha256(
             _BROKER_NONCE_DOMAIN
             + session.session_id.encode("utf-8")
-            + b"\\n"
+            + b"\n"
             + snapshot["request_nonce"].encode("utf-8")
         ).hexdigest()
 
