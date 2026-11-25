@@ -72,6 +72,21 @@ JSON Schema alone cannot establish the following. Every implementation MUST enfo
 11. Isolation capability claims are accepted only with verified deployment evidence. operator_assertion is not sufficient for a conformance profile that requires isolation.
 12. Audit records refer to digests and evidence identifiers rather than leaking credentials or full sensitive payloads.
 
+## 6.1 Broker operation structural requirements
+
+The v1.0.0 schema enforces a common operation envelope with an authenticated session reference, channel-binding digest, request nonce, resource reference and authorization-grant reference.
+
+| Operation | Required operation-specific fields |
+|---|---|
+| read | Bounded `read_constraints.max_bytes`; no commit permit |
+| query | Bounded `read_constraints.max_bytes`; no commit permit |
+| write | Commit permit, idempotency key, payload digest, payload, at least one provenance reference, and resource version |
+| delete | Commit permit, idempotency key, payload digest, at least one provenance reference, and resource version |
+| send | Commit permit, idempotency key, payload digest, payload, and at least one provenance reference |
+| execute | Commit permit, idempotency key, payload digest, payload, and at least one provenance reference |
+
+A digest does not replace the payload where an operation needs a structured body. A deletion is represented by its exact resource/version and a digest of the canonical deletion intent; it does not require a separate body object. These schema requirements validate message shape only; a trusted implementation must still recompute the digests and resolve the evidence before effect.
+
 ## 7. Resource predicate semantics
 
 The schema represents predicates as typed values; it does not define universal path/URL/provider matching semantics. Each predicate type must have a versioned semantics definition and a containment decision procedure. If a procedure cannot prove that child scope is contained in parent scope, delegation is denied. Adapters cannot invent new predicate semantics at runtime.
