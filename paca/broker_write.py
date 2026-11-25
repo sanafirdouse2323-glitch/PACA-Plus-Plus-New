@@ -230,9 +230,15 @@ class InProcessBrokerWriteMediator:
                 raise BrokerResourceDenied(
                     "local resource version must be a non-negative decimal integer"
                 ) from exc
-            if expected_version < 0 or str(expected_version) != resource_version:
+            if (
+                expected_version < 0
+                or expected_version > 9_007_199_254_740_991
+                or str(expected_version) != resource_version
+                or not resource_version.isascii()
+                or not resource_version.isdecimal()
+            ):
                 raise BrokerResourceDenied(
-                    "local resource version must use canonical decimal notation"
+                    "local resource version must use canonical bounded decimal notation"
                 )
 
             record = self._registry.assert_active(operation.authorization_grant_ref)
