@@ -145,6 +145,8 @@ The reference core now exposes `BrokerSessionContext`, `BrokerOperationVerifier`
 
 `BrokerSessionContext` is a trusted hand-off value, not an authentication mechanism. A transport adapter must authenticate the peer and derive the channel-binding digest from the live transport before constructing it. Principal, workload, tenant, task and purpose values must come from that trusted session/identity context, never from the worker's broker-operation body.
 
+A network adapter MUST also enforce a raw transport-body/frame size limit before JSON decoding. The verifier receives an already-materialised mapping, so its canonical-message limit does not replace an ingress-level allocation limit.
+
 The verifier is intentionally stateless and does not:
 - establish or authenticate a network connection or worker session;
 - persist or atomically consume request nonces or idempotency keys (the receipt builder only constructs data; the registry must insert it transactionally with the resource operation);
