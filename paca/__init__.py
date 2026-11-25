@@ -9,6 +9,7 @@ from .ast import (
     ProvenanceRecord,
 )
 from .authority import AuthorityLineage, AuthorityLineageGraph
+from .broker import BrokerResourceDenied, InProcessBrokerReadMediator
 from .authority_runtime import (
     AuthorityRegistryError,
     CapabilityAuthenticationError,
@@ -62,6 +63,7 @@ __all__ = [
     "AuthorityLineage",
     "AuthorityLineageGraph",
     "AuthorityRegistryError",
+    "BrokerResourceDenied",
     "CapabilityAuthenticationError",
     "DockerSandbox",
     "DockerSandboxExecutor",
@@ -71,6 +73,7 @@ __all__ = [
     "Expression",
     "HMACAgentMessageCodec",
     "HMACCapabilityAuthority",
+    "InProcessBrokerReadMediator",
     "ImmutableLineageConflict",
     "Label",
     "LineageIntegrityError",
