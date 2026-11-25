@@ -248,10 +248,7 @@ class AuthorityLineage:
             or expires != self.expires
             or parent_id != self.parent_id
             or normalise_grants(grants) != self.grants
-            or (
-                self.max_calls is not None
-                and max_calls != self.max_calls
-            )
+            or (self.max_calls is not None and max_calls != self.max_calls)
         ):
             raise ValueError(
                 "capability fields do not match their authority-lineage record"
