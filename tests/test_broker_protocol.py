@@ -343,4 +343,3 @@ def test_verified_result_is_detached_from_later_caller_mutation():
     assert verified.resource_id == "reports/report.txt"
     snapshot = parse_json(verified.canonical_message)
     assert snapshot["resource"]["resource_id"] == "reports/report.txt"
-
