@@ -4,7 +4,7 @@
 
 ## Observed repository setting
 
-On 24 November 2026, the GitHub API reported that the default `main` branch was not protected and that the repository had no rulesets. The available GitHub connection for this work can inspect these settings but does not have the repository-administration write permission required to create or enforce a ruleset. Therefore, this document is an administrator action plan; it is not evidence that branch protection has been enabled.
+On 25 November 2026, the GitHub API reported that the default `main` branch was not protected (`protected: false`) and the repository rulesets endpoint returned an empty list. The available GitHub connection for this work can inspect these settings but does not expose repository-administration write permission or an action to create/enforce rulesets. Therefore, this document is an administrator action plan; it is not evidence that branch protection has been enabled.
 
 ## Required `main` ruleset
 

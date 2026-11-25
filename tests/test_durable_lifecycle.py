@@ -3152,7 +3152,7 @@ def test_registry_migrates_empty_v3_database_to_task_quota_schema(tmp_path):
         table = connection.execute(
             "SELECT name FROM sqlite_master WHERE type='table' AND name='task_usage'"
         ).fetchone()
-    assert version == "5"
+    assert version == "7"
     assert table is not None
     with sqlite3.connect(database) as connection:
         resource_tables = {
@@ -3161,10 +3161,111 @@ def test_registry_migrates_empty_v3_database_to_task_quota_schema(tmp_path):
                 "SELECT name FROM sqlite_master WHERE type='table'"
             ).fetchall()
         }
-    assert "paca_resource_commit_receipts" in resource_tables
-    assert "paca_resource_values" in resource_tables
+    assert {
+        "paca_resource_commit_receipts",
+        "paca_resource_values",
+        "paca_resource_provenance",
+        "paca_resource_access_receipts",
+    }.issubset(resource_tables)
     with pytest.raises(KeyError):
         migrated.task_usage("acme", "not-created")
+
+
+def test_registry_migrates_v6_commit_receipts_to_v7_without_losing_history(tmp_path):
+    env = _environment(tmp_path)
+    database = env["registry"].database
+    authority_id = env["root"].capability.cap_id
+    with sqlite3.connect(database) as connection:
+        connection.execute(
+            "INSERT INTO paca_resource_commit_receipts("
+            "nonce,authority_id,tenant,task_id,action,resource_key,"
+            "request_digest,payload_digest,committed_at"
+            ") VALUES(?,?,?,?,?,?,?,?,?)",
+            (
+                "legacy-v6-commit-nonce",
+                authority_id,
+                "acme",
+                "task-1",
+                "write_file",
+                "/acme/legacy-v6.txt",
+                "a" * 64,
+                "b" * 64,
+                1_000,
+            ),
+        )
+        connection.execute("DROP INDEX paca_resource_commit_permit_id_idx")
+        connection.execute("DROP INDEX paca_resource_commit_idempotency_idx")
+        connection.execute(
+            "ALTER TABLE paca_resource_commit_receipts DROP COLUMN result_version"
+        )
+        connection.execute(
+            "ALTER TABLE paca_resource_commit_receipts DROP COLUMN idempotency_key"
+        )
+        connection.execute(
+            "ALTER TABLE paca_resource_commit_receipts DROP COLUMN permit_id"
+        )
+        connection.execute(
+            "UPDATE paca_authority_meta SET value='6' WHERE key='schema_version'"
+        )
+
+    migrated = SQLiteAuthorityRegistry(database, clock=env["clock"])
+    with sqlite3.connect(database) as connection:
+        version = connection.execute(
+            "SELECT value FROM paca_authority_meta WHERE key='schema_version'"
+        ).fetchone()[0]
+        columns = {
+            row[1]
+            for row in connection.execute(
+                "PRAGMA table_info(paca_resource_commit_receipts)"
+            ).fetchall()
+        }
+        indexes = {
+            row[1]
+            for row in connection.execute(
+                "PRAGMA index_list(paca_resource_commit_receipts)"
+            ).fetchall()
+        }
+        legacy = connection.execute(
+            "SELECT nonce,authority_id,tenant,task_id,action,resource_key,"
+            "request_digest,payload_digest,committed_at,permit_id,"
+            "idempotency_key,result_version "
+            "FROM paca_resource_commit_receipts WHERE nonce=?",
+            ("legacy-v6-commit-nonce",),
+        ).fetchone()
+
+    assert version == "7"
+    assert {"permit_id", "idempotency_key", "result_version"} <= columns
+    assert {
+        "paca_resource_commit_permit_id_idx",
+        "paca_resource_commit_idempotency_idx",
+    } <= indexes
+    assert legacy is not None
+    assert legacy[:9] == (
+        "legacy-v6-commit-nonce",
+        authority_id,
+        "acme",
+        "task-1",
+        "write_file",
+        "/acme/legacy-v6.txt",
+        "a" * 64,
+        "b" * 64,
+        1_000,
+    )
+    assert legacy[9:] == (None, None, None)
+    assert migrated.current_epoch() == 0
+
+
+def test_registry_fails_closed_when_v7_commit_idempotency_index_is_missing(tmp_path):
+    database = tmp_path / "authority.sqlite3"
+    SQLiteAuthorityRegistry(database)
+    with sqlite3.connect(database) as connection:
+        connection.execute("DROP INDEX paca_resource_commit_idempotency_idx")
+
+    with pytest.raises(
+        AuthorityRegistryError,
+        match="version-7 resource commit idempotency schema is incomplete",
+    ):
+        SQLiteAuthorityRegistry(database)
 
 
 def test_registry_refuses_to_guess_quota_for_populated_v3_database(tmp_path):

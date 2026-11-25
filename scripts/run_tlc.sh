@@ -28,3 +28,6 @@ echo "$SHA256  $JAR" | sha256sum --check --status || {
 cd "$ROOT/models"
 java -jar "$JAR" -config PACAAuth.cfg PACAAuth.tla
 java -jar "$JAR" -config PACALifecycle.cfg PACALifecycle.tla
+java -jar "$JAR" -config PACABroker.cfg PACABroker.tla
+java -jar "$JAR" -config PACAGrant.cfg PACAGrant.tla
+java -jar "$JAR" -config PACAInfoFlow.cfg PACAInfoFlow.tla

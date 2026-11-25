@@ -18,6 +18,8 @@ from .authority_runtime import (
     SQLiteAuthorityRegistry,
     VerifiedResourceCommitPermit,
 )
+from .broker import BrokerResourceDenied, InProcessBrokerReadMediator
+from .broker_write import InProcessBrokerWriteMediator
 from .compiler import compile_policy, compile_policy_source
 from .durable import (
     ImmutableLineageConflict,
@@ -27,6 +29,7 @@ from .durable import (
 )
 from .engine import PolicyEngine
 from .evaluator import evaluate_policy, evaluate_policy_set
+from .filesystem_commit import FilesystemFencedResourceExecutor
 from .memory import (
     HMACAgentMessageCodec,
     MemoryAccessContext,
@@ -62,15 +65,19 @@ __all__ = [
     "AuthorityLineage",
     "AuthorityLineageGraph",
     "AuthorityRegistryError",
+    "BrokerResourceDenied",
     "CapabilityAuthenticationError",
     "DockerSandbox",
     "DockerSandboxExecutor",
     "Ed25519CapabilityAuthority",
     "EvaluationResult",
     "FencedResourceExecutor",
+    "FilesystemFencedResourceExecutor",
     "Expression",
     "HMACAgentMessageCodec",
     "HMACCapabilityAuthority",
+    "InProcessBrokerReadMediator",
+    "InProcessBrokerWriteMediator",
     "ImmutableLineageConflict",
     "Label",
     "LineageIntegrityError",

@@ -446,6 +446,8 @@ class HMACCapabilityAuthority:
             parent_id=parent_id,
             parent_digest=parent_digest,
             max_task_calls=max_task_calls,
+            max_calls=max_calls,
+            audience=self.audience,
         )
         self.registry.register_authority(
             record,
@@ -539,6 +541,8 @@ class HMACCapabilityAuthority:
             record = _record_from_dict(authority_data)
             if record.issuer != self.issuer_id:
                 raise ValueError("authority issuer mismatch")
+            if record.audience is not None and record.audience != expected_audience:
+                raise ValueError("authority audience mismatch")
             stored = self.registry.get_authority(record.authority_id)
             if stored != record:
                 raise ValueError("signed authority does not match the trusted registry")

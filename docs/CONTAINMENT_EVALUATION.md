@@ -69,7 +69,7 @@ These incident reports motivate test cases; they are not a claim that the custom
 | SBX-03 | Brokered credential misuse | Workload cannot read the long-lived credential; broker injects it only for the exact approved destination and operation | Design requirement only; no credential broker integration |
 | SBX-04 | DNS rebinding / mixed DNS answers | All resolved addresses are validated and the connection uses a validated numeric address | Existing DNS/IP-pinning unit tests cover mixed/private answers and one-time resolution |
 | SBX-05 | Redirect to an unapproved destination | Every redirect target is revalidated before a new connection; no client silently re-resolves an unchecked hostname | Provider HTTP clients refuse redirects; no generic redirect-following client revalidates each destination, so any future redirect-capable caller must do so before reconnecting |
-| SBX-06 | Child process / alternate executor bypass | Every real process and tool path remains inside the declared execution policy | Not covered by the simulator or a complete host integration |
+| SBX-06 | Child process / alternate executor bypass | Every real process and tool path remains inside the declared execution policy | Opt-in strict mode rejects non-Docker executors only for calls routed through `PACAAgentRuntime`; direct process/framework/host/provider bypasses and OS-level enforcement are still not covered |
 | SBX-07 | Supervisor / policy-service loss | Consequential execution stops when the external enforcement path is unavailable | Not implemented as an independent runtime watchdog |
 | SBX-08 | Revocation after delegation or persistence | Previously issued descendants and derived memory cannot continue to exercise revoked authority | SQLite authority/lineage revocation and descendant invalidation are implemented and regression-tested in reference adapters; distributed revocation delivery, cross-store atomicity, failover/rollback recovery and remote commit fencing remain unproven |
 | SBX-09 | Cross-VM communication and hardware side channels | Unauthorized communication paths are detected or excluded under a stated hardware threat model | Not simulated or claimed; requires dedicated infrastructure and side-channel expertise |
@@ -101,6 +101,22 @@ executor = DockerSandboxExecutor(
 
 The runtime checks the signed Tool hash, and the executor independently compares the configured worker identity before starting the container. The digest is derived from the same Docker argument builder used for launch, with only the ephemeral CID-file path normalized. The sandbox configuration and Docker CLI environment are immutable after initialization, preventing ordinary runtime mutation between the identity check and launch. Legacy Tool manifests keep their previous hash, but the Docker executor rejects a missing implementation digest. Changing the image, platform, command, CLI environment selection or enforced sandbox limits requires a newly issued tool pin. This does not attest the Docker daemon, host kernel, Docker CLI binary or registry trust, and it does not make isolated execution mandatory or close direct host/framework bypasses.
 
+For application code that must reject host executors at PACA's effect API boundary, use the opt-in strict mode:
+
+```python
+runtime = PACAAgentRuntime(
+    authority,
+    memory,
+    monitor,
+    messages,
+    require_docker_sandbox_for_effects=True,
+)
+```
+
+Both `execute_effect` and `aexecute_effect` then require the exact `DockerSandboxExecutor` class backed by the exact `DockerSandbox` class. The executor seals its sandbox reference and action-to-command map after construction; the async entry point runs the same validation and Docker call through `asyncio.to_thread`. Accepted tool actions still require a capability-pinned implementation digest.
+
+**Fail-closed scope:** strict mode currently supports only `run_command`. It rejects file, memory, remote-provider and other action types because the container has no host mounts, no network and no brokered resource channel. This is an application-level guard for calls submitted through the two PACA runtime methods, not OS enforcement: direct framework, subprocess, host filesystem and provider-client calls outside the runtime remain possible. It cannot currently be combined with `require_resource_commit_fence=True`; a composed trusted resource broker is still required. The Docker CLI, daemon, host kernel and deployment configuration remain trusted.
+
 ### Deterministic tests added in this tranche
 
 - `tests/test_sandbox_boundary_cases.py::test_cross_session_artifact_reuse_keeps_untrusted_label_and_blocks_effect` writes an untrusted value through the reference monitor, transfers the labelled value through a test-only shared-store fixture, applies a derivation/compaction step, and checks that PAC++ New denies the resulting command. It also shows that the repository's hand-authored `SandboxScoped` comparator permits the command because that comparator checks a command allow-list but does not inspect the data's provenance.
@@ -110,7 +126,36 @@ These are unit-level protocol fixtures. They do **not** prove that a real distri
 
 Existing `tests/test_secure_execution_primitives.py` covers Linux `openat2` path confinement and DNS/IP-pinned socket primitives. Those helpers are not automatically wired into every agent connector, executor or HTTP client.
 
-## 4. Fair-comparison protocol
+## 4. Optional filesystem resource-commit reference adapter
+
+The branch adds `FilesystemFencedResourceExecutor` for one narrow path: a protected `write_file` request can replace a real local regular file. This is distinct from `FencedResourceExecutor`, which stores a logical value in `paca_resource_values`.
+
+Example configuration inside the trusted resource-broker process:
+
+```python
+from paca.filesystem_commit import FilesystemFencedResourceExecutor
+
+filesystem_writer = FilesystemFencedResourceExecutor(
+    resource_commit_verifier,
+    root="/srv/paca/resources",
+    state_dir="/var/lib/paca/filesystem-commit-state",
+    max_file_bytes=8 * 1024 * 1024,
+)
+```
+
+The root and state directory must be separate directories owned by the broker's OS identity, with mode `0700` or stricter. The root itself must be private; the agent worker must not run as the broker UID or have the root mounted or otherwise accessible. Existing tenant/task/parent directories must be provisioned before writing. All writer instances serving the same root must use the same private `state_dir` so they share the journal lock and recovery queue. Use a local Linux/POSIX filesystem with the required same-directory atomic rename, `fsync` and `flock` semantics; network filesystem and multi-host recovery behavior has not been validated. A resource such as `/acme/reports/report.txt` maps to:
+
+```text
+/srv/paca/resources/acme/tasks/<sha256(task_id)>/reports/report.txt
+```
+
+The task namespace mirrors the authority store's `(tenant, task_id, resource)` key, so separate tasks do not overwrite the same physical target. The adapter uses Linux `openat2` path resolution, rejects symlinks, hard links and non-regular targets, stages bounded UTF-8 content, writes a private recovery journal, and invokes the atomic same-directory rename while the SQLite transaction or PostgreSQL single-primary registry lock remains held. Recovery compares that journal with the durable one-use commit receipt: an uncommitted rename is rolled back; a committed rename is verified before the journal is removed.
+
+**Important limits:** this adapter is opt-in and write-only. It is an in-process library component; it does not launch a broker process or create an IPC boundary. The host deployment must place the adapter in a trusted resource-broker process under a distinct OS identity, keep the root/state paths away from agent workers, and route reader access through an independently enforced brokered read path. It does not force every host/framework/subprocess path through the writer or stop a process with the same OS identity from accessing the files directly. A same-UID agent or an exposed host mount defeats the OS boundary. A crash can leave a journal pending until the broker restarts and recovery runs, so direct consumers must not bypass the broker. The PostgreSQL guarantee applies only to clients using the same primary; it is not multi-primary consensus or failover proof. No Gmail, Microsoft Graph, Slack, Qdrant or other remote-provider write/commit protocol is implemented by this adapter.
+
+The adapter is a reference implementation for adversarial testing, not a production security certification. Validate it in a dedicated broker/worker OS-identity deployment and include real process-bypass and crash/power-loss tests before making stronger claims.
+
+## 5. Fair-comparison protocol
 
 Before running any product comparison:
 
@@ -123,7 +168,7 @@ Before running any product comparison:
 7. Evaluate NVIDIA Sentry only on the supported hardware and configuration. Do not substitute a software mock for DPU evidence.
 8. Do not use a successful PAC++ New unit test as evidence of successful integration with an external sandbox.
 
-## 5. Required metrics
+## 6. Required metrics
 
 - Unauthorized protected-effect rate and attack success rate.
 - Cross-session artifact influence and cross-tenant value-release rate.
@@ -136,7 +181,7 @@ Before running any product comparison:
 - Benign task completion, false blocks, approvals, task utility, model/tool cost and end-to-end latency.
 - Error, timeout, unsupported and skipped denominators.
 
-## 6. Interpretation rules and non-claims
+## 7. Interpretation rules and non-claims
 
 - The repository's `SandboxScoped` is a hand-authored, simplified comparator. It is not NVIDIA OpenShell, NVIDIA Sentry, an OpenAI-hosted environment, or a faithful implementation of any vendor's sandbox.
 - PAC++ New does not currently launch or control OpenShell or OpenAI sandbox environments.
@@ -145,7 +190,7 @@ Before running any product comparison:
 - An application-level monitor cannot claim to prevent CPU-cache, shared-resource or other microarchitectural communication without a separate hardware threat model and tests.
 - No benchmark superiority, escape resistance, production readiness or complete lifecycle coverage is claimed until the actual external integrations and experiments are implemented and independently reviewed.
 
-## 7. Next implementation gates
+## 8. Next implementation gates
 
 1. Define a versioned memory/artifact adapter contract that stores trusted provenance metadata separately from model-controlled content and enforces authorization before value release.
 2. Add a durable provenance lineage representation and ensure memory transformations preserve parent references; do not equate the present flat origin labels with a full provenance graph.

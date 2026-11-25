@@ -269,3 +269,33 @@ def test_network_host_normalization_canonicalizes_idna_and_fqdn():
     assert (
         secure_network._normalise_host("2606:4700:4700::1111") == "2606:4700:4700::1111"
     )
+
+
+def test_secure_root_opens_directory_beneath_root_without_following_symlinks(tmp_path):
+    root = tmp_path / "workspace"
+    outside = tmp_path / "outside"
+    root.mkdir()
+    outside.mkdir()
+    (root / "docs").mkdir()
+    (root / "escape").symlink_to(outside, target_is_directory=True)
+
+    with _open_root(root) as secure:
+        fd = secure.open_directory_fd("docs")
+        try:
+            assert os.fstat(fd).st_mode & 0o170000 == 0o040000
+        finally:
+            os.close(fd)
+        with pytest.raises(SecurePathError):
+            secure.open_directory_fd("../outside")
+        with pytest.raises(SecurePathError):
+            secure.open_directory_fd("escape")
+
+
+def test_secure_root_directory_open_rejects_closed_root(tmp_path):
+    root = tmp_path / "workspace"
+    root.mkdir()
+    secure = _open_root(root)
+    secure.close()
+
+    with pytest.raises(SecurePathError):
+        secure.open_directory_fd(".")

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 
@@ -8,7 +9,7 @@ import pytest
 from paca.agent_runtime import PACAAgentRuntime
 from paca.memory import MemoryAccessDenied
 from paca.provenance import Arg, Label
-from paca.runtime import Capability, Request, Tool
+from paca.runtime import Capability, Decision, Request, Tool
 from paca.sandbox import (
     DockerSandbox,
     DockerSandboxExecutor,
@@ -427,3 +428,267 @@ def test_docker_sandbox_requires_explicit_mapping_for_cli_environment():
 
     configured = _sandbox(docker_env={"DOCKER_HOST": "unix:///var/run/docker.sock"})
     assert configured.docker_env == {"DOCKER_HOST": "unix:///var/run/docker.sock"}
+
+
+def test_docker_sandbox_executor_configuration_is_immutable():
+    executor = DockerSandboxExecutor(
+        _sandbox(),
+        commands={"read_file": ("/usr/local/bin/paca-worker", "--stdio")},
+    )
+
+    with pytest.raises(AttributeError, match="configuration is immutable"):
+        executor.sandbox = _sandbox()
+
+    with pytest.raises(AttributeError, match="configuration is immutable"):
+        executor.commands = {}
+
+
+def test_strict_runtime_mode_accepts_only_the_concrete_docker_backend():
+    runtime = object.__new__(PACAAgentRuntime)
+    runtime.require_docker_sandbox_for_effects = True
+
+    executor = DockerSandboxExecutor(
+        _sandbox(),
+        commands={"read_file": ("/usr/local/bin/paca-worker", "--stdio")},
+    )
+    assert runtime._require_docker_sandbox_executor(executor) is executor
+
+    class FakeSandbox:
+        def run(self, *_args, **_kwargs):
+            pytest.fail("strict runtime must reject fake sandbox backends")
+
+        def implementation_digest(self, _argv):
+            return "a" * 64
+
+    fake_executor = DockerSandboxExecutor(
+        FakeSandbox(),
+        commands={"read_file": ("/usr/local/bin/paca-worker", "--stdio")},
+    )
+    with pytest.raises(MemoryAccessDenied, match="concrete DockerSandbox"):
+        runtime._require_docker_sandbox_executor(fake_executor)
+
+    with pytest.raises(MemoryAccessDenied, match="concrete DockerSandbox"):
+        runtime._require_docker_sandbox_executor(lambda _request: None)
+
+
+def test_strict_runtime_rejects_host_executor_before_authorization():
+    runtime = object.__new__(PACAAgentRuntime)
+    runtime.require_docker_sandbox_for_effects = True
+    runtime.require_resource_commit_fence = False
+
+    with pytest.raises(MemoryAccessDenied, match="concrete DockerSandbox"):
+        runtime.execute_effect("unused", None, lambda _request: None)
+
+
+def test_strict_async_runtime_rejects_host_executor_before_authorization():
+    runtime = object.__new__(PACAAgentRuntime)
+    runtime.require_docker_sandbox_for_effects = True
+    runtime.require_resource_commit_fence = False
+
+    async def attempt():
+        with pytest.raises(MemoryAccessDenied, match="concrete DockerSandbox"):
+            await runtime.aexecute_effect("unused", None, lambda _request: None)
+
+    asyncio.run(attempt())
+
+
+def test_docker_sandbox_executor_async_adapter_uses_same_validation():
+    class FakeSandbox:
+        def __init__(self):
+            self.digest_builder = _sandbox().implementation_digest
+            self.input_data = None
+
+        def implementation_digest(self, argv):
+            return self.digest_builder(argv)
+
+        def run(self, argv, input_data):
+            self.input_data = input_data
+            return SandboxResult(
+                returncode=0,
+                stdout=b'{"version":1,"result":{"status":"ok"}}',
+                stderr=b"",
+                duration_seconds=0.01,
+            )
+
+    sandbox = FakeSandbox()
+    command = ("/usr/local/bin/paca-worker", "--stdio")
+    executor = DockerSandboxExecutor(
+        sandbox,
+        commands={"read_file": command},
+    )
+    tool = Tool(
+        "read_file",
+        "1.0",
+        "Read a file",
+        ("path",),
+        implementation_digest=sandbox.implementation_digest(command),
+    )
+    request = Request(
+        "read_file",
+        {"path": Arg("/workspace/report.txt")},
+        cap=Capability(
+            cap_id="async-cap",
+            principal="agent-a",
+            tenant="acme",
+            task_id="task-1",
+            role="assistant",
+            grants={"read_file": ("/workspace/*",)},
+            expires=9999999999,
+        ),
+        step=1,
+        tool=tool,
+    )
+
+    assert asyncio.run(executor.aexecute(request)) == {"status": "ok"}
+    assert sandbox.input_data is not None
+
+
+def test_strict_docker_runtime_requires_capability_pin_for_run_command():
+    capability = Capability(
+        cap_id="strict-tool-pin-cap",
+        principal="agent-a",
+        tenant="acme",
+        task_id="task-1",
+        role="assistant",
+        grants={"run_command": ("echo *",)},
+        expires=9999999999,
+    )
+    tool = Tool(
+        "run_command",
+        "1.0",
+        "Strictly pinned worker",
+        ("command",),
+        implementation_digest="a" * 64,
+    )
+    request = Request(
+        "run_command",
+        {"command": Arg("echo isolated")},
+        capability,
+        step=1,
+        tool=tool,
+    )
+
+    with pytest.raises(MemoryAccessDenied, match="not pinned"):
+        PACAAgentRuntime._assert_tool_binding(
+            capability,
+            request,
+            require_tool_pin=True,
+        )
+
+    capability.tool_pins[tool.name] = tool.hash
+    PACAAgentRuntime._assert_tool_binding(
+        capability,
+        request,
+        require_tool_pin=True,
+    )
+
+
+def _strict_runtime_for_test(request):
+    runtime = object.__new__(PACAAgentRuntime)
+    runtime.require_docker_sandbox_for_effects = True
+    runtime.require_resource_commit_fence = False
+    runtime._authorize_effect = lambda _token, current: (
+        Decision("allow", digest=current.digest),
+        current,
+        object(),
+        (),
+    )
+    runtime._revalidate_effect_snapshot = (
+        lambda _token, _decision, _snapshot, _issued, _accesses: None
+    )
+    return runtime
+
+
+def _pinned_worker_request(sandbox, command):
+    tool = Tool(
+        "run_command",
+        "1.0",
+        "Run a command in the isolated worker",
+        ("command",),
+        implementation_digest=sandbox.implementation_digest(command),
+    )
+    capability = Capability(
+        cap_id="strict-worker-cap",
+        principal="agent-a",
+        tenant="acme",
+        task_id="task-1",
+        role="assistant",
+        grants={"run_command": ("echo *",)},
+        expires=9999999999,
+        tool_pins={tool.name: tool.hash},
+    )
+    return Request(
+        "run_command",
+        {"command": Arg("echo isolated worker")},
+        cap=capability,
+        step=1,
+        tool=tool,
+    )
+
+
+def test_strict_runtime_executes_sync_effect_only_through_docker_executor(monkeypatch):
+    command = ("/usr/local/bin/paca-worker", "--stdio")
+    sandbox = _sandbox()
+    executor = DockerSandboxExecutor(sandbox, commands={"run_command": command})
+    request = _pinned_worker_request(sandbox, command)
+    runtime = _strict_runtime_for_test(request)
+
+    def fake_run(_sandbox, _argv, _input_data):
+        return SandboxResult(
+            returncode=0,
+            stdout=b'{"version":1,"result":{"status":"isolated"}}',
+            stderr=b"",
+            duration_seconds=0.01,
+        )
+
+    monkeypatch.setattr(DockerSandbox, "run", fake_run)
+    decision, result = runtime.execute_effect("unused", request, executor)
+
+    assert decision.verdict == "allow"
+    assert result == {"status": "isolated"}
+
+
+def test_strict_runtime_executes_async_effect_only_through_docker_executor(monkeypatch):
+    command = ("/usr/local/bin/paca-worker", "--stdio")
+    sandbox = _sandbox()
+    executor = DockerSandboxExecutor(sandbox, commands={"run_command": command})
+    request = _pinned_worker_request(sandbox, command)
+    runtime = _strict_runtime_for_test(request)
+
+    def fake_run(_sandbox, _argv, _input_data):
+        return SandboxResult(
+            returncode=0,
+            stdout=b'{"version":1,"result":{"status":"isolated-async"}}',
+            stderr=b"",
+            duration_seconds=0.01,
+        )
+
+    monkeypatch.setattr(DockerSandbox, "run", fake_run)
+
+    async def attempt():
+        return await runtime.aexecute_effect("unused", request, executor)
+
+    decision, result = asyncio.run(attempt())
+    assert decision.verdict == "allow"
+    assert result == {"status": "isolated-async"}
+
+
+@pytest.mark.parametrize(
+    "action",
+    [
+        "read_file",
+        "write_file",
+        "delete_file",
+        "mem_read",
+        "mem_write",
+        "fetch_url",
+        "send_email",
+    ],
+)
+def test_strict_docker_runtime_rejects_unbrokered_resource_and_provider_actions(action):
+    runtime = object.__new__(PACAAgentRuntime)
+    runtime.require_docker_sandbox_for_effects = True
+
+    runtime._require_supported_docker_action("run_command")
+    with pytest.raises(MemoryAccessDenied, match="run_command only"):
+        runtime._require_supported_docker_action(action)

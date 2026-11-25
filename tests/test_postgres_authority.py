@@ -6,6 +6,7 @@ import threading
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import closing
+from dataclasses import replace
 
 import pytest
 
@@ -68,6 +69,7 @@ def _environment(*, max_task_calls=20):
         task_id=task_id,
         purpose="write-report",
         grants={
+            "read_file": ("/workspace/*",),
             "write_file": ("/workspace/*",),
             "mem_read": ("mem/*",),
             "mem_write": ("mem/*",),
@@ -239,6 +241,86 @@ def test_postgres_resource_commit_serializes_before_revoke_across_clients(monkey
     assert registry_b.usage(authority_id) == (1, 0)
 
 
+def test_postgres_filesystem_commit_callback_serializes_with_revocation(
+    tmp_path,
+    monkeypatch,
+):
+    env = _environment()
+    target = tmp_path / "resource.txt"
+    staged = tmp_path / "resource.staged"
+    with staged.open("wb") as stream:
+        stream.write(b"postgres transactional filesystem resource")
+        stream.flush()
+        os.fsync(stream.fileno())
+
+    renamed = threading.Event()
+    allow_transaction_commit = threading.Event()
+    revoke_begin_attempted = threading.Event()
+    revoke_finished = threading.Event()
+    original_connect = env["registry_b"]._connect
+
+    def tracked_connect():
+        connection = original_connect()
+        original_execute = connection.execute
+
+        def tracked_execute(statement, parameters=()):
+            if statement.strip() == "BEGIN IMMEDIATE":
+                revoke_begin_attempted.set()
+            return original_execute(statement, parameters)
+
+        connection.execute = tracked_execute
+        return connection
+
+    monkeypatch.setattr(env["registry_b"], "_connect", tracked_connect)
+
+    def commit_callback():
+        os.replace(staged, target)
+        directory_fd = os.open(tmp_path, os.O_RDONLY | os.O_DIRECTORY)
+        try:
+            os.fsync(directory_fd)
+        finally:
+            os.close(directory_fd)
+        renamed.set()
+        if not allow_transaction_commit.wait(timeout=20):
+            raise RuntimeError("test did not release PostgreSQL filesystem commit")
+
+    def commit():
+        return env["registry_a"].commit_fenced_filesystem_write(
+            env["permit"],
+            env["resource_payload"],
+            commit_callback=commit_callback,
+        )
+
+    def revoke():
+        try:
+            return env["registry_b"].revoke(
+                env["root"].capability.cap_id,
+                "PostgreSQL filesystem commit serializes before revocation",
+            )
+        finally:
+            revoke_finished.set()
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        commit_future = pool.submit(commit)
+        assert renamed.wait(timeout=20)
+        revoke_future = pool.submit(revoke)
+        assert revoke_begin_attempted.wait(timeout=20)
+        # The second client reached BEGIN IMMEDIATE while the first transaction
+        # still holds its registry-wide write lock. Revocation must remain blocked.
+        assert not revoke_finished.wait(timeout=0.5)
+        allow_transaction_commit.set()
+        committed = commit_future.result(timeout=30)
+        revoked = revoke_future.result(timeout=30)
+
+    assert target.read_bytes() == b"postgres transactional filesystem resource"
+    assert committed["version"] == 1
+    assert env["root"].capability.cap_id in revoked
+    assert not env["registry_a"].is_active(env["root"].capability.cap_id)
+    receipt = env["registry_b"].get_resource_commit_receipt(committed["commit_nonce"])
+    assert receipt is not None
+    assert receipt["task_id"] == env["task_id"]
+
+
 def test_postgres_fenced_runtime_commits_through_shared_primary_registry(tmp_path):
     from paca.durable import SQLiteProvenanceRepository
     from paca.memory import (
@@ -362,3 +444,188 @@ def test_postgres_fenced_runtime_commits_through_shared_primary_registry(tmp_pat
     )
     assert row["version"] == 1
     assert row["authority_id"] == env["root"].capability.cap_id
+
+
+def _broker_access_receipt(
+    session_id: str,
+    operation_id: str,
+    nonce: str,
+    request_digest: str,
+    payload_digest: str | None = None,
+) -> dict[str, str]:
+    nonce_digest = hashlib.sha256(
+        b"PACA++/BROKER-NONCE/V1\\n"
+        + session_id.encode("utf-8")
+        + b"\\n"
+        + nonce.encode("utf-8")
+    ).hexdigest()
+    receipt = {
+        "session_id": session_id,
+        "nonce_digest": nonce_digest,
+        "operation_id": operation_id,
+        "request_digest": request_digest,
+    }
+    if payload_digest is not None:
+        receipt["payload_digest"] = payload_digest
+    return receipt
+
+
+def test_postgres_resource_read_and_write_receipts_are_shared_and_replay_safe():
+    from paca.authority_runtime import AuthorityRegistryError
+    from paca.contracts import digest_object
+
+    env = _environment()
+    authority_id = env["root"].capability.cap_id
+    resource = "/workspace/" + uuid.uuid4().hex + ".json"
+    payload = {"content": "postgres broker resource", "version": 1}
+    payload_digest = digest_object(payload, purpose="payload")
+    write_operation_id = "write-" + uuid.uuid4().hex
+    write_request_digest = digest_object(
+        {"operation_id": write_operation_id, "resource": resource},
+        purpose="request",
+    )
+    write_receipt = _broker_access_receipt(
+        "session-" + uuid.uuid4().hex,
+        write_operation_id,
+        "nonce-" + uuid.uuid4().hex,
+        write_request_digest,
+        payload_digest,
+    )
+    permit_token = env["issuer_a"].issue_resource_commit_permit(
+        env["root"].token,
+        request_digest=write_request_digest,
+        action="write_file",
+        resource=resource,
+        payload_digest=payload_digest,
+    )
+    permit = replace(
+        env["issuer_b"].verify_resource_commit_permit(permit_token),
+        permit_id="protocol-commit-" + uuid.uuid4().hex,
+        idempotency_key=write_operation_id,
+    )
+    provenance = {
+        "tenant": env["tenant"],
+        "task_id": env["task_id"],
+        "purpose": "write-report",
+        "payload_digest": payload_digest,
+        "integrity": "untrusted",
+        "sensitivity": 1,
+        "provenance_refs": ["postgres-source:v1"],
+        "evidence_digest": digest_object(
+            {"source": "postgres-source:v1", "payload_digest": payload_digest},
+            purpose="provenance",
+        ),
+    }
+
+    committed = env["registry_a"].commit_fenced_resource_write(
+        permit,
+        payload,
+        expected_principal="agent-a",
+        access_receipt=write_receipt,
+        provenance_metadata=provenance,
+        protocol_payload_digest=True,
+        expected_resource_version=0,
+    )
+    assert committed["version"] == 1
+    assert committed["idempotent_replay"] is False
+
+    exact_retry = env["registry_b"].commit_fenced_resource_write(
+        permit,
+        payload,
+        expected_principal="agent-a",
+        access_receipt=write_receipt,
+        provenance_metadata=provenance,
+        protocol_payload_digest=True,
+        expected_resource_version=0,
+    )
+    assert exact_retry["version"] == 1
+    assert exact_retry["idempotent_replay"] is True
+
+    replacement_permit = replace(
+        permit,
+        nonce="replacement-nonce-" + uuid.uuid4().hex,
+        permit_id="replacement-commit-" + uuid.uuid4().hex,
+    )
+    replacement_retry = env["registry_b"].commit_fenced_resource_write(
+        replacement_permit,
+        payload,
+        expected_principal="agent-a",
+        access_receipt=write_receipt,
+        provenance_metadata=provenance,
+        protocol_payload_digest=True,
+        expected_resource_version=0,
+    )
+    assert replacement_retry["version"] == 1
+    assert replacement_retry["idempotent_replay"] is True
+    assert env["registry_a"].usage(authority_id) == (1, 0)
+
+    with closing(env["registry_b"]._connect()) as connection:
+        commit_rows = connection.execute(
+            "SELECT permit_id,idempotency_key,result_version "
+            "FROM paca_resource_commit_receipts "
+            "WHERE tenant=? AND task_id=? AND resource_key=?",
+            (env["tenant"], env["task_id"], resource),
+        ).fetchall()
+    assert len(commit_rows) == 2
+    assert {row["permit_id"] for row in commit_rows} == {
+        permit.permit_id,
+        replacement_permit.permit_id,
+    }
+    assert sum(row["idempotency_key"] == write_operation_id for row in commit_rows) == 1
+    assert all(row["result_version"] == 1 for row in commit_rows)
+
+    read_operation_id = "read-" + uuid.uuid4().hex
+    read_request_digest = digest_object(
+        {"operation_id": read_operation_id, "resource": resource},
+        purpose="request",
+    )
+    read_receipt = _broker_access_receipt(
+        "session-" + uuid.uuid4().hex,
+        read_operation_id,
+        "nonce-" + uuid.uuid4().hex,
+        read_request_digest,
+    )
+    result = env["registry_b"].read_fenced_resource(
+        authority_id=authority_id,
+        tenant=env["tenant"],
+        task_id=env["task_id"],
+        purpose="write-report",
+        resource=resource,
+        max_calls=env["root"].capability.max_calls,
+        access_receipt=read_receipt,
+        expected_resource_version=1,
+    )
+
+    assert result["found"] is True
+    assert result["value"] == payload
+    assert result["provenance_metadata"] == provenance
+    assert result["payload_digest"] == payload_digest
+    assert env["registry_a"].usage(authority_id)[0] == 2
+
+    with closing(env["registry_a"]._connect()) as connection:
+        access_rows = connection.execute(
+            "SELECT operation_id,action,outcome,payload_digest "
+            "FROM paca_resource_access_receipts "
+            "WHERE operation_id IN (?,?) ORDER BY operation_id",
+            (write_operation_id, read_operation_id),
+        ).fetchall()
+    assert len(access_rows) == 2
+    assert {row["operation_id"] for row in access_rows} == {
+        write_operation_id,
+        read_operation_id,
+    }
+    assert {row["outcome"] for row in access_rows} == {"committed", "found"}
+
+    with pytest.raises(AuthorityRegistryError, match="replay|duplicate"):
+        env["registry_a"].read_fenced_resource(
+            authority_id=authority_id,
+            tenant=env["tenant"],
+            task_id=env["task_id"],
+            purpose="write-report",
+            resource=resource,
+            max_calls=env["root"].capability.max_calls,
+            access_receipt=read_receipt,
+            expected_resource_version=1,
+        )
+
+    assert env["registry_b"].usage(authority_id)[0] == 2
