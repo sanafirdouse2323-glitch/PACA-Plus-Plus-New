@@ -1209,9 +1209,7 @@ class SQLiteAuthorityRegistry:
                             "stored resource payload digest verification failed"
                         )
                     metadata = (
-                        json.loads(raw_metadata)
-                        if raw_metadata is not None
-                        else None
+                        json.loads(raw_metadata) if raw_metadata is not None else None
                     )
                     if not isinstance(value, dict):
                         raise AuthorityRegistryError(
