@@ -235,13 +235,19 @@ def _unsigned_write_message(env, *, operation_id="operation-write-2", version="1
     }
 
 
-def _signed_write(env, *, permit_overrides=None, operation_overrides=None):
+def _signed_write(
+    env,
+    *,
+    permit_id="commit-permit-2",
+    permit_nonce="commit-permit-nonce-0002",
+    permit_overrides=None,
+    operation_overrides=None,
+):
     message = _unsigned_write_message(env)
     if operation_overrides:
         message.update(operation_overrides)
     intent_digest = digest_object(message, purpose="request")
     payload_digest = message["payload_digest"]["value"]
-    permit_id = "commit-permit-2"
     permit_message = {
         "message_id": "commit-permit-message-2",
         "message_type": "paca.commit-permit.v1",
@@ -275,7 +281,7 @@ def _signed_write(env, *, permit_overrides=None, operation_overrides=None):
         "policy_epoch": env["registry"].current_epoch(),
         "issued_at": NOW_TEXT,
         "expires_at": EXPIRY_TEXT,
-        "nonce": "commit-permit-nonce-0002",
+        "nonce": permit_nonce,
         "idempotency_key": message["idempotency_key"],
         "single_use": True,
     }
@@ -345,6 +351,42 @@ def test_broker_write_replays_exact_commit_idempotently_without_second_effect(tm
     assert replay["idempotent_replay"] is True
     assert _read_value(env["registry"])[2] == 2
     assert len(_receipts(env["registry"])) == 1
+    assert env["registry"].usage(env["grant"].capability.cap_id)[0] == 2
+
+
+def test_broker_write_consumes_replacement_permit_on_safe_idempotent_retry(
+    tmp_path,
+):
+    env = _environment()
+    first_message = _signed_write(env)
+    first = env["mediator"].write(first_message, session=env["session"])
+    replacement_message = _signed_write(
+        env,
+        permit_id="commit-permit-replacement",
+        permit_nonce="commit-permit-nonce-replacement",
+    )
+
+    replay = env["mediator"].write(
+        replacement_message,
+        session=env["session"],
+    )
+
+    assert first["version"] == replay["version"] == 2
+    assert replay["idempotent_replay"] is True
+    assert _read_value(env["registry"])[2] == 2
+    assert len(_receipts(env["registry"])) == 1
+    with sqlite3.connect(env["registry"].database) as connection:
+        commit_rows = connection.execute(
+            "SELECT permit_id,idempotency_key,result_version "
+            "FROM paca_resource_commit_receipts "
+            "ORDER BY committed_at,nonce"
+        ).fetchall()
+    assert {row[0] for row in commit_rows} == {
+        "commit-permit-2",
+        "commit-permit-replacement",
+    }
+    assert sum(row[1] == "operation-write-2" for row in commit_rows) == 1
+    assert all(row[2] == 2 for row in commit_rows)
     assert env["registry"].usage(env["grant"].capability.cap_id)[0] == 2
 
 
