@@ -24,7 +24,7 @@ from .contracts.broker import (
     BrokerSessionContext,
     VerifiedBrokerOperation,
 )
-from .contracts.canonical import CanonicalizationError, canonicalize, parse_json
+from .contracts.canonical import CanonicalizationError, parse_json
 from .contracts.permits import CommitPermitError, ProtocolCommitPermitVerifier
 from .contracts.signatures import MessageVerifier
 
@@ -111,9 +111,9 @@ class InProcessBrokerWriteMediator:
         if (
             isinstance(max_permit_bytes, bool)
             or not isinstance(max_permit_bytes, int)
-            or not 1 <= max_permit_bytes <= 16 * 1024 * 1024
+            or not 1_024 <= max_permit_bytes <= 1_048_576
         ):
-            raise ValueError("max_permit_bytes must be between 1 and 16 MiB")
+            raise ValueError("max_permit_bytes must be between 1 KiB and 1 MiB")
         if (
             isinstance(max_permit_lifetime_seconds, bool)
             or not isinstance(max_permit_lifetime_seconds, int)
@@ -146,7 +146,6 @@ class InProcessBrokerWriteMediator:
         self._destination_id = destination_id
         self._permit_resolver = permit_resolver
         self._provenance_commit_check = provenance_commit_check
-        self._max_permit_bytes = max_permit_bytes
 
     def write(
         self,
@@ -251,17 +250,14 @@ class InProcessBrokerWriteMediator:
                 )
 
             try:
-                permit_bytes = canonicalize(dict(permit_message_input))
-                if len(permit_bytes) > self._max_permit_bytes:
-                    raise BrokerResourceDenied(
-                        "commit permit exceeds the configured size limit"
-                    )
-                permit_message = parse_json(permit_bytes)
+                # The typed verifier makes one bounded canonical snapshot and
+                # verifies that exact snapshot. All following field binding
+                # uses the bytes returned by that verifier, never the resolver's
+                # mutable mapping.
                 verified_permit = self._protocol_permit_verifier.verify(
-                    permit_message
+                    permit_message_input
                 )
-            except BrokerResourceDenied:
-                raise
+                permit_message = parse_json(verified_permit.canonical_message)
             except CommitPermitError as exc:
                 raise BrokerResourceDenied(str(exc)) from exc
             except (CanonicalizationError, TypeError, ValueError) as exc:
