@@ -8,6 +8,7 @@ execute operations. Those responsibilities remain separate enforcement layers.
 
 from __future__ import annotations
 
+import hashlib
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -20,6 +21,7 @@ from .validation import ContractValidationError, validate_message
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 _BROKER_MESSAGE_TYPE = "paca.broker-operation.v1"
 _DIGEST_ALGORITHM = "sha-256"
+_BROKER_NONCE_DOMAIN = b"PACA++/BROKER-NONCE/V1\\n"
 _MUTATING_OPERATIONS = frozenset({"write", "delete", "send", "execute"})
 
 
@@ -97,11 +99,34 @@ class VerifiedBrokerOperation:
     resource_id: str
     resource_version_id: str | None
     request_nonce: str
+    nonce_digest: str
     intent_digest: str
+    canonical_message: bytes
     payload_digest: str | None
     commit_permit_ref: str | None
     idempotency_key: str | None
     max_bytes: int | None
+
+    def registry_access_receipt(self) -> dict[str, str]:
+        """Build the exact replay-receipt shape expected by the local registry.
+
+        Read receipts omit payload_digest; mutation receipts include it. The
+        registry still performs the authoritative uniqueness check and inserts
+        the receipt in the same transaction as its resource operation.
+        """
+        receipt = {
+            "session_id": self.session_id,
+            "nonce_digest": self.nonce_digest,
+            "operation_id": self.operation_id,
+            "request_digest": self.intent_digest,
+        }
+        if self.operation in _MUTATING_OPERATIONS:
+            if self.payload_digest is None:
+                raise BrokerOperationError(
+                    "mutating broker operation has no payload digest for its receipt"
+                )
+            receipt["payload_digest"] = self.payload_digest
+        return receipt
 
 
 class BrokerOperationVerifier:
@@ -140,7 +165,8 @@ class BrokerOperationVerifier:
         # checks must not read a mutable caller mapping that could change after
         # its signature has been authenticated (a time-of-check/time-of-use risk).
         try:
-            snapshot = parse_json(canonicalize(dict(message)))
+            canonical_message = canonicalize(dict(message))
+            snapshot = parse_json(canonical_message)
         except (CanonicalizationError, TypeError, ValueError) as exc:
             raise BrokerOperationError(
                 "broker operation is not a canonical JSON/I-JSON object"
@@ -266,6 +292,13 @@ class BrokerOperationVerifier:
                 "mutating broker operation lacks a commit permit reference"
             )
 
+        nonce_digest = hashlib.sha256(
+            _BROKER_NONCE_DOMAIN
+            + session.session_id.encode("utf-8")
+            + b"\\n"
+            + snapshot["request_nonce"].encode("utf-8")
+        ).hexdigest()
+
         return VerifiedBrokerOperation(
             message_id=snapshot["message_id"],
             operation_id=snapshot["operation_id"],
@@ -284,7 +317,9 @@ class BrokerOperationVerifier:
             resource_id=resource["resource_id"],
             resource_version_id=resource.get("version_id"),
             request_nonce=snapshot["request_nonce"],
+            nonce_digest=nonce_digest,
             intent_digest=intent_digest,
+            canonical_message=canonical_message,
             payload_digest=payload_digest_value,
             commit_permit_ref=commit_permit_ref,
             idempotency_key=snapshot.get("idempotency_key"),
