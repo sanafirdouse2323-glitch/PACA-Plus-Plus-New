@@ -1,4 +1,4 @@
-"Narrow in-process broker mediation for protocol-bound logical file writes.
+"""Narrow in-process broker mediation for protocol-bound logical file writes.
 
 This reference adapter accepts only one local operation profile. It verifies a
 separately signed v1.0.0 commit permit, cross-binds it to the signed worker
