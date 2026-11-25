@@ -44,6 +44,7 @@ class PACAAgentRuntime:
         messages: HMACAgentMessageCodec,
         *,
         require_resource_commit_fence: bool = False,
+        require_docker_sandbox_for_effects: bool = False,
         resource_commit_verifier: HMACCapabilityAuthority | None = None,
     ) -> None:
         if (
@@ -63,6 +64,13 @@ class PACAAgentRuntime:
             raise ValueError("PACAAgentRuntime requires C13 effect-token verification")
         if not isinstance(require_resource_commit_fence, bool):
             raise TypeError("require_resource_commit_fence must be a boolean")
+        if not isinstance(require_docker_sandbox_for_effects, bool):
+            raise TypeError("require_docker_sandbox_for_effects must be a boolean")
+        if require_resource_commit_fence and require_docker_sandbox_for_effects:
+            raise ValueError(
+                "Docker-sandbox enforcement cannot yet be combined with resource commit fencing; "
+                "a brokered resource execution adapter is required"
+            )
         if resource_commit_verifier is None:
             if (
                 require_resource_commit_fence
@@ -115,10 +123,20 @@ class PACAAgentRuntime:
         self.monitor = monitor
         self.messages = messages
         self.require_resource_commit_fence = require_resource_commit_fence
+        self.require_docker_sandbox_for_effects = require_docker_sandbox_for_effects
 
     @staticmethod
-    def _assert_tool_binding(capability: Any, request: Request) -> None:
-        if request.action in {"mem_read", "mem_write", "delegate"}:
+    def _assert_tool_binding(
+        capability: Any,
+        request: Request,
+        *,
+        require_tool_pin: bool = False,
+    ) -> None:
+        if not require_tool_pin and request.action in {
+            "mem_read",
+            "mem_write",
+            "delegate",
+        }:
             return
         tool = request.tool
         if not isinstance(tool, Tool):
@@ -180,6 +198,14 @@ class PACAAgentRuntime:
             node_id, reason, revoked_at=int(self.memory.clock())
         )
 
+    def _require_supported_docker_action(self, action: str) -> None:
+        """Fail closed for host/provider actions without a brokered data channel."""
+        if self.require_docker_sandbox_for_effects and action != "run_command":
+            raise MemoryAccessDenied(
+                "strict Docker mode currently supports run_command only; "
+                "filesystem, memory and provider actions require a brokered adapter"
+            )
+
     def _prepare_effect(
         self,
         capability_token: str,
@@ -188,6 +214,7 @@ class PACAAgentRuntime:
         """Authenticate and snapshot an effect before authorizing any consequence."""
         if not isinstance(request, Request):
             raise MemoryAccessDenied("effect request must be a typed PACA Request")
+        self._require_supported_docker_action(request.action)
         monitor_validator = getattr(self.monitor, "assert_consequential_safe", None)
         if callable(monitor_validator):
             try:
@@ -239,7 +266,11 @@ class PACAAgentRuntime:
             raise MemoryAccessDenied(
                 "request capability does not match the authenticated token"
             )
-        self._assert_tool_binding(issued, snapshot)
+        self._assert_tool_binding(
+            issued,
+            snapshot,
+            require_tool_pin=self.require_docker_sandbox_for_effects,
+        )
         self.authority.registry.assert_active(issued.cap_id)
 
         authority_record = issued.authority_lineage
@@ -325,6 +356,27 @@ class PACAAgentRuntime:
         if snapshot.digest != request_digest or decision.digest != request_digest:
             raise MemoryAccessDenied("effect request changed before executor entry")
         return decision, snapshot, issued, accesses
+
+    def _require_docker_sandbox_executor(self, executor: Any) -> Any | None:
+        """Require the concrete Docker worker for runtime-mediated tool effects.
+
+        This gates only calls made through execute_effect/aexecute_effect. It is
+        not an OS policy and cannot stop callers from invoking tools, subprocesses
+        or provider clients outside this runtime.
+        """
+        if not self.require_docker_sandbox_for_effects:
+            return None
+        from .sandbox import DockerSandbox, DockerSandboxExecutor
+
+        if (
+            type(executor) is not DockerSandboxExecutor
+            or type(getattr(executor, "sandbox", None)) is not DockerSandbox
+        ):
+            raise MemoryAccessDenied(
+                "strict runtime mode requires the concrete DockerSandboxExecutor "
+                "with a concrete DockerSandbox backend"
+            )
+        return executor
 
     def _require_fenced_executor(self, executor: Any) -> Any:
         """Require the exact runtime-bound local resource commit adapter."""
@@ -423,11 +475,16 @@ class PACAAgentRuntime:
         invoked: its synchronous prefix could otherwise perform effects before
         the runtime can revalidate authority and provenance.
         """
+        docker_executor = self._require_docker_sandbox_executor(executor)
         fenced_executor = self._require_fenced_executor(executor)
         async_executor = (
-            fenced_executor.aexecute_authorized
-            if self.require_resource_commit_fence
-            else executor
+            docker_executor.aexecute
+            if docker_executor is not None
+            else (
+                fenced_executor.aexecute_authorized
+                if self.require_resource_commit_fence
+                else executor
+            )
         )
         if not (
             inspect.iscoroutinefunction(async_executor)
@@ -531,6 +588,7 @@ class PACAAgentRuntime:
         executor: Callable[[Request], Any],
     ) -> tuple[Decision, Any | None]:
         """Check signed authority and exact request provenance immediately before effect."""
+        self._require_docker_sandbox_executor(executor)
         fenced_executor = self._require_fenced_executor(executor)
         decision, snapshot, issued, accesses = self._authorize_effect(
             capability_token,
