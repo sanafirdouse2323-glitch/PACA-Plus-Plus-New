@@ -175,7 +175,9 @@ class ProtocolCommitPermitVerifier:
                 canonical_message=canonical_message,
             )
         except (KeyError, TypeError, ValueError, OverflowError, OSError) as exc:
-            raise CommitPermitError("commit permit fields or freshness constraints are invalid") from exc
+            raise CommitPermitError(
+                f"commit permit fields or freshness constraints are invalid: {exc}"
+            ) from exc
 
 
 __all__ = ["CommitPermitError", "ProtocolCommitPermitVerifier", "VerifiedProtocolCommitPermit"]
