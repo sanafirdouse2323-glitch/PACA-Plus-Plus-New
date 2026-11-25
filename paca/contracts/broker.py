@@ -23,6 +23,8 @@ _BROKER_MESSAGE_TYPE = "paca.broker-operation.v1"
 _DIGEST_ALGORITHM = "sha-256"
 _BROKER_NONCE_DOMAIN = b"PACA++/BROKER-NONCE/V1\n"
 _MUTATING_OPERATIONS = frozenset({"write", "delete", "send", "execute"})
+_MAX_CONFIGURED_MESSAGE_BYTES = 16 * 1024 * 1024
+_MAX_CONFIGURED_READ_BYTES = 64 * 1024 * 1024
 
 
 class BrokerOperationError(PermissionError):
@@ -141,10 +143,30 @@ class BrokerOperationVerifier:
     request nonces/idempotency keys in an authoritative replay ledger.
     """
 
-    def __init__(self, message_verifier: MessageVerifier) -> None:
+    def __init__(
+        self,
+        message_verifier: MessageVerifier,
+        *,
+        max_message_bytes: int = 1_048_576,
+        max_read_bytes: int = 1_048_576,
+    ) -> None:
         if not isinstance(message_verifier, MessageVerifier):
             raise TypeError("message_verifier must be a configured MessageVerifier")
+        for name, value, maximum in (
+            ("max_message_bytes", max_message_bytes, _MAX_CONFIGURED_MESSAGE_BYTES),
+            ("max_read_bytes", max_read_bytes, _MAX_CONFIGURED_READ_BYTES),
+        ):
+            if (
+                isinstance(value, bool)
+                or not isinstance(value, int)
+                or not 1 <= value <= maximum
+            ):
+                raise ValueError(
+                    f"{name} must be an integer between 1 and {maximum}"
+                )
         self._message_verifier = message_verifier
+        self._max_message_bytes = max_message_bytes
+        self._max_read_bytes = max_read_bytes
 
     def verify(
         self,
@@ -166,7 +188,13 @@ class BrokerOperationVerifier:
         # its signature has been authenticated (a time-of-check/time-of-use risk).
         try:
             canonical_message = canonicalize(dict(message))
+            if len(canonical_message) > self._max_message_bytes:
+                raise BrokerOperationError(
+                    "broker operation exceeds the configured message-size limit"
+                )
             snapshot = parse_json(canonical_message)
+        except BrokerOperationError:
+            raise
         except (CanonicalizationError, TypeError, ValueError) as exc:
             raise BrokerOperationError(
                 "broker operation is not a canonical JSON/I-JSON object"
@@ -283,6 +311,10 @@ class BrokerOperationVerifier:
                 or candidate < 1
             ):
                 raise BrokerOperationError("broker read maximum byte bound is invalid")
+            if candidate > self._max_read_bytes:
+                raise BrokerOperationError(
+                    "broker read maximum exceeds the configured disclosure limit"
+                )
             max_bytes = candidate
 
         operation = snapshot["operation"]
