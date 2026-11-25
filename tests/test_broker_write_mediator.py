@@ -354,7 +354,7 @@ def test_broker_write_rejects_permit_payload_or_request_digest_mismatch(tmp_path
         },
     )
 
-    with pytest.raises(BrokerResourceDenied, match="request or payload digest"):
+    with pytest.raises(BrokerResourceDenied, match="request/payload digest"):
         env["mediator"].write(message, session=env["session"])
 
     assert _read_value(env["registry"])[2] == 1
