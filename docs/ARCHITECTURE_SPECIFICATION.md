@@ -391,7 +391,7 @@ These are normative target properties. They are proposed design requirements, no
 | INV-15 Evidence integrity | Decisions, commits, revocations and recovery events are bound to durable, tamper-evident evidence appropriate to the assurance profile. |
 | INV-16 No implicit platform guarantee | An isolation profile is accepted only for capabilities demonstrated by the actual deployment; product or OS names alone confer no assurance. |
 
-The formal models must be extended to cover the five lifecycle domains, separate information and authority lineage, broker authentication, resource read disclosure, commit permits, concurrent revocation/commit races, recovery and adapter failure. Model checking bounded instances is useful evidence, but does not prove implementation refinement or platform isolation.
+The repository now includes bounded TLA+ models for authorization, lifecycle state, broker permits/read/commit, finite-set grant attenuation and budgets, and conservative information-flow/declassification. These models cover selected abstractions, not end-to-end mediation of all five lifecycle domains. They do not establish cryptographic broker authentication, general path/URL/provider predicate containment, real database atomicity, crash recovery, platform isolation, adapter conformance or refinement of the Python implementation. Model checking these bounded instances is useful evidence, but does not prove those properties.
 
 ## 11. Threat model and trust assumptions
 
