@@ -69,7 +69,7 @@ These incident reports motivate test cases; they are not a claim that the custom
 | SBX-03 | Brokered credential misuse | Workload cannot read the long-lived credential; broker injects it only for the exact approved destination and operation | Design requirement only; no credential broker integration |
 | SBX-04 | DNS rebinding / mixed DNS answers | All resolved addresses are validated and the connection uses a validated numeric address | Existing DNS/IP-pinning unit tests cover mixed/private answers and one-time resolution |
 | SBX-05 | Redirect to an unapproved destination | Every redirect target is revalidated before a new connection; no client silently re-resolves an unchecked hostname | Provider HTTP clients refuse redirects; no generic redirect-following client revalidates each destination, so any future redirect-capable caller must do so before reconnecting |
-| SBX-06 | Child process / alternate executor bypass | Every real process and tool path remains inside the declared execution policy | Not covered by the simulator or a complete host integration |
+| SBX-06 | Child process / alternate executor bypass | Every real process and tool path remains inside the declared execution policy | Opt-in strict mode rejects non-Docker executors only for calls routed through `PACAAgentRuntime`; direct process/framework/host/provider bypasses and OS-level enforcement are still not covered |
 | SBX-07 | Supervisor / policy-service loss | Consequential execution stops when the external enforcement path is unavailable | Not implemented as an independent runtime watchdog |
 | SBX-08 | Revocation after delegation or persistence | Previously issued descendants and derived memory cannot continue to exercise revoked authority | SQLite authority/lineage revocation and descendant invalidation are implemented and regression-tested in reference adapters; distributed revocation delivery, cross-store atomicity, failover/rollback recovery and remote commit fencing remain unproven |
 | SBX-09 | Cross-VM communication and hardware side channels | Unauthorized communication paths are detected or excluded under a stated hardware threat model | Not simulated or claimed; requires dedicated infrastructure and side-channel expertise |
@@ -100,6 +100,22 @@ executor = DockerSandboxExecutor(
 ```
 
 The runtime checks the signed Tool hash, and the executor independently compares the configured worker identity before starting the container. The digest is derived from the same Docker argument builder used for launch, with only the ephemeral CID-file path normalized. The sandbox configuration and Docker CLI environment are immutable after initialization, preventing ordinary runtime mutation between the identity check and launch. Legacy Tool manifests keep their previous hash, but the Docker executor rejects a missing implementation digest. Changing the image, platform, command, CLI environment selection or enforced sandbox limits requires a newly issued tool pin. This does not attest the Docker daemon, host kernel, Docker CLI binary or registry trust, and it does not make isolated execution mandatory or close direct host/framework bypasses.
+
+For application code that must reject host executors at PACA's effect API boundary, use the opt-in strict mode:
+
+```python
+runtime = PACAAgentRuntime(
+    authority,
+    memory,
+    monitor,
+    messages,
+    require_docker_sandbox_for_effects=True,
+)
+```
+
+Both `execute_effect` and `aexecute_effect` then require the exact `DockerSandboxExecutor` class backed by the exact `DockerSandbox` class. The executor seals its sandbox reference and action-to-command map after construction; the async entry point runs the same validation and Docker call through `asyncio.to_thread`. Accepted tool actions still require a capability-pinned implementation digest.
+
+**Fail-closed scope:** strict mode currently supports only `run_command`. It rejects file, memory, remote-provider and other action types because the container has no host mounts, no network and no brokered resource channel. This is an application-level guard for calls submitted through the two PACA runtime methods, not OS enforcement: direct framework, subprocess, host filesystem and provider-client calls outside the runtime remain possible. It cannot currently be combined with `require_resource_commit_fence=True`; a composed trusted resource broker is still required. The Docker CLI, daemon, host kernel and deployment configuration remain trusted.
 
 ### Deterministic tests added in this tranche
 
