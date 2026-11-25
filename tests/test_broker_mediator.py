@@ -324,3 +324,26 @@ def test_broker_enforces_actual_response_size_without_charging_on_failure(tmp_pa
 
     assert _access_receipts(env["registry"]) == 0
     assert env["registry"].usage(env["grant"].capability.cap_id)[0] == 1
+
+
+
+def test_broker_rechecks_revocation_after_provenance_release_callback(tmp_path):
+    env = _environment(tmp_path)
+
+    def revoke_during_release(operation, record, result):
+        env["registry"].revoke(
+            record.authority_id,
+            "revoked during provenance release evaluation",
+        )
+        return True
+
+    env["mediator"]._provenance_release_check = revoke_during_release
+
+    with pytest.raises(BrokerResourceDenied, match="verification or authority enforcement"):
+        env["mediator"].read(_read_message(env), session=env["session"])
+
+    # The logical read already linearized and its receipt/budget remain consumed,
+    # but the post-release revocation check prevents the content being returned.
+    assert _access_receipts(env["registry"]) == 1
+    assert env["registry"].usage(env["grant"].capability.cap_id)[0] == 2
+    assert not env["registry"].is_active(env["grant"].capability.cap_id)
