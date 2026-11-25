@@ -397,11 +397,11 @@ def test_postgres_resource_read_and_write_receipts_are_shared_and_replay_safe():
     resource = "/workspace/" + uuid.uuid4().hex + ".json"
     payload = {"content": "postgres broker resource", "version": 1}
     payload_digest = digest_object(payload, purpose="payload")
+    write_operation_id = "write-" + uuid.uuid4().hex
     write_request_digest = digest_object(
-        {"operation_id": "write-" + uuid.uuid4().hex, "resource": resource},
+        {"operation_id": write_operation_id, "resource": resource},
         purpose="request",
     )
-    write_operation_id = "write-" + uuid.uuid4().hex
     write_receipt = _broker_access_receipt(
         "session-" + uuid.uuid4().hex,
         write_operation_id,
