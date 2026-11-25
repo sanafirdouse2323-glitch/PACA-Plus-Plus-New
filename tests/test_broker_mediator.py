@@ -224,7 +224,7 @@ def test_broker_rejects_principal_mismatch_before_resource_access(tmp_path):
 
     with pytest.raises(
         BrokerResourceDenied,
-        match="verification or authority enforcement",
+        match="resolved grant does not match trusted issuer",
     ):
         env["mediator"].read(_read_message(env), session=session)
 
