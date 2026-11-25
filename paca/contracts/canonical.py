@@ -119,7 +119,9 @@ def parse_json(data: str | bytes) -> Any:
     try:
         _validate_value(value)
     except CanonicalizationError as exc:
-        raise InvalidJSONError("JSON value is outside the accepted I-JSON subset") from exc
+        raise InvalidJSONError(
+            "JSON value is outside the accepted I-JSON subset"
+        ) from exc
     return value
 
 
@@ -150,9 +152,7 @@ def digest_object(value: Any, *, purpose: str) -> str:
     share a protocol digest.
     """
     if not isinstance(purpose, str) or not _PURPOSE_PATTERN.fullmatch(purpose):
-        raise ValueError(
-            "purpose must be a lowercase protocol token (1-64 characters)"
-        )
+        raise ValueError("purpose must be a lowercase protocol token (1-64 characters)")
     payload = canonicalize(value)
     domain = _DIGEST_DOMAIN + purpose.encode("ascii") + b"\n"
     return hashlib.sha256(domain + payload).hexdigest()
