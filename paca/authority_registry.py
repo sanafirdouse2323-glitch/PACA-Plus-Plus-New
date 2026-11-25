@@ -77,12 +77,19 @@ def _record_from_dict(data: Mapping[str, object]) -> AuthorityLineage:
         parent_id = data.get("parent_id")
         parent_digest = data.get("parent_digest")
         max_task_calls = data.get("max_task_calls")
+        max_calls = data.get("max_calls")
         if (
             isinstance(max_task_calls, bool)
             or not isinstance(max_task_calls, int)
             or max_task_calls < 1
         ):
             raise ValueError("max_task_calls is missing or invalid")
+        if max_calls is not None and (
+            isinstance(max_calls, bool)
+            or not isinstance(max_calls, int)
+            or max_calls < 1
+        ):
+            raise ValueError("max_calls is invalid")
         return AuthorityLineage.create(
             authority_id=str(data["authority_id"]),
             issuer=str(data["issuer"]),
@@ -98,6 +105,7 @@ def _record_from_dict(data: Mapping[str, object]) -> AuthorityLineage:
             parent_id=str(parent_id) if parent_id is not None else None,
             parent_digest=str(parent_digest) if parent_digest is not None else None,
             max_task_calls=max_task_calls,
+            max_calls=max_calls,
         )
     except (KeyError, TypeError, ValueError) as exc:
         raise AuthorityRegistryError("authority record is malformed") from exc
