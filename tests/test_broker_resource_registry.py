@@ -18,6 +18,7 @@ def _environment(tmp_path):
 
     def clock():
         return now[0]
+
     registry = SQLiteAuthorityRegistry(tmp_path / "authority.sqlite3", clock=clock)
     authority = HMACCapabilityAuthority(
         registry,
