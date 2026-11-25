@@ -985,8 +985,8 @@ class SQLiteAuthorityRegistry:
 
                 if permit.idempotency_key is not None:
                     prior_commit = connection.execute(
-                        "SELECT nonce,authority_id,action,resource_key,request_digest,"
-                        "payload_digest,committed_at,result_version "
+                        "SELECT nonce,permit_id,authority_id,action,resource_key,"
+                        "request_digest,payload_digest,committed_at,result_version "
                         "FROM paca_resource_commit_receipts "
                         "WHERE tenant=? AND task_id=? AND idempotency_key=?",
                         (permit.tenant, permit.task_id, permit.idempotency_key),
@@ -1032,6 +1032,42 @@ class SQLiteAuthorityRegistry:
                             raise AuthorityRegistryError(
                                 "resource idempotency retry does not match the original broker receipt"
                             )
+                        if permit.permit_id is not None:
+                            if permit.permit_id == prior_commit["permit_id"]:
+                                if permit.nonce != prior_commit["nonce"]:
+                                    raise AuthorityRegistryError(
+                                        "commit permit ID was reused with a different nonce"
+                                    )
+                            else:
+                                # A new permit for the same already-committed
+                                # operation is consumed as an attempt, but it
+                                # must not acquire the original idempotency key
+                                # or trigger another mutation/quota charge.
+                                try:
+                                    connection.execute(
+                                        "INSERT INTO paca_resource_commit_receipts("
+                                        "nonce,authority_id,tenant,task_id,action,resource_key,"
+                                        "request_digest,payload_digest,committed_at,permit_id,"
+                                        "idempotency_key,result_version) "
+                                        "VALUES(?,?,?,?,?,?,?,?,?,?,NULL,?)",
+                                        (
+                                            permit.nonce,
+                                            permit.authority_id,
+                                            permit.tenant,
+                                            permit.task_id,
+                                            permit.action,
+                                            permit.resource,
+                                            permit.request_digest,
+                                            permit.payload_digest,
+                                            now,
+                                            permit.permit_id,
+                                            int(prior_commit["result_version"]),
+                                        ),
+                                    )
+                                except sqlite3.IntegrityError as exc:
+                                    raise AuthorityRegistryError(
+                                        "replacement commit permit ID or nonce was already consumed"
+                                    ) from exc
                         connection.commit()
                         return {
                             "tenant": permit.tenant,
