@@ -227,7 +227,7 @@ class AuthorityLineage:
         grants: Mapping[str, Iterable[str]],
         expires: int,
         parent_id: str | None,
-        max_calls: int,
+        max_calls: int | None = None,
     ) -> None:
         """Fail if a mutable Capability has drifted from this immutable grant record."""
         if (
