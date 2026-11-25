@@ -3,6 +3,7 @@
 This authenticates the wire artefact and checks freshness only. The broker must
 bind every field to the signed operation and the live authority registry.
 """
+
 from __future__ import annotations
 
 import math
@@ -92,9 +93,17 @@ class ProtocolCommitPermitVerifier:
             ("max_lifetime_seconds", max_lifetime_seconds, 300),
             ("max_message_age_seconds", max_message_age_seconds, 86_400),
         ):
-            if isinstance(value, bool) or not isinstance(value, int) or not 1 <= value <= maximum:
+            if (
+                isinstance(value, bool)
+                or not isinstance(value, int)
+                or not 1 <= value <= maximum
+            ):
                 raise ValueError(f"{name} is outside the allowed range")
-        if isinstance(clock_skew_seconds, bool) or not isinstance(clock_skew_seconds, int) or not 0 <= clock_skew_seconds <= 300:
+        if (
+            isinstance(clock_skew_seconds, bool)
+            or not isinstance(clock_skew_seconds, int)
+            or not 0 <= clock_skew_seconds <= 300
+        ):
             raise ValueError("clock_skew_seconds must be between 0 and 300")
         if (
             isinstance(max_message_bytes, bool)
@@ -123,7 +132,9 @@ class ProtocolCommitPermitVerifier:
                 )
             snapshot = parse_json(canonical_message)
         except (CanonicalizationError, TypeError, ValueError) as exc:
-            raise CommitPermitError("commit permit is not canonical JSON/I-JSON") from exc
+            raise CommitPermitError(
+                "commit permit is not canonical JSON/I-JSON"
+            ) from exc
         if not isinstance(snapshot, dict):
             raise CommitPermitError("commit permit must be a JSON object")
         try:
@@ -135,21 +146,37 @@ class ProtocolCommitPermitVerifier:
         try:
             verified = self._message_verifier.verify(snapshot)
         except MessageAuthenticationError as exc:
-            raise CommitPermitError("commit permit signature verification failed") from exc
+            raise CommitPermitError(
+                "commit permit signature verification failed"
+            ) from exc
         if verified.issuer != self._issuer or verified.audience != self._audience:
             raise CommitPermitError("commit permit issuer or audience is not trusted")
         try:
             now = self._clock()
-            if isinstance(now, bool) or not isinstance(now, (int, float)) or not math.isfinite(now):
+            if (
+                isinstance(now, bool)
+                or not isinstance(now, (int, float))
+                or not math.isfinite(now)
+            ):
                 raise ValueError("trusted clock returned an invalid timestamp")
             created_at = _timestamp(snapshot.get("created_at"), "created_at")
             issued_at = _timestamp(snapshot.get("issued_at"), "issued_at")
             expires_at = _timestamp(snapshot.get("expires_at"), "expires_at")
-            if created_at > now + self._clock_skew_seconds or issued_at > now + self._clock_skew_seconds:
+            if (
+                created_at > now + self._clock_skew_seconds
+                or issued_at > now + self._clock_skew_seconds
+            ):
                 raise ValueError("commit permit timestamp is in the future")
-            if created_at < now - self._max_message_age_seconds or issued_at < now - self._max_message_age_seconds:
+            if (
+                created_at < now - self._max_message_age_seconds
+                or issued_at < now - self._max_message_age_seconds
+            ):
                 raise ValueError("commit permit is stale")
-            if expires_at <= now or expires_at <= issued_at or expires_at - issued_at > self._max_lifetime_seconds:
+            if (
+                expires_at <= now
+                or expires_at <= issued_at
+                or expires_at - issued_at > self._max_lifetime_seconds
+            ):
                 raise ValueError("commit permit is expired or has an invalid lifetime")
             epoch = snapshot["policy_epoch"]
             if isinstance(epoch, bool) or not isinstance(epoch, int) or epoch < 0:
@@ -158,8 +185,13 @@ class ProtocolCommitPermitVerifier:
             resource = snapshot["resource"]
             args_digest = snapshot["arguments_digest"]
             payload_digest = snapshot["payload_digest"]
-            if not all(isinstance(item, Mapping) for item in (subject, resource, args_digest, payload_digest)):
-                raise ValueError("commit permit subject, resource or digests are malformed")
+            if not all(
+                isinstance(item, Mapping)
+                for item in (subject, resource, args_digest, payload_digest)
+            ):
+                raise ValueError(
+                    "commit permit subject, resource or digests are malformed"
+                )
             if snapshot.get("single_use") is not True:
                 raise ValueError("commit permit is not single-use")
             return VerifiedProtocolCommitPermit(
@@ -178,7 +210,9 @@ class ProtocolCommitPermitVerifier:
                 destination=snapshot["destination"],
                 arguments_digest=args_digest["value"],
                 payload_digest=payload_digest["value"],
-                resource_version_precondition=snapshot.get("resource_version_precondition"),
+                resource_version_precondition=snapshot.get(
+                    "resource_version_precondition"
+                ),
                 policy_epoch=epoch,
                 issued_at=issued_at,
                 expires_at=expires_at,
@@ -192,4 +226,8 @@ class ProtocolCommitPermitVerifier:
             ) from exc
 
 
-__all__ = ["CommitPermitError", "ProtocolCommitPermitVerifier", "VerifiedProtocolCommitPermit"]
+__all__ = [
+    "CommitPermitError",
+    "ProtocolCommitPermitVerifier",
+    "VerifiedProtocolCommitPermit",
+]
