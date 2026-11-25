@@ -284,3 +284,11 @@ def test_digest_must_be_lowercase_sha256_hex(
     message["authentication"]["credential_digest"]["value"] = "A" * 64
     with pytest.raises(importlib.import_module("jsonschema").ValidationError):
         validator.validate(message)
+
+
+def test_protocol_identifiers_accept_url_safe_authority_references(
+    validator: Any,
+) -> None:
+    message = _valid_broker_operation("read")
+    message["authorization_grant_ref"] = "capability_abC_123-url_safe"
+    validator.validate(message)
