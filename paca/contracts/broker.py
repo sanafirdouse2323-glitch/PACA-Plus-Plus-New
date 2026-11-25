@@ -54,6 +54,7 @@ class BrokerSessionContext:
     tenant_id: str
     task_id: str
     purpose: str
+    principal_kind: str = "agent"
 
     def __post_init__(self) -> None:
         for field_name in (
@@ -70,6 +71,14 @@ class BrokerSessionContext:
             value = getattr(self, field_name)
             if not isinstance(value, str) or not value:
                 raise ValueError(f"{field_name} must be a non-empty string")
+        if self.principal_kind not in {
+            "human",
+            "agent",
+            "service",
+            "workload",
+            "provider",
+        }:
+            raise ValueError("principal_kind is not a supported subject kind")
         if not isinstance(self.channel_binding_digest, str) or not _SHA256_RE.fullmatch(
             self.channel_binding_digest
         ):
@@ -92,6 +101,7 @@ class VerifiedBrokerOperation:
     operation: str
     session_id: str
     principal_id: str
+    principal_kind: str
     workload_id: str
     tenant_id: str
     task_id: str
@@ -386,6 +396,7 @@ class BrokerOperationVerifier:
             operation=operation,
             session_id=session.session_id,
             principal_id=session.principal_id,
+            principal_kind=session.principal_kind,
             workload_id=session.workload_id,
             tenant_id=session.tenant_id,
             task_id=session.task_id,
