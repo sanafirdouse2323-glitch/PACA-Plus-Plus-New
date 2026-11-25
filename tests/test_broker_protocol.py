@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from copy import deepcopy
-
 import pytest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
@@ -26,6 +24,10 @@ CHANNEL_BINDING = "a" * 64
 
 
 def _message(operation: str = "write") -> dict[str, object]:
+    resource: dict[str, object] = {
+        "resource_type": "file",
+        "resource_id": "reports/report.txt",
+    }
     message: dict[str, object] = {
         "message_id": "message-001",
         "message_type": MESSAGE_TYPE,
@@ -41,16 +43,13 @@ def _message(operation: str = "write") -> dict[str, object]:
         },
         "request_nonce": "nonce-0123456789abcdef",
         "operation": operation,
-        "resource": {
-            "resource_type": "file",
-            "resource_id": "reports/report.txt",
-        },
+        "resource": resource,
         "authorization_grant_ref": "grant-001",
     }
     if operation in {"read", "query"}:
         message["read_constraints"] = {"max_bytes": 4096}
     if operation in {"write", "delete"}:
-        message["resource"]["version_id"] = "resource-version-7"
+        resource["version_id"] = "resource-version-7"
     if operation in {"write", "delete", "send", "execute"}:
         payload = {"content": "approved report"}
         message.update(
@@ -116,16 +115,6 @@ def _verifier_and_session():
     return signer, verifier, session
 
 
-def _verify(message, *, session=None, expected_grant_ref="grant-001"):
-    signer, verifier, default_session = _verifier_and_session()
-    signed = signer.sign(message)
-    return BrokerOperationVerifier(verifier).verify(
-        signed,
-        session=default_session if session is None else session,
-        expected_grant_ref=expected_grant_ref,
-    )
-
-
 def test_verifier_accepts_signed_operation_bound_to_authenticated_session():
     message = _message("write")
     signer, verifier, session = _verifier_and_session()
@@ -148,7 +137,7 @@ def test_verifier_accepts_signed_operation_bound_to_authenticated_session():
     assert verified.authorization_grant_ref == "grant-001"
     assert verified.intent_digest == digest_object(intent, purpose="request")
     assert verified.commit_permit_ref == "permit-001"
-    assert verified.payload_digest == message["payload_digest"]["value"]
+    assert verified.payload_digest == digest_object(message["payload"], purpose="payload")
 
 
 def test_verifier_accepts_bounded_read_without_commit_permit():
