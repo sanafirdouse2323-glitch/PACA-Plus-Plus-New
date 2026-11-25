@@ -237,7 +237,9 @@ class BrokerOperationVerifier:
                 or not isinstance(digest_value, str)
                 or not _SHA256_RE.fullmatch(digest_value)
             ):
-                raise BrokerOperationError("broker operation payload digest is malformed")
+                raise BrokerOperationError(
+                    "broker operation payload digest is malformed"
+                )
             payload_digest_value = digest_value
 
         resource = snapshot["resource"]
