@@ -119,7 +119,10 @@ def _environment(tmp_path, *, provenance_release_check=None, max_calls=5):
         task_id=TASK,
         purpose=PURPOSE,
     )
-    verifier = BrokerOperationVerifier(message_verifier)
+    verifier = BrokerOperationVerifier(
+        message_verifier,
+        clock=lambda: 1_795_600_800.0,
+    )
     release_check = provenance_release_check or (
         lambda operation, record, result: (
             record.authority_id == signed_grant.capability.cap_id
