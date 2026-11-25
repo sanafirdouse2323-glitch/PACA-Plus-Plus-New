@@ -64,6 +64,29 @@ def valid_identity_context() -> dict[str, object]:
     return message
 
 
+def test_schema_exposes_exact_versioned_message_type_set():
+    schema = json.loads(SCHEMA_PATH.read_text(encoding="utf-8"))
+    actual = {
+        schema["$defs"][reference["$ref"].rsplit("/", 1)[-1]]["properties"][
+            "message_type"
+        ]["const"]
+        for reference in schema["oneOf"]
+    }
+    expected = {
+        "paca.identity-context.v1",
+        "paca.provenance-evidence.v1",
+        "paca.policy-evaluation.request.v1",
+        "paca.policy-evaluation.response.v1",
+        "paca.authorization-grant.v1",
+        "paca.pep-invocation.v1",
+        "paca.commit-permit.v1",
+        "paca.broker-operation.v1",
+        "paca.isolation-profile.v1",
+        "paca.audit-event.v1",
+    }
+    assert actual == expected
+
+
 def test_schema_is_valid_and_accepts_identity_context(
     validator: Any,
 ) -> None:
