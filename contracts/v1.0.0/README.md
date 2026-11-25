@@ -131,9 +131,9 @@ The worker's Ed25519 signature covers the full message including `commit_permit_
 
 ## 13. Reference broker-operation verifier## 14. Legacy authority-registry integration boundary
 
-The existing local authority registry uses `AuthorityLineage` records rather than the v1.0.0 `authorization-grant` message as its persisted grant format. Newly issued legacy capabilities now include the immutable per-capability `max_calls` value in their stored authority record; registry effect, message, read and commit operations cap caller-supplied limits against that stored ceiling. Delegated records cannot exceed a persisted parent's ceiling.
+The existing local authority registry uses `AuthorityLineage` records rather than the v1.0.0 `authorization-grant` message as its persisted grant format. Newly issued legacy capabilities now include the immutable per-capability `max_calls` value and grant audience in their stored authority record; registry effect, message, read and commit operations cap caller-supplied limits against that stored ceiling. Delegated records cannot exceed a persisted parent's ceiling or change its audience.
 
-Historical authority records without `max_calls` remain readable and verifiable without changing their canonical bytes or parent-chain digests. Their historical per-capability ceiling is not reconstructed from an untrusted broker request. A broker resolver MUST fail closed for any operation that requires a persisted per-capability ceiling when the referenced legacy record omits it. This additive record field does not implement the v1.0.0 grant schema, typed protocol predicates, protocol grant usage-limit counters, OIDC identity, or protocol commit-permit verification.
+Historical authority records without `max_calls` or `audience` remain readable and verifiable without changing their canonical bytes or parent-chain digests. Their historical per-capability ceiling and grant audience are not reconstructed from an untrusted broker request. A broker resolver MUST fail closed when the referenced record omits either field. These additive record fields do not implement the v1.0.0 grant schema, typed protocol predicates, protocol grant usage-limit counters, OIDC identity, or protocol commit-permit verification.
 
 
 
@@ -146,7 +146,7 @@ The reference core now exposes `BrokerSessionContext`, `BrokerOperationVerifier`
 5. Requires the request's grant reference to match the grant reference resolved by the caller.
 6. Recomputes the request-intent digest after removing exactly `proof` and `commit_permit_ref`.
 7. Recomputes the domain-separated payload digest when a payload is present.
-8. Enforces configured canonical-message and requested-read-size ceilings. The defaults are 1 MiB each; configured ceilings cannot exceed 16 MiB per message or 64 MiB per requested read.
+8. Enforces signed-message freshness and configured canonical-message/requested-read-size ceilings. The default maximum message age is 300 seconds with 30 seconds of allowed future clock skew; both settings are configurable within bounded limits. The size defaults are 1 MiB each; configured ceilings cannot exceed 16 MiB per message or 64 MiB per requested read.
 9. Derives the registry-compatible nonce digest and exposes an access-receipt builder for the existing transactional resource registry. The verified result also retains the detached canonical signed message bytes for downstream trusted mediation.
 
 `BrokerSessionContext` is a trusted hand-off value, not an authentication mechanism. A transport adapter must authenticate the peer and derive the channel-binding digest from the live transport before constructing it. Principal, workload, tenant, task and purpose values must come from that trusted session/identity context, never from the worker's broker-operation body.
@@ -167,3 +167,12 @@ For `delete`, the schema carries a digest of the canonical deletion intent but n
 
 This increment is a protocol-verification primitive, not the broker process/IPC boundary. A production-facing ingress still needs authenticated transport/session establishment, authoritative grant and provenance checks, persistent replay protection, a resource PEP, commit-time revalidation, bounded read disclosure and adversarial bypass tests.
 
+
+
+## 15. In-process broker read mediator
+
+The PR branch includes `InProcessBrokerReadMediator` as a narrow integration of the v1.0.0 signed broker-operation verifier with the existing local authority registry. It accepts only `operation=read` for `resource_type=file`. It resolves the referenced active `AuthorityLineage`, requires matching trusted grant issuer/audience and session principal/tenant/task/purpose, requires persisted `max_calls`, and passes the signed nonce receipt and `read_constraints.max_bytes` into the registry's transactional read method. The registry enforces active authority, the `read_file` grant, principal binding, per-capability and task quotas, replay uniqueness and the complete serialized response-byte ceiling.
+
+A mandatory trusted provenance-release callback must approve the returned resource and its recorded provenance metadata before any content is returned to the caller. A failed or unavailable release decision denies disclosure; because the registry read has already committed, its replay receipt and quota remain consumed. The callback and its provenance/policy sources are part of the trusted computing base and require independent validation.
+
+This mediator is in-process only. It does not authenticate transport or construct `BrokerSessionContext`; a trusted ingress must do that. It rejects writes, deletes, queries, sends, execution, remote-provider resources, version selectors and field projections. It does not adapt the protocol commit-permit contract to the legacy resource-commit permit, and does not claim a broker process, IPC boundary or complete resource mediation.
