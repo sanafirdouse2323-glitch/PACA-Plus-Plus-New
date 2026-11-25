@@ -29,6 +29,7 @@ from .durable import (
 )
 from .engine import PolicyEngine
 from .evaluator import evaluate_policy, evaluate_policy_set
+from .filesystem_commit import FilesystemFencedResourceExecutor
 from .memory import (
     HMACAgentMessageCodec,
     MemoryAccessContext,
@@ -71,6 +72,7 @@ __all__ = [
     "Ed25519CapabilityAuthority",
     "EvaluationResult",
     "FencedResourceExecutor",
+    "FilesystemFencedResourceExecutor",
     "Expression",
     "HMACAgentMessageCodec",
     "HMACCapabilityAuthority",
