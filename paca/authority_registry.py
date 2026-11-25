@@ -1228,7 +1228,6 @@ class SQLiteAuthorityRegistry:
                 connection.rollback()
                 raise
 
-
     def has_message_receipt(
         self,
         principal: str,
