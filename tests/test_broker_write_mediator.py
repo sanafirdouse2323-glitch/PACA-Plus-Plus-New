@@ -381,12 +381,16 @@ def test_broker_write_consumes_replacement_permit_on_safe_idempotent_retry(
             "FROM paca_resource_commit_receipts "
             "ORDER BY committed_at,nonce"
         ).fetchall()
-    assert {row[0] for row in commit_rows} == {
+    # The fixture's initial resource seed uses the legacy registry permit
+    # path and intentionally has no protocol permit ID or schema-v7 result
+    # version. Assert only the two protocol-permit receipts introduced here.
+    protocol_rows = [row for row in commit_rows if row[0] is not None]
+    assert {row[0] for row in protocol_rows} == {
         "commit-permit-2",
         "commit-permit-replacement",
     }
-    assert sum(row[1] == "operation-write-2" for row in commit_rows) == 1
-    assert all(row[2] == 2 for row in commit_rows)
+    assert sum(row[1] == "operation-write-2" for row in protocol_rows) == 1
+    assert all(row[2] == 2 for row in protocol_rows)
     assert env["registry"].usage(env["grant"].capability.cap_id)[0] == 2
 
 
@@ -420,6 +424,19 @@ def test_broker_write_rejects_permit_payload_or_request_digest_mismatch(tmp_path
         {"task_id": "different-task"},
         {"purpose": "different-purpose"},
         {"subject": {"kind": "agent", "id": "different-agent"}},
+        {"subject": {"kind": "administrator", "id": PRINCIPAL}},
+        {"arguments_digest": {"algorithm": "sha-512", "value": "d" * 64}},
+        {"arguments_digest": {"algorithm": "sha-256", "value": "D" * 64}},
+        {"payload_digest": {"algorithm": "sha-512", "value": "e" * 64}},
+        {"payload_digest": {"algorithm": "sha-256", "value": "E" * 64}},
+        {
+            "resource": {
+                "resource_type": "file",
+                "resource_id": RESOURCE,
+                "version_id": "1",
+                "unexpected": "field",
+            }
+        },
     ],
 )
 def test_broker_write_fails_closed_on_permit_binding_mismatch(
