@@ -1,5 +1,12 @@
 """Platform-neutral PACA++ protocol primitives and validators."""
 
+from .broker import (
+    BrokerOperationError,
+    BrokerOperationVerifier,
+    BrokerSessionContext,
+    VerifiedBrokerOperation,
+)
+
 from .canonical import (
     CanonicalizationError,
     InvalidJSONError,
@@ -22,6 +29,9 @@ from .validation import (
 )
 
 __all__ = [
+    "BrokerOperationError",
+    "BrokerOperationVerifier",
+    "BrokerSessionContext",
     "CanonicalizationError",
     "ContractValidationError",
     "InvalidJSONError",
@@ -31,6 +41,7 @@ __all__ = [
     "MessageVerifier",
     "ProtocolDependencyError",
     "TrustedMessageKey",
+    "VerifiedBrokerOperation",
     "VerifiedMessage",
     "canonicalize",
     "digest_object",
