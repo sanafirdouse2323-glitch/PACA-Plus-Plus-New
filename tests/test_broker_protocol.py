@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+
 import pytest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
@@ -11,6 +13,7 @@ from paca.contracts import (
     MessageVerifier,
     TrustedMessageKey,
     digest_object,
+    parse_json,
 )
 
 MESSAGE_TYPE = "paca.broker-operation.v1"
@@ -134,9 +137,23 @@ def test_verifier_accepts_signed_operation_bound_to_authenticated_session():
     assert verified.authorization_grant_ref == "grant-001"
     assert verified.intent_digest == digest_object(intent, purpose="request")
     assert verified.commit_permit_ref == "permit-001"
+    expected_nonce_digest = hashlib.sha256(
+        b"PACA++/BROKER-NONCE/V1\\n"
+        + session.session_id.encode("utf-8")
+        + b"\\n"
+        + message["request_nonce"].encode("utf-8")
+    ).hexdigest()
+    assert verified.nonce_digest == expected_nonce_digest
     assert verified.payload_digest == digest_object(
         message["payload"], purpose="payload"
     )
+    assert verified.registry_access_receipt() == {
+        "session_id": session.session_id,
+        "nonce_digest": expected_nonce_digest,
+        "operation_id": "operation-001",
+        "request_digest": verified.intent_digest,
+        "payload_digest": verified.payload_digest,
+    }
 
 
 def test_verifier_accepts_bounded_read_without_commit_permit():
@@ -153,6 +170,12 @@ def test_verifier_accepts_bounded_read_without_commit_permit():
     assert verified.operation == "read"
     assert verified.commit_permit_ref is None
     assert verified.max_bytes == 4096
+    assert verified.registry_access_receipt() == {
+        "session_id": session.session_id,
+        "nonce_digest": verified.nonce_digest,
+        "operation_id": "operation-001",
+        "request_digest": verified.intent_digest,
+    }
 
 
 def test_verifier_rejects_invalid_signature_before_trusting_request():
@@ -304,3 +327,19 @@ def test_verifier_rejects_valid_but_session_unbound_signing_key():
             session=session,
             expected_grant_ref="grant-001",
         )
+
+def test_verified_result_is_detached_from_later_caller_mutation():
+    message = _message("write")
+    signer, verifier, session = _verifier_and_session()
+    signed = signer.sign(message)
+    verified = BrokerOperationVerifier(verifier).verify(
+        signed,
+        session=session,
+        expected_grant_ref="grant-001",
+    )
+
+    signed["resource"]["resource_id"] = "attacker/changed-after-verification"
+    assert verified.resource_id == "reports/report.txt"
+    snapshot = parse_json(verified.canonical_message)
+    assert snapshot["resource"]["resource_id"] == "reports/report.txt"
+
