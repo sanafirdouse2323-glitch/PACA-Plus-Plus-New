@@ -129,7 +129,13 @@ For `paca.broker-operation.v1`, compute the permit request digest from the compl
 
 The worker's Ed25519 signature covers the full message including `commit_permit_ref`. The commit permit is separately signed by the capability issuer and binds the operation-intent digest and payload digest. The broker verifies both signatures and all cross-bindings. A permit reference cannot be swapped without invalidating the worker signature.
 
-## 13. Reference broker-operation verifier
+## 13. Reference broker-operation verifier## 14. Legacy authority-registry integration boundary
+
+The existing local authority registry uses `AuthorityLineage` records rather than the v1.0.0 `authorization-grant` message as its persisted grant format. Newly issued legacy capabilities now include the immutable per-capability `max_calls` value in their stored authority record; registry effect, message, read and commit operations cap caller-supplied limits against that stored ceiling. Delegated records cannot exceed a persisted parent's ceiling.
+
+Historical authority records without `max_calls` remain readable and verifiable without changing their canonical bytes or parent-chain digests. Their historical per-capability ceiling is not reconstructed from an untrusted broker request. A broker resolver MUST fail closed for any operation that requires a persisted per-capability ceiling when the referenced legacy record omits it. This additive record field does not implement the v1.0.0 grant schema, typed protocol predicates, protocol grant usage-limit counters, OIDC identity, or protocol commit-permit verification.
+
+
 
 The reference core now exposes `BrokerSessionContext`, `BrokerOperationVerifier` and `VerifiedBrokerOperation` from `paca.contracts`. The verifier performs the following checks on a v1.0.0 broker-operation message:
 
