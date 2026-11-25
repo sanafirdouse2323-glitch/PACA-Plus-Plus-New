@@ -518,7 +518,7 @@ def test_broker_write_rejects_expired_commit_permit(tmp_path):
         permit_overrides={"expires_at": "2026-11-25T09:59:59Z"},
     )
 
-    with pytest.raises(BrokerResourceDenied, match="validity window"):
+    with pytest.raises(BrokerResourceDenied, match="expired or has an invalid lifetime"):
         env["mediator"].write(message, session=env["session"])
 
     assert _read_value(env["registry"])[2] == 1
