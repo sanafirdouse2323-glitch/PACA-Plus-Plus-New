@@ -33,6 +33,8 @@ ProvenanceReleaseCheck = Callable[
     ],
     bool,
 ]
+
+
 class InProcessBrokerReadMediator:
     """Mediate v1.0.0 logical file reads through the existing authority registry.
 
@@ -196,7 +198,6 @@ class InProcessBrokerReadMediator:
             raise BrokerResourceDenied(
                 "broker read operation failed verification or authority enforcement"
             ) from exc
-
 
 
 class InProcessBrokerMediator(InProcessBrokerReadMediator):
