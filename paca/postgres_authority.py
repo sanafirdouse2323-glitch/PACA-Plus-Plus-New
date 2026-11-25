@@ -351,8 +351,58 @@ class PostgresAuthorityRegistry(SQLiteAuthorityRegistry):
                             "PostgreSQL broker-resource schema is incomplete; refusing to recreate lost state"
                         )
 
+                if version < 7:
+                    connection.execute(
+                        "ALTER TABLE paca_resource_commit_receipts "
+                        "ADD COLUMN IF NOT EXISTS permit_id TEXT"
+                    )
+                    connection.execute(
+                        "ALTER TABLE paca_resource_commit_receipts "
+                        "ADD COLUMN IF NOT EXISTS idempotency_key TEXT"
+                    )
+                    connection.execute(
+                        "ALTER TABLE paca_resource_commit_receipts "
+                        "ADD COLUMN IF NOT EXISTS result_version BIGINT"
+                    )
+                    connection.execute(
+                        "CREATE UNIQUE INDEX IF NOT EXISTS "
+                        "paca_resource_commit_permit_id_idx "
+                        "ON paca_resource_commit_receipts(permit_id) "
+                        "WHERE permit_id IS NOT NULL"
+                    )
+                    connection.execute(
+                        "CREATE UNIQUE INDEX IF NOT EXISTS "
+                        "paca_resource_commit_idempotency_idx "
+                        "ON paca_resource_commit_receipts(tenant,task_id,idempotency_key) "
+                        "WHERE idempotency_key IS NOT NULL"
+                    )
+                else:
+                    columns = {
+                        row["column_name"]
+                        for row in connection.execute(
+                            "SELECT column_name FROM information_schema.columns "
+                            "WHERE table_name='paca_resource_commit_receipts'"
+                        ).fetchall()
+                    }
+                    indexes = {
+                        row["indexname"]
+                        for row in connection.execute(
+                            "SELECT indexname FROM pg_indexes "
+                            "WHERE tablename='paca_resource_commit_receipts'"
+                        ).fetchall()
+                    }
+                    if (
+                        not {"permit_id", "idempotency_key", "result_version"} <= columns
+                        or not {
+                            "paca_resource_commit_permit_id_idx",
+                            "paca_resource_commit_idempotency_idx",
+                        } <= indexes
+                    ):
+                        raise AuthorityRegistryError(
+                            "PostgreSQL version-7 resource commit idempotency schema is incomplete"
+                        )
                 connection.execute(
-                    "INSERT INTO paca_authority_meta(key,value) VALUES('schema_version','6') "
+                    "INSERT INTO paca_authority_meta(key,value) VALUES('schema_version','7') "
                     "ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value"
                 )
                 connection.execute(
