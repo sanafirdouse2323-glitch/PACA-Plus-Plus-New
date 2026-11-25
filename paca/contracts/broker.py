@@ -161,9 +161,7 @@ class BrokerOperationVerifier:
                 or not isinstance(value, int)
                 or not 1 <= value <= maximum
             ):
-                raise ValueError(
-                    f"{name} must be an integer between 1 and {maximum}"
-                )
+                raise ValueError(f"{name} must be an integer between 1 and {maximum}")
         self._message_verifier = message_verifier
         self._max_message_bytes = max_message_bytes
         self._max_read_bytes = max_read_bytes
