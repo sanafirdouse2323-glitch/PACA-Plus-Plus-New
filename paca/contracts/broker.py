@@ -13,7 +13,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
 
-from .canonical import digest_object
+from .canonical import CanonicalizationError, canonicalize, digest_object, parse_json
 from .signatures import MessageAuthenticationError, MessageVerifier
 from .validation import ContractValidationError, validate_message
 
@@ -137,16 +137,28 @@ class BrokerOperationVerifier:
         if not isinstance(message, Mapping):
             raise BrokerOperationError("broker operation must be a JSON object")
 
+        # Detach one canonical JSON snapshot before verification. Later semantic
+        # checks must not read a mutable caller mapping that could change after
+        # its signature has been authenticated (a time-of-check/time-of-use risk).
         try:
-            validate_message(message)
+            snapshot = parse_json(canonicalize(dict(message)))
+        except (CanonicalizationError, TypeError, ValueError) as exc:
+            raise BrokerOperationError(
+                "broker operation is not a canonical JSON/I-JSON object"
+            ) from exc
+        if not isinstance(snapshot, dict):
+            raise BrokerOperationError("broker operation must be a JSON object")
+
+        try:
+            validate_message(snapshot)
         except ContractValidationError as exc:
             raise BrokerOperationError("broker operation schema validation failed") from exc
 
-        if message.get("message_type") != _BROKER_MESSAGE_TYPE:
+        if snapshot.get("message_type") != _BROKER_MESSAGE_TYPE:
             raise BrokerOperationError("message is not a v1.0.0 broker operation")
 
         try:
-            verified = self._message_verifier.verify(message)
+            verified = self._message_verifier.verify(snapshot)
         except MessageAuthenticationError as exc:
             raise BrokerOperationError("broker operation signature verification failed") from exc
 
@@ -158,7 +170,7 @@ class BrokerOperationVerifier:
             raise BrokerOperationError(
                 "broker operation audience does not match the authenticated session"
             )
-        if message.get("session_id") != session.session_id:
+        if snapshot.get("session_id") != session.session_id:
             raise BrokerOperationError(
                 "broker operation session does not match the authenticated session"
             )
@@ -167,18 +179,18 @@ class BrokerOperationVerifier:
             "algorithm": _DIGEST_ALGORITHM,
             "value": session.channel_binding_digest,
         }
-        if message.get("channel_binding_digest") != expected_channel_binding:
+        if snapshot.get("channel_binding_digest") != expected_channel_binding:
             raise BrokerOperationError(
                 "broker operation channel binding does not match the authenticated transport"
             )
 
-        grant_ref = message.get("authorization_grant_ref")
+        grant_ref = snapshot.get("authorization_grant_ref")
         if grant_ref != expected_grant_ref:
             raise BrokerOperationError(
                 "broker operation grant reference does not match the resolved grant"
             )
 
-        unsigned_intent = dict(message)
+        unsigned_intent = dict(snapshot)
         unsigned_intent.pop("proof", None)
         # The permit reference is signed by the worker, but is excluded from the
         # intent digest to avoid a circular dependency when the permit binds intent.
@@ -191,8 +203,8 @@ class BrokerOperationVerifier:
             ) from exc
 
         payload_digest_value: str | None = None
-        payload = message.get("payload")
-        supplied_payload_digest = message.get("payload_digest")
+        payload = snapshot.get("payload")
+        supplied_payload_digest = snapshot.get("payload_digest")
         if payload is not None:
             if not isinstance(payload, Mapping):
                 raise BrokerOperationError("broker operation payload must be an object")
@@ -223,12 +235,12 @@ class BrokerOperationVerifier:
                 raise BrokerOperationError("broker operation payload digest is malformed")
             payload_digest_value = digest_value
 
-        resource = message["resource"]
+        resource = snapshot["resource"]
         if not isinstance(resource, Mapping):
             # The closed JSON Schema already rejects this; retain a local guard so
             # this module does not rely on assertions for security-relevant typing.
             raise BrokerOperationError("broker operation resource is malformed")
-        read_constraints = message.get("read_constraints")
+        read_constraints = snapshot.get("read_constraints")
         max_bytes: int | None = None
         if isinstance(read_constraints, Mapping):
             candidate = read_constraints.get("max_bytes")
@@ -236,14 +248,14 @@ class BrokerOperationVerifier:
                 raise BrokerOperationError("broker read maximum byte bound is invalid")
             max_bytes = candidate
 
-        operation = message["operation"]
-        commit_permit_ref = message.get("commit_permit_ref")
+        operation = snapshot["operation"]
+        commit_permit_ref = snapshot.get("commit_permit_ref")
         if operation in _MUTATING_OPERATIONS and not isinstance(commit_permit_ref, str):
             raise BrokerOperationError("mutating broker operation lacks a commit permit reference")
 
         return VerifiedBrokerOperation(
-            message_id=message["message_id"],
-            operation_id=message["operation_id"],
+            message_id=snapshot["message_id"],
+            operation_id=snapshot["operation_id"],
             operation=operation,
             session_id=session.session_id,
             principal_id=session.principal_id,
@@ -258,11 +270,11 @@ class BrokerOperationVerifier:
             resource_type=resource["resource_type"],
             resource_id=resource["resource_id"],
             resource_version_id=resource.get("version_id"),
-            request_nonce=message["request_nonce"],
+            request_nonce=snapshot["request_nonce"],
             intent_digest=intent_digest,
             payload_digest=payload_digest_value,
             commit_permit_ref=commit_permit_ref,
-            idempotency_key=message.get("idempotency_key"),
+            idempotency_key=snapshot.get("idempotency_key"),
             max_bytes=max_bytes,
         )
 
