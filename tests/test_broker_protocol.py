@@ -399,7 +399,6 @@ def test_verifier_size_limits_reject_booleans_and_unbounded_configuration():
         BrokerOperationVerifier(verifier, max_read_bytes=64 * 1024 * 1024 + 1)
 
 
-
 def test_verifier_rejects_stale_signed_broker_messages():
     message = _message("read")
     signer, verifier, session = _verifier_and_session()
@@ -449,3 +448,19 @@ def test_verifier_accepts_messages_within_configured_freshness_window():
         expected_grant_ref="grant-001",
     )
     assert result.operation == "read"
+
+
+
+def test_verifier_accepts_signed_query_envelope_for_policy_layer():
+    message = _message("query")
+    signer, verifier, session = _verifier_and_session()
+    signed = signer.sign(message)
+
+    verified = _broker_verifier(verifier).verify(
+        signed,
+        session=session,
+        expected_grant_ref="grant-001",
+    )
+
+    assert verified.operation == "query"
+    assert verified.max_bytes == 4096
