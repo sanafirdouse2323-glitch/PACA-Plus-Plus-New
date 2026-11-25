@@ -7,7 +7,7 @@ CONSTANTS
     IntegrityLevels, MaxSensitivity, MaxBudget, MaxTime,
     ChildPrincipal, GrandchildPrincipal, UsePrincipalChild, UsePrincipalGrandchild,
     UseAction, UseResource, UsePurpose, UseDestination, UseTask,
-    UseDestination, UseTask, UseSensitivity, UseIntegrity, UseApprovalSatisfied,
+    UseSensitivity, UseIntegrity, UseApprovalSatisfied,
     RootPrincipal, RootTenant, RootTaskScope, RootPurposeScope, RootActions, RootResources,
     RootDestinations, RootDelegatees, RootMaxSensitivity, RootIntegrityLevels,
     RootRequiresApproval, RootNotBefore, RootExpiry, RootBudget,
