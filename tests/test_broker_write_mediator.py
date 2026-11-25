@@ -429,6 +429,11 @@ def test_broker_write_rejects_permit_payload_or_request_digest_mismatch(tmp_path
         {"arguments_digest": {"algorithm": "sha-256", "value": "D" * 64}},
         {"payload_digest": {"algorithm": "sha-512", "value": "e" * 64}},
         {"payload_digest": {"algorithm": "sha-256", "value": "E" * 64}},
+        {"created_at": "2026-11-25T10:00:31Z"},
+        {"issued_at": "2026-11-25T10:00:31Z"},
+        {"created_at": "2026-11-25T09:54:59Z"},
+        {"expires_at": "2026-11-25T10:00:31Z"},
+        {"issued_at": "2026-11-25T09:59:29Z"},
         {
             "resource": {
                 "resource_type": "file",
@@ -439,7 +444,7 @@ def test_broker_write_rejects_permit_payload_or_request_digest_mismatch(tmp_path
         },
     ],
 )
-def test_broker_write_fails_closed_on_permit_binding_mismatch(
+def test_broker_write_fails_closed_on_permit_binding_or_freshness_mismatch(
     tmp_path,
     permit_overrides,
 ):
