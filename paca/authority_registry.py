@@ -1063,9 +1063,9 @@ class SQLiteAuthorityRegistry:
         if max_bytes is not None and (
             isinstance(max_bytes, bool)
             or not isinstance(max_bytes, int)
-            or max_bytes < 1
+            or not 1 <= max_bytes <= 64 * 1024 * 1024
         ):
-            raise ValueError("max_bytes must be a positive integer or None")
+            raise ValueError("max_bytes must be between 1 and 64 MiB or None")
         required_receipt_fields = {
             "session_id",
             "nonce_digest",
@@ -1165,6 +1165,26 @@ class SQLiteAuthorityRegistry:
                         raise AuthorityRegistryError(
                             "resource version precondition did not match at read"
                         )
+                    metadata_row = connection.execute(
+                        "SELECT metadata_json FROM paca_resource_provenance "
+                        "WHERE tenant=? AND task_id=? AND resource_key=? AND resource_version=?",
+                        (tenant, task_id, resource, current_version),
+                    ).fetchone()
+                    raw_metadata = (
+                        metadata_row["metadata_json"]
+                        if metadata_row is not None
+                        else None
+                    )
+                    if max_bytes is not None:
+                        raw_size = len(row["value_json"].encode("utf-8")) + (
+                            len(raw_metadata.encode("utf-8"))
+                            if raw_metadata is not None
+                            else 0
+                        )
+                        if raw_size > max_bytes:
+                            raise AuthorityRegistryError(
+                                "resource read exceeds the requested disclosure byte limit"
+                            )
                     try:
                         value = json.loads(row["value_json"])
                         from .contracts.canonical import digest_object
@@ -1183,14 +1203,9 @@ class SQLiteAuthorityRegistry:
                         raise AuthorityRegistryError(
                             "stored resource payload digest verification failed"
                         )
-                    metadata_row = connection.execute(
-                        "SELECT metadata_json FROM paca_resource_provenance "
-                        "WHERE tenant=? AND task_id=? AND resource_key=? AND resource_version=?",
-                        (tenant, task_id, resource, current_version),
-                    ).fetchone()
                     metadata = (
-                        json.loads(metadata_row["metadata_json"])
-                        if metadata_row is not None
+                        json.loads(raw_metadata)
+                        if raw_metadata is not None
                         else None
                     )
                     if not isinstance(value, dict):
@@ -1213,7 +1228,7 @@ class SQLiteAuthorityRegistry:
                 # the caller-supplied max_bytes field. This check happens before
                 # receipt insertion and quota charging; failure rolls back the
                 # transaction without disclosing any bytes.
-                if max_bytes is not None:
+                if max_bytes is not None and result["found"]:
                     disclosed = _canonical(
                         {
                             "value": result["value"],
