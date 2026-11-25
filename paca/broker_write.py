@@ -336,7 +336,8 @@ class InProcessBrokerWriteMediator:
             if not isinstance(permit_resource, Mapping):
                 raise BrokerResourceDenied("commit permit resource is malformed")
             if (
-                permit_resource.get("resource_type") != "file"
+                dict(permit_resource) != dict(resource)
+                or permit_resource.get("resource_type") != "file"
                 or permit_resource.get("resource_id") != operation.resource_id
                 or permit_resource.get("version_id") != resource_version
                 or permit_resource.get("provider") is not None
