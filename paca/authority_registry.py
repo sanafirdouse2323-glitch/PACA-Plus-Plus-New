@@ -1376,6 +1376,8 @@ class SQLiteAuthorityRegistry:
                     raise AuthorityRegistryError(
                         "cannot receive a message with inactive authority"
                     )
+                if record.max_calls is not None:
+                    max_calls = min(max_calls, record.max_calls)
                 usage = connection.execute(
                     "SELECT calls_used FROM authority_usage WHERE authority_id=?",
                     (authority_id,),
