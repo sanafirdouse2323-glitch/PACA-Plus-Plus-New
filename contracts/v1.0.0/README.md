@@ -88,11 +88,11 @@ This contract bundle is a schema and design artefact. It does not yet provide a 
 
 ## 10. Reference-core primitives
 
-The `paca.contracts` package provides strict JSON parsing, RFC 8785 canonical UTF-8 bytes, domain-separated SHA-256 object digests and optional schema validation. Install the `protocol` extra to enable these helpers. The package does not verify signatures, establish the authenticated broker session, evaluate authority, check revocation or perform protected resource operations.
+The `paca.contracts` package provides strict JSON parsing, RFC 8785 canonical UTF-8 bytes, domain-separated SHA-256 object digests and optional schema validation. The same package also exposes a reference Ed25519 message signer and verifier (`MessageSigner`, `MessageVerifier` and `TrustedMessageKey`) with explicit key-ID, issuer, audience and message-type scoping. Install the `protocol` extra to enable these helpers. These primitives do not establish an authenticated broker session, prove a worker's real-world identity, evaluate authority, check revocation or perform protected resource operations.
 
 Canonical JSON input rejects duplicate object member names, non-JSON constants, invalid UTF-8, unpaired Unicode surrogates and integer values outside the I-JSON exact integer range. Exact large integer values must be encoded as decimal strings. Unicode strings are not normalised.
 
-The `validate_message` function checks only the versioned JSON Schema. A structurally valid proof field remains unverified until a future trusted key-verification service validates it against authenticated issuer, message type and audience configuration.
+The `validate_message` function checks only the versioned JSON Schema and does not invoke signature verification. A caller that requires message authentication must separately use a configured `MessageVerifier` with trusted public keys and explicit issuer, audience and message-type scopes. Structural validation and signature verification are separate operations; neither proves the truth of a user, agent or workload identity claim without an authenticated identity authority or transport/session binding.
 
 ## 11. Ed25519 message signing and verification
 
