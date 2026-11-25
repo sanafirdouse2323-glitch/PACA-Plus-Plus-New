@@ -100,7 +100,7 @@ The reference core exposes `MessageSigner` and `MessageVerifier` in `paca.contra
 
 Signed bytes are:
 
-    UTF8("PACA++/MESSAGE/V1\\n" + message_type + "\\n") || JCS(message_without_proof)
+    UTF8("PACA++/MESSAGE/V1\\n" + message_type + "\\n" + key_id + "\\n") || JCS(message_without_proof)
 
 The proof is Ed25519 with unpadded base64url encoding. The verifier accepts only Ed25519, checks issuer/audience/type against trusted local configuration, removes the proof field and verifies the exact canonical content. A message cannot select a different algorithm by changing its proof field.
 
