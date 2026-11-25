@@ -239,6 +239,7 @@ def test_broker_rejects_legacy_grant_without_persisted_call_limit(tmp_path):
         expires=2_000,
         grants={"read_file": ("reports/*",)},
         max_task_calls=20,
+        audience=GRANT_AUDIENCE,
     )
     env["registry"].register_authority(legacy)
 
@@ -258,8 +259,6 @@ def test_broker_rejects_legacy_grant_without_persisted_call_limit(tmp_path):
 
 def test_broker_rejects_untrusted_grant_audience(tmp_path):
     env = _environment(tmp_path)
-    from paca.broker import InProcessBrokerReadMediator
-
     mediator = InProcessBrokerReadMediator(
         env["mediator"]._verifier,
         env["registry"],
