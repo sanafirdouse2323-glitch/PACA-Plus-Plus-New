@@ -9,7 +9,6 @@ from .ast import (
     ProvenanceRecord,
 )
 from .authority import AuthorityLineage, AuthorityLineageGraph
-from .broker import BrokerResourceDenied, InProcessBrokerReadMediator
 from .authority_runtime import (
     AuthorityRegistryError,
     CapabilityAuthenticationError,
@@ -19,6 +18,7 @@ from .authority_runtime import (
     SQLiteAuthorityRegistry,
     VerifiedResourceCommitPermit,
 )
+from .broker import BrokerResourceDenied, InProcessBrokerReadMediator
 from .compiler import compile_policy, compile_policy_source
 from .durable import (
     ImmutableLineageConflict,
