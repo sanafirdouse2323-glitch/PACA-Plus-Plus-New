@@ -3152,7 +3152,7 @@ def test_registry_migrates_empty_v3_database_to_task_quota_schema(tmp_path):
         table = connection.execute(
             "SELECT name FROM sqlite_master WHERE type='table' AND name='task_usage'"
         ).fetchone()
-    assert version == "6"
+    assert version == "7"
     assert table is not None
     with sqlite3.connect(database) as connection:
         resource_tables = {
