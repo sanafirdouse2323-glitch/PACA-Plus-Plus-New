@@ -40,7 +40,6 @@ ProvenanceCommitCheck = Callable[
 ]
 
 
-
 class InProcessBrokerWriteMediator:
     """Mediate one signed v1.0.0 write into the local logical resource registry.
 
