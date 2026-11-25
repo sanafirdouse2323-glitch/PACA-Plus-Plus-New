@@ -11,7 +11,7 @@ import base64
 import binascii
 import hashlib
 import re
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from typing import Any
 
@@ -39,6 +39,21 @@ class MessageSigningConfigurationError(ValueError):
     """A signer or trusted key configuration is invalid."""
 
 
+def _freeze_scope(values: Iterable[str], field_name: str) -> frozenset[str]:
+    """Copy a configured string scope into an immutable, validated set."""
+    if isinstance(values, (str, bytes)) or not isinstance(values, Iterable):
+        raise ValueError(f"{field_name} must be a collection of non-empty strings")
+    try:
+        frozen = frozenset(values)
+    except TypeError as exc:
+        raise ValueError(
+            f"{field_name} must be a collection of non-empty strings"
+        ) from exc
+    if not frozen or any(not isinstance(item, str) or not item for item in frozen):
+        raise ValueError(f"{field_name} must contain non-empty strings")
+    return frozen
+
+
 @dataclass(frozen=True)
 class TrustedMessageKey:
     """A public key trusted only for a specific issuer, audiences and message types."""
@@ -57,14 +72,12 @@ class TrustedMessageKey:
             raise TypeError("public_key must be a cryptography Ed25519PublicKey")
         if not isinstance(self.issuer, str) or not self.issuer:
             raise ValueError("trusted message issuer must be non-empty")
-        if not self.audiences or any(
-            not isinstance(item, str) or not item for item in self.audiences
-        ):
-            raise ValueError("trusted key must have non-empty audiences")
-        if not self.message_types or any(
-            not isinstance(item, str) or not item for item in self.message_types
-        ):
-            raise ValueError("trusted key must have non-empty message types")
+        object.__setattr__(
+            self, "audiences", _freeze_scope(self.audiences, "audiences")
+        )
+        object.__setattr__(
+            self, "message_types", _freeze_scope(self.message_types, "message_types")
+        )
 
 
 @dataclass(frozen=True)
@@ -103,13 +116,9 @@ class MessageSigner:
             raise ValueError("key_id must be non-empty")
         if not isinstance(issuer, str) or not issuer:
             raise ValueError("issuer must be non-empty")
-        if not audiences or any(
-            not isinstance(item, str) or not item for item in audiences
-        ):
-            raise ValueError("audiences must be a non-empty collection")
         self._key_id = key_id
         self._issuer = issuer
-        self._audiences = frozenset(audiences)
+        self._audiences = _freeze_scope(audiences, "audiences")
         self._private_key = private_key
 
     def sign(self, message: Mapping[str, Any]) -> dict[str, Any]:
@@ -123,7 +132,7 @@ class MessageSigner:
             raise ValueError("message_type must be non-empty before signing")
         if message.get("issuer") != self._issuer:
             raise ValueError("message issuer does not match the configured signer")
-        if audience not in self._audiences:
+        if not isinstance(audience, str) or audience not in self._audiences:
             raise ValueError("message audience is outside the configured signer scope")
         unsigned = dict(message)
         signing_input = _signing_input(unsigned, message_type)
@@ -183,22 +192,30 @@ class MessageVerifier:
         issuer = message.get("issuer")
         audience = message.get("audience")
         message_type = message.get("message_type")
-        if issuer != trusted.issuer:
+        if not isinstance(issuer, str) or issuer != trusted.issuer:
             raise MessageAuthenticationError(
                 "message issuer is not trusted for this key"
             )
-        if audience not in trusted.audiences:
+        if not isinstance(audience, str) or audience not in trusted.audiences:
             raise MessageAuthenticationError(
                 "message audience is not trusted for this key"
             )
-        if message_type not in trusted.message_types:
+        if (
+            not isinstance(message_type, str)
+            or not message_type
+            or message_type not in trusted.message_types
+        ):
             raise MessageAuthenticationError("message type is not trusted for this key")
         unsigned = dict(message)
         unsigned.pop("proof", None)
         try:
             signature = base64.urlsafe_b64decode(encoded + "==")
-            if len(signature) != 64:
-                raise ValueError("invalid Ed25519 signature length")
+            if (
+                len(signature) != 64
+                or base64.urlsafe_b64encode(signature).decode("ascii").rstrip("=")
+                != encoded
+            ):
+                raise ValueError("invalid or non-canonical Ed25519 signature encoding")
             signing_input = _signing_input(unsigned, message_type)
             trusted.public_key.verify(signature, signing_input)
         except (ValueError, binascii.Error, TypeError) as exc:
