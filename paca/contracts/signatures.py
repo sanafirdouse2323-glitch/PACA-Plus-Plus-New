@@ -239,9 +239,7 @@ class MessageVerifier:
         )
 
 
-def _signing_input(
-    message: Mapping[str, Any], message_type: str, key_id: str
-) -> bytes:
+def _signing_input(message: Mapping[str, Any], message_type: str, key_id: str) -> bytes:
     try:
         type_bytes = message_type.encode("ascii", errors="strict")
         key_id_bytes = key_id.encode("ascii", errors="strict")
