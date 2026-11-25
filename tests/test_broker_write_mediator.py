@@ -357,7 +357,7 @@ def test_broker_write_replays_exact_commit_idempotently_without_second_effect(tm
 def test_broker_write_consumes_replacement_permit_on_safe_idempotent_retry(
     tmp_path,
 ):
-    env = _environment()
+    env = _environment(tmp_path)
     first_message = _signed_write(env)
     first = env["mediator"].write(first_message, session=env["session"])
     replacement_message = _signed_write(
