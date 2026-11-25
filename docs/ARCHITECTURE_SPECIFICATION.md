@@ -554,7 +554,7 @@ The following are deliberate architectural choices for subsequent implementation
 
 ---
 
-**Status reminder:** Version 0.1.0-draft is the proposed target architecture. The current PACA++ research repository remains a security research prototype with selected mediated-path controls, known bypasses and unimplemented architecture components. Passing repository CI does not constitute conformance or security certification.
+**Status reminder:** Version 0.2.0-draft is the proposed target architecture. The current PACA++ research repository remains a security research prototype with selected mediated-path controls, known bypasses and unimplemented architecture components. Passing repository CI does not constitute conformance or security certification.
 
 ## 18. Stabilising definitions and security semantics (v0.2.0 review decisions)
 
