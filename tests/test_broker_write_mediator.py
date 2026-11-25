@@ -331,15 +331,18 @@ def test_broker_write_verifies_commit_permit_and_commits_atomically(tmp_path):
     assert env["registry"].usage(env["grant"].capability.cap_id)[0] == 2
 
 
-def test_broker_write_rejects_replayed_commit_permit_without_second_effect(tmp_path):
+def test_broker_write_replays_exact_commit_idempotently_without_second_effect(tmp_path):
     env = _environment(tmp_path)
     message = _signed_write(env)
     first = env["mediator"].write(message, session=env["session"])
     assert first["version"] == 2
+    assert first["idempotent_replay"] is False
 
-    with pytest.raises(BrokerResourceDenied, match="atomic resource enforcement"):
-        env["mediator"].write(message, session=env["session"])
+    replay = env["mediator"].write(message, session=env["session"])
 
+    assert replay["version"] == first["version"]
+    assert replay["commit_nonce"] == first["commit_nonce"]
+    assert replay["idempotent_replay"] is True
     assert _read_value(env["registry"])[2] == 2
     assert len(_receipts(env["registry"])) == 1
     assert env["registry"].usage(env["grant"].capability.cap_id)[0] == 2
