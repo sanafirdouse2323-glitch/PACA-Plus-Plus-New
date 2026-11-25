@@ -225,7 +225,9 @@ class MessageVerifier:
         except Exception as exc:
             # Cryptography's InvalidSignature is intentionally normalised at this
             # trust boundary without leaking implementation details.
-            raise MessageAuthenticationError("message signature verification failed") from exc
+            raise MessageAuthenticationError(
+                "message signature verification failed"
+            ) from exc
         signed_digest = hashlib.sha256(signing_input).hexdigest()
         return VerifiedMessage(
             key_id=key_id,
