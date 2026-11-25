@@ -13,6 +13,11 @@ from .canonical import (
     digest_object,
     parse_json,
 )
+from .permits import (
+    CommitPermitError,
+    ProtocolCommitPermitVerifier,
+    VerifiedProtocolCommitPermit,
+)
 from .signatures import (
     MessageAuthenticationError,
     MessageSigner,
@@ -32,16 +37,19 @@ __all__ = [
     "BrokerOperationVerifier",
     "BrokerSessionContext",
     "CanonicalizationError",
+    "CommitPermitError",
     "ContractValidationError",
     "InvalidJSONError",
     "MessageAuthenticationError",
     "MessageSigner",
     "MessageSigningConfigurationError",
     "MessageVerifier",
+    "ProtocolCommitPermitVerifier",
     "ProtocolDependencyError",
     "TrustedMessageKey",
     "VerifiedBrokerOperation",
     "VerifiedMessage",
+    "VerifiedProtocolCommitPermit",
     "canonicalize",
     "digest_object",
     "parse_json",
