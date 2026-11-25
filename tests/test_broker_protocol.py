@@ -21,6 +21,15 @@ ISSUER = "worker-issuer"
 KEY_ID = "worker-key-01"
 AUDIENCE = "paca-broker"
 CHANNEL_BINDING = "a" * 64
+TEST_NOW = 1_795_600_800.0
+
+
+def _broker_verifier(verifier, **kwargs):
+    return BrokerOperationVerifier(
+        verifier,
+        clock=lambda: TEST_NOW,
+        **kwargs,
+    )
 
 
 def _message(operation: str = "write") -> dict[str, object]:
@@ -120,7 +129,7 @@ def test_verifier_accepts_signed_operation_bound_to_authenticated_session():
     signer, verifier, session = _verifier_and_session()
     signed = signer.sign(message)
 
-    verified = BrokerOperationVerifier(verifier).verify(
+    verified = _broker_verifier(verifier).verify(
         signed,
         session=session,
         expected_grant_ref="grant-001",
@@ -161,7 +170,7 @@ def test_verifier_accepts_bounded_read_without_commit_permit():
     signer, verifier, session = _verifier_and_session()
     signed = signer.sign(message)
 
-    verified = BrokerOperationVerifier(verifier).verify(
+    verified = _broker_verifier(verifier).verify(
         signed,
         session=session,
         expected_grant_ref="grant-001",
@@ -185,7 +194,7 @@ def test_verifier_rejects_invalid_signature_before_trusting_request():
     signed["resource"]["resource_id"] = "reports/attacker.txt"
 
     with pytest.raises(BrokerOperationError, match="signature"):
-        BrokerOperationVerifier(verifier).verify(
+        _broker_verifier(verifier).verify(
             signed,
             session=session,
             expected_grant_ref="grant-001",
@@ -210,7 +219,7 @@ def test_verifier_rejects_session_id_mismatch():
     )
 
     with pytest.raises(BrokerOperationError, match="session"):
-        BrokerOperationVerifier(verifier).verify(
+        _broker_verifier(verifier).verify(
             signed,
             session=wrong_session,
             expected_grant_ref="grant-001",
@@ -235,7 +244,7 @@ def test_verifier_rejects_channel_binding_mismatch():
     )
 
     with pytest.raises(BrokerOperationError, match="channel binding"):
-        BrokerOperationVerifier(verifier).verify(
+        _broker_verifier(verifier).verify(
             signed,
             session=wrong_channel,
             expected_grant_ref="grant-001",
@@ -248,7 +257,7 @@ def test_verifier_rejects_wrong_grant_reference():
     signed = signer.sign(message)
 
     with pytest.raises(BrokerOperationError, match="grant"):
-        BrokerOperationVerifier(verifier).verify(
+        _broker_verifier(verifier).verify(
             signed,
             session=session,
             expected_grant_ref="different-grant",
@@ -262,7 +271,7 @@ def test_verifier_recomputes_payload_digest_instead_of_trusting_claim():
     signed = signer.sign(message)
 
     with pytest.raises(BrokerOperationError, match="payload digest"):
-        BrokerOperationVerifier(verifier).verify(
+        _broker_verifier(verifier).verify(
             signed,
             session=session,
             expected_grant_ref="grant-001",
@@ -273,7 +282,7 @@ def test_commit_permit_reference_is_signature_bound_but_not_in_intent_digest():
     message = _message("write")
     signer, verifier, session = _verifier_and_session()
     signed = signer.sign(message)
-    broker_verifier = BrokerOperationVerifier(verifier)
+    broker_verifier = _broker_verifier(verifier)
     first = broker_verifier.verify(
         signed,
         session=session,
@@ -322,7 +331,7 @@ def test_verifier_rejects_valid_but_session_unbound_signing_key():
     signed = signer.sign(message)
 
     with pytest.raises(BrokerOperationError, match="key"):
-        BrokerOperationVerifier(verifier).verify(
+        _broker_verifier(verifier).verify(
             signed,
             session=session,
             expected_grant_ref="grant-001",
@@ -333,7 +342,7 @@ def test_verified_result_is_detached_from_later_caller_mutation():
     message = _message("write")
     signer, verifier, session = _verifier_and_session()
     signed = signer.sign(message)
-    verified = BrokerOperationVerifier(verifier).verify(
+    verified = _broker_verifier(verifier).verify(
         signed,
         session=session,
         expected_grant_ref="grant-001",
@@ -384,3 +393,55 @@ def test_verifier_size_limits_reject_booleans_and_unbounded_configuration():
         BrokerOperationVerifier(verifier, max_message_bytes=True)
     with pytest.raises(ValueError, match="max_read_bytes"):
         BrokerOperationVerifier(verifier, max_read_bytes=64 * 1024 * 1024 + 1)
+
+
+
+def test_verifier_rejects_stale_signed_broker_messages():
+    message = _message("read")
+    signer, verifier, session = _verifier_and_session()
+    signed = signer.sign(message)
+    stale_verifier = BrokerOperationVerifier(
+        verifier,
+        clock=lambda: TEST_NOW + 301,
+    )
+
+    with pytest.raises(BrokerOperationError, match="timestamp"):
+        stale_verifier.verify(
+            signed,
+            session=session,
+            expected_grant_ref="grant-001",
+        )
+
+
+def test_verifier_rejects_future_signed_broker_messages_outside_clock_skew():
+    message = _message("read")
+    signer, verifier, session = _verifier_and_session()
+    signed = signer.sign(message)
+    future_verifier = BrokerOperationVerifier(
+        verifier,
+        clock=lambda: TEST_NOW - 31,
+    )
+
+    with pytest.raises(BrokerOperationError, match="timestamp"):
+        future_verifier.verify(
+            signed,
+            session=session,
+            expected_grant_ref="grant-001",
+        )
+
+
+def test_verifier_accepts_messages_within_configured_freshness_window():
+    message = _message("read")
+    signer, verifier, session = _verifier_and_session()
+    signed = signer.sign(message)
+    recent_verifier = BrokerOperationVerifier(
+        verifier,
+        clock=lambda: TEST_NOW + 299,
+    )
+
+    result = recent_verifier.verify(
+        signed,
+        session=session,
+        expected_grant_ref="grant-001",
+    )
+    assert result.operation == "read"
