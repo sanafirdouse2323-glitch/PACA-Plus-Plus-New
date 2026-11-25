@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import importlib
 import json
-import pytest
 from pathlib import Path
 from typing import Any
+
+import pytest
 
 
 SCHEMA_PATH = (
@@ -90,10 +91,21 @@ def test_broker_write_requires_commit_permit_and_idempotency(
             "channel_binding_digest": {"algorithm": "sha-256", "value": "a" * 64},
             "request_nonce": "nonce-000000000001",
             "operation": "write",
-            "resource": {"resource_type": "file", "resource_id": "report-1"},
+            "resource": {
+                "resource_type": "file",
+                "resource_id": "report-1",
+                "version_id": "version-1",
+            },
             "authorization_grant_ref": "grant-1",
             "payload": {"text": "approved content"},
             "payload_digest": {"algorithm": "sha-256", "value": "b" * 64},
+            "provenance_refs": [
+                {
+                    "object_id": "source-1",
+                    "version_id": "source-version-1",
+                    "content_digest": {"algorithm": "sha-256", "value": "c" * 64},
+                }
+            ],
         }
     )
     with pytest.raises(importlib.import_module("jsonschema").ValidationError):
@@ -115,6 +127,7 @@ def test_broker_read_requires_authorisation_before_disclosure(
             "request_nonce": "nonce-000000000002",
             "operation": "read",
             "resource": {"resource_type": "document", "resource_id": "doc-1"},
+            "read_constraints": {"max_bytes": 4096},
         }
     )
     with pytest.raises(importlib.import_module("jsonschema").ValidationError):
