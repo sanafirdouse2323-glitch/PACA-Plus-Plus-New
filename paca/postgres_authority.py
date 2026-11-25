@@ -392,11 +392,13 @@ class PostgresAuthorityRegistry(SQLiteAuthorityRegistry):
                         ).fetchall()
                     }
                     if (
-                        not {"permit_id", "idempotency_key", "result_version"} <= columns
+                        not {"permit_id", "idempotency_key", "result_version"}
+                        <= columns
                         or not {
                             "paca_resource_commit_permit_id_idx",
                             "paca_resource_commit_idempotency_idx",
-                        } <= indexes
+                        }
+                        <= indexes
                     ):
                         raise AuthorityRegistryError(
                             "PostgreSQL version-7 resource commit idempotency schema is incomplete"
