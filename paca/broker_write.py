@@ -8,9 +8,7 @@ SQLite/PostgreSQL authority transaction.
 
 from __future__ import annotations
 
-import math
 from collections.abc import Callable, Mapping
-from datetime import datetime
 from typing import Any
 
 from .authority import AuthorityLineage
@@ -27,8 +25,8 @@ from .contracts.broker import (
     VerifiedBrokerOperation,
 )
 from .contracts.canonical import CanonicalizationError, canonicalize, parse_json
-from .contracts.signatures import MessageAuthenticationError, MessageVerifier
-from .contracts.validation import ContractValidationError, validate_message
+from .contracts.permits import CommitPermitError, ProtocolCommitPermitVerifier
+from .contracts.signatures import MessageVerifier
 
 
 PermitResolver = Callable[[str], Mapping[str, Any]]
@@ -41,35 +39,6 @@ ProvenanceCommitCheck = Callable[
     Mapping[str, object],
 ]
 
-
-def _timestamp(value: object, field_name: str) -> float:
-    if not isinstance(value, str):
-        raise BrokerResourceDenied(f"commit permit {field_name} must be a timestamp")
-    try:
-        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
-    except ValueError as exc:
-        raise BrokerResourceDenied(
-            f"commit permit {field_name} is not a valid ISO-8601 timestamp"
-        ) from exc
-    if parsed.tzinfo is None or parsed.utcoffset() is None:
-        raise BrokerResourceDenied(
-            f"commit permit {field_name} must include a timezone"
-        )
-    return parsed.timestamp()
-
-
-def _digest_value(value: object, field_name: str) -> str:
-    if not isinstance(value, Mapping) or set(value) != {"algorithm", "value"}:
-        raise BrokerResourceDenied(f"commit permit {field_name} digest is malformed")
-    digest = value.get("value")
-    if (
-        value.get("algorithm") != "sha-256"
-        or not isinstance(digest, str)
-        or len(digest) != 64
-        or any(character not in "0123456789abcdef" for character in digest)
-    ):
-        raise BrokerResourceDenied(f"commit permit {field_name} digest is invalid")
-    return digest
 
 
 class InProcessBrokerWriteMediator:
@@ -160,6 +129,15 @@ class InProcessBrokerWriteMediator:
 
         self._operation_verifier = operation_verifier
         self._permit_verifier = permit_verifier
+        self._protocol_permit_verifier = ProtocolCommitPermitVerifier(
+            permit_verifier,
+            issuer=permit_issuer,
+            audience=permit_audience,
+            clock=clock,
+            max_lifetime_seconds=max_permit_lifetime_seconds,
+            max_message_age_seconds=300,
+            clock_skew_seconds=clock_skew_seconds,
+        )
         self._registry = registry
         self._grant_issuer = grant_issuer
         self._grant_audience = grant_audience
@@ -282,52 +260,30 @@ class InProcessBrokerWriteMediator:
                         "commit permit exceeds the configured size limit"
                     )
                 permit_message = parse_json(permit_bytes)
-                validate_message(permit_message)
-                if permit_message.get("message_type") != "paca.commit-permit.v1":
-                    raise BrokerResourceDenied(
-                        "resolved message is not a v1.0.0 commit permit"
-                    )
-                verified_permit = self._permit_verifier.verify(permit_message)
+                verified_permit = self._protocol_permit_verifier.verify(
+                    permit_message
+                )
             except BrokerResourceDenied:
                 raise
-            except (
-                CanonicalizationError,
-                ContractValidationError,
-                MessageAuthenticationError,
-                TypeError,
-                ValueError,
-            ) as exc:
+            except (CommitPermitError, CanonicalizationError, TypeError, ValueError) as exc:
                 raise BrokerResourceDenied(
-                    "commit permit failed canonical, schema or signature verification"
+                    "commit permit failed canonical, schema, signature or freshness verification"
                 ) from exc
-
-            now = self._clock()
-            if (
-                isinstance(now, bool)
-                or not isinstance(now, (int, float))
-                or not math.isfinite(now)
-            ):
-                raise BrokerResourceDenied("trusted commit-permit clock is invalid")
-            created_at = _timestamp(permit_message.get("created_at"), "created_at")
-            issued_at = _timestamp(permit_message.get("issued_at"), "issued_at")
-            expires_at = _timestamp(permit_message.get("expires_at"), "expires_at")
             if (
                 verified_permit.issuer != self._permit_issuer
                 or verified_permit.audience != self._permit_audience
-                or permit_message.get("permit_id") != permit_ref
-                or permit_message.get("grant_id") != record.authority_id
-                or permit_message.get("operation_id") != operation.operation_id
-                or not isinstance(permit_message.get("subject"), Mapping)
-                or permit_message["subject"].get("kind") != operation.principal_kind
-                or permit_message["subject"].get("id") != operation.principal_id
-                or permit_message.get("tenant_id") != operation.tenant_id
-                or permit_message.get("task_id") != operation.task_id
-                or permit_message.get("purpose") != operation.purpose
-                or permit_message.get("action") != "write_file"
-                or permit_message.get("destination") != self._destination_id
-                or permit_message.get("policy_epoch") != record.policy_epoch
-                or permit_message.get("single_use") is not True
-                or permit_message.get("idempotency_key") != operation.idempotency_key
+                or verified_permit.permit_id != permit_ref
+                or verified_permit.grant_id != record.authority_id
+                or verified_permit.operation_id != operation.operation_id
+                or verified_permit.subject_kind != operation.principal_kind
+                or verified_permit.subject_id != operation.principal_id
+                or verified_permit.tenant_id != operation.tenant_id
+                or verified_permit.task_id != operation.task_id
+                or verified_permit.purpose != operation.purpose
+                or verified_permit.action != "write_file"
+                or verified_permit.destination != self._destination_id
+                or verified_permit.policy_epoch != record.policy_epoch
+                or verified_permit.idempotency_key != operation.idempotency_key
             ):
                 raise BrokerResourceDenied(
                     "commit permit does not match grant, operation or destination"
@@ -350,33 +306,13 @@ class InProcessBrokerWriteMediator:
                     "commit permit resource/version precondition mismatch"
                 )
 
-            arguments_digest = _digest_value(
-                permit_message.get("arguments_digest"),
-                "arguments_digest",
-            )
-            payload_digest = _digest_value(
-                permit_message.get("payload_digest"),
-                "payload_digest",
-            )
             if (
-                arguments_digest != operation.intent_digest
-                or payload_digest != operation.payload_digest
+                verified_permit.arguments_digest != operation.intent_digest
+                or verified_permit.payload_digest != operation.payload_digest
             ):
                 raise BrokerResourceDenied(
                     "commit permit request/payload digest does not match the write"
                 )
-            if (
-                issued_at > now + self._clock_skew_seconds
-                or created_at > now + self._clock_skew_seconds
-                or abs(created_at - issued_at) > self._clock_skew_seconds
-                or expires_at <= now
-                or expires_at <= issued_at
-                or expires_at - issued_at > self._max_permit_lifetime_seconds
-            ):
-                raise BrokerResourceDenied(
-                    "commit permit is expired or outside the configured validity window"
-                )
-
             provenance_refs = envelope.get("provenance_refs")
             if not isinstance(provenance_refs, list) or not provenance_refs:
                 raise BrokerResourceDenied("write requires provenance references")
@@ -401,7 +337,7 @@ class InProcessBrokerWriteMediator:
             # the protocol permit issuer is independently checked above, while
             # the registry's permit.issuer field names the immutable grant issuer.
             internal_permit = VerifiedResourceCommitPermit(
-                nonce=permit_message["nonce"],
+                nonce=verified_permit.nonce,
                 issuer=record.issuer,
                 key_id=verified_permit.key_id,
                 audience=verified_permit.audience,
@@ -410,15 +346,15 @@ class InProcessBrokerWriteMediator:
                 task_id=record.task_id,
                 purpose=record.purpose,
                 policy_epoch=record.policy_epoch,
-                issued_at=int(issued_at),
-                expires_at=int(expires_at),
+                issued_at=verified_permit.issued_at,
+                expires_at=verified_permit.expires_at,
                 max_calls=record.max_calls,
                 action="write_file",
                 resource=operation.resource_id,
                 request_digest=operation.intent_digest,
                 payload_digest=operation.payload_digest,
-                permit_id=permit_message["permit_id"],
-                idempotency_key=permit_message["idempotency_key"],
+                permit_id=verified_permit.permit_id,
+                idempotency_key=verified_permit.idempotency_key,
             )
             return self._registry.commit_fenced_resource_write(
                 internal_permit,
