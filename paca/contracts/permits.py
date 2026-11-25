@@ -78,6 +78,7 @@ class ProtocolCommitPermitVerifier:
         max_lifetime_seconds: int = 30,
         max_message_age_seconds: int = 300,
         clock_skew_seconds: int = 30,
+        max_message_bytes: int = 262_144,
     ) -> None:
         if not isinstance(message_verifier, MessageVerifier):
             raise TypeError("message_verifier must be a configured MessageVerifier")
@@ -95,6 +96,12 @@ class ProtocolCommitPermitVerifier:
                 raise ValueError(f"{name} is outside the allowed range")
         if isinstance(clock_skew_seconds, bool) or not isinstance(clock_skew_seconds, int) or not 0 <= clock_skew_seconds <= 300:
             raise ValueError("clock_skew_seconds must be between 0 and 300")
+        if (
+            isinstance(max_message_bytes, bool)
+            or not isinstance(max_message_bytes, int)
+            or not 1_024 <= max_message_bytes <= 1_048_576
+        ):
+            raise ValueError("max_message_bytes must be between 1 KiB and 1 MiB")
         self._message_verifier = message_verifier
         self._issuer = issuer
         self._audience = audience
@@ -102,6 +109,7 @@ class ProtocolCommitPermitVerifier:
         self._max_lifetime_seconds = max_lifetime_seconds
         self._max_message_age_seconds = max_message_age_seconds
         self._clock_skew_seconds = clock_skew_seconds
+        self._max_message_bytes = max_message_bytes
 
     def verify(self, message: Mapping[str, Any]) -> VerifiedProtocolCommitPermit:
         """Verify schema, signature, issuer/audience scope and freshness."""
@@ -109,6 +117,10 @@ class ProtocolCommitPermitVerifier:
             raise CommitPermitError("commit permit must be an object")
         try:
             canonical_message = canonicalize(dict(message))
+            if len(canonical_message) > self._max_message_bytes:
+                raise CommitPermitError(
+                    "commit permit exceeds the configured message-size limit"
+                )
             snapshot = parse_json(canonical_message)
         except (CanonicalizationError, TypeError, ValueError) as exc:
             raise CommitPermitError("commit permit is not canonical JSON/I-JSON") from exc
