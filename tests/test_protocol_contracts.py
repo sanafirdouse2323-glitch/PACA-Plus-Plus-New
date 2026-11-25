@@ -240,7 +240,10 @@ def test_broker_mutations_require_permit_replay_binding_and_provenance(
 
         if operation == "delete":
             no_version = dict(message)
-            no_version["resource"] = {"resource_type": "file", "resource_id": "report-1"}
+            no_version["resource"] = {
+                "resource_type": "file",
+                "resource_id": "report-1",
+            }
             with pytest.raises(validation_error):
                 validator.validate(no_version)
 
