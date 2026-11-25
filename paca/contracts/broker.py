@@ -175,9 +175,7 @@ class BrokerOperationVerifier:
             or not isinstance(max_message_age_seconds, int)
             or not 1 <= max_message_age_seconds <= 86_400
         ):
-            raise ValueError(
-                "max_message_age_seconds must be between 1 and 86400"
-            )
+            raise ValueError("max_message_age_seconds must be between 1 and 86400")
         if (
             isinstance(clock_skew_seconds, bool)
             or not isinstance(clock_skew_seconds, int)
