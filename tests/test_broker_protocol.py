@@ -328,6 +328,7 @@ def test_verifier_rejects_valid_but_session_unbound_signing_key():
             expected_grant_ref="grant-001",
         )
 
+
 def test_verified_result_is_detached_from_later_caller_mutation():
     message = _message("write")
     signer, verifier, session = _verifier_and_session()
