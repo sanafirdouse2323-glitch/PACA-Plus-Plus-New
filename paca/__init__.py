@@ -19,6 +19,7 @@ from .authority_runtime import (
     VerifiedResourceCommitPermit,
 )
 from .broker import BrokerResourceDenied, InProcessBrokerReadMediator
+from .broker_write import InProcessBrokerWriteMediator
 from .compiler import compile_policy, compile_policy_source
 from .durable import (
     ImmutableLineageConflict,
@@ -74,6 +75,7 @@ __all__ = [
     "HMACAgentMessageCodec",
     "HMACCapabilityAuthority",
     "InProcessBrokerReadMediator",
+    "InProcessBrokerWriteMediator",
     "ImmutableLineageConflict",
     "Label",
     "LineageIntegrityError",
