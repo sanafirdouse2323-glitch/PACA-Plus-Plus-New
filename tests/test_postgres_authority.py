@@ -68,6 +68,7 @@ def _environment(*, max_task_calls=20):
         task_id=task_id,
         purpose="write-report",
         grants={
+            "read_file": ("/workspace/*",),
             "write_file": ("/workspace/*",),
             "mem_read": ("mem/*",),
             "mem_write": ("mem/*",),
@@ -362,3 +363,137 @@ def test_postgres_fenced_runtime_commits_through_shared_primary_registry(tmp_pat
     )
     assert row["version"] == 1
     assert row["authority_id"] == env["root"].capability.cap_id
+
+def _broker_access_receipt(
+    session_id: str,
+    operation_id: str,
+    nonce: str,
+    request_digest: str,
+    payload_digest: str | None = None,
+) -> dict[str, str]:
+    nonce_digest = hashlib.sha256(
+        b"PACA++/BROKER-NONCE/V1\\n"
+        + session_id.encode("utf-8")
+        + b"\\n"
+        + nonce.encode("utf-8")
+    ).hexdigest()
+    receipt = {
+        "session_id": session_id,
+        "nonce_digest": nonce_digest,
+        "operation_id": operation_id,
+        "request_digest": request_digest,
+    }
+    if payload_digest is not None:
+        receipt["payload_digest"] = payload_digest
+    return receipt
+
+
+def test_postgres_resource_read_and_write_receipts_are_shared_and_replay_safe():
+    from paca.authority_runtime import AuthorityRegistryError
+    from paca.contracts import digest_object
+
+    env = _environment()
+    authority_id = env["root"].capability.cap_id
+    resource = "/workspace/" + uuid.uuid4().hex + ".json"
+    payload = {"content": "postgres broker resource", "version": 1}
+    payload_digest = digest_object(payload, purpose="payload")
+    write_request_digest = digest_object(
+        {"operation_id": "write-" + uuid.uuid4().hex, "resource": resource},
+        purpose="request",
+    )
+    write_operation_id = "write-" + uuid.uuid4().hex
+    write_receipt = _broker_access_receipt(
+        "session-" + uuid.uuid4().hex,
+        write_operation_id,
+        "nonce-" + uuid.uuid4().hex,
+        write_request_digest,
+        payload_digest,
+    )
+    permit_token = env["issuer_a"].issue_resource_commit_permit(
+        env["root"].token,
+        request_digest=write_request_digest,
+        action="write_file",
+        resource=resource,
+        payload_digest=payload_digest,
+    )
+    permit = env["issuer_b"].verify_resource_commit_permit(permit_token)
+    provenance = {
+        "tenant": env["tenant"],
+        "task_id": env["task_id"],
+        "purpose": "write-report",
+        "payload_digest": payload_digest,
+        "integrity": "untrusted",
+        "sensitivity": 1,
+        "provenance_refs": ["postgres-source:v1"],
+        "evidence_digest": digest_object(
+            {"source": "postgres-source:v1", "payload_digest": payload_digest},
+            purpose="provenance",
+        ),
+    }
+
+    committed = env["registry_a"].commit_fenced_resource_write(
+        permit,
+        payload,
+        access_receipt=write_receipt,
+        provenance_metadata=provenance,
+        protocol_payload_digest=True,
+        expected_resource_version=0,
+    )
+    assert committed["version"] == 1
+
+    read_operation_id = "read-" + uuid.uuid4().hex
+    read_request_digest = digest_object(
+        {"operation_id": read_operation_id, "resource": resource},
+        purpose="request",
+    )
+    read_receipt = _broker_access_receipt(
+        "session-" + uuid.uuid4().hex,
+        read_operation_id,
+        "nonce-" + uuid.uuid4().hex,
+        read_request_digest,
+    )
+    result = env["registry_b"].read_fenced_resource(
+        authority_id=authority_id,
+        tenant=env["tenant"],
+        task_id=env["task_id"],
+        purpose="write-report",
+        resource=resource,
+        max_calls=env["root"].capability.max_calls,
+        access_receipt=read_receipt,
+        expected_resource_version=1,
+    )
+
+    assert result["found"] is True
+    assert result["value"] == payload
+    assert result["provenance_metadata"] == provenance
+    assert result["payload_digest"] == payload_digest
+    assert env["registry_a"].usage(authority_id)[0] == 2
+
+    with closing(env["registry_a"]._connect()) as connection:
+        access_rows = connection.execute(
+            "SELECT operation_id,action,outcome,payload_digest "
+            "FROM paca_resource_access_receipts "
+            "WHERE operation_id IN (?,?) ORDER BY operation_id",
+            (write_operation_id, read_operation_id),
+        ).fetchall()
+    assert len(access_rows) == 2
+    assert {row["operation_id"] for row in access_rows} == {
+        write_operation_id,
+        read_operation_id,
+    }
+    assert {row["outcome"] for row in access_rows} == {"committed", "found"}
+
+    with pytest.raises(AuthorityRegistryError, match="replay|duplicate"):
+        env["registry_a"].read_fenced_resource(
+            authority_id=authority_id,
+            tenant=env["tenant"],
+            task_id=env["task_id"],
+            purpose="write-report",
+            resource=resource,
+            max_calls=env["root"].capability.max_calls,
+            access_receipt=read_receipt,
+            expected_resource_version=1,
+        )
+
+    assert env["registry_b"].usage(authority_id)[0] == 2
+\n
