@@ -16,7 +16,7 @@ import os
 import secrets
 import sqlite3
 import time
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from contextlib import closing
 from dataclasses import dataclass
 from pathlib import Path
@@ -757,6 +757,35 @@ class SQLiteAuthorityRegistry:
                 connection.rollback()
                 raise
 
+    def commit_fenced_filesystem_write(
+        self,
+        permit: VerifiedResourceCommitPermit,
+        payload: Mapping[str, object],
+        *,
+        commit_callback: Callable[[], None],
+    ) -> dict[str, object]:
+        """Commit a real-file replacement inside the authority transaction.
+
+        Only trusted adapter code may provide this bounded callback. It runs
+        after authorization, replay and quota checks and after the logical
+        resource receipt is prepared, but before the transaction commits.
+        """
+        if not isinstance(permit, VerifiedResourceCommitPermit):
+            raise TypeError(
+                "filesystem commit requires a cryptographically verified permit"
+            )
+        if permit.action != "write_file":
+            raise AuthorityRegistryError(
+                "filesystem commit callback is restricted to write_file"
+            )
+        if not callable(commit_callback):
+            raise TypeError("filesystem commit callback must be callable")
+        return self.commit_fenced_resource_write(
+            permit,
+            payload,
+            _commit_callback=commit_callback,
+        )
+
     def commit_fenced_resource_write(
         self,
         permit: VerifiedResourceCommitPermit,
@@ -767,6 +796,7 @@ class SQLiteAuthorityRegistry:
         protocol_payload_digest: bool = False,
         expected_resource_version: int | None = None,
         expected_principal: str | None = None,
+        _commit_callback: Callable[[], None] | None = None,
     ) -> dict[str, object]:
         """Commit one resource mutation under the same transaction as revocation.
 
@@ -843,6 +873,8 @@ class SQLiteAuthorityRegistry:
                 )
         if not isinstance(payload, Mapping):
             raise TypeError("fenced resource payload must be a JSON object")
+        if _commit_callback is not None and not callable(_commit_callback):
+            raise TypeError("filesystem commit callback must be callable")
         if expected_principal is not None and (
             not isinstance(expected_principal, str) or not expected_principal
         ):
@@ -1231,6 +1263,8 @@ class SQLiteAuthorityRegistry:
                             "broker operation replay or duplicate operation ID was rejected"
                         ) from exc
 
+                if _commit_callback is not None:
+                    _commit_callback()
                 connection.commit()
                 return {
                     "tenant": record.tenant,
@@ -1516,6 +1550,26 @@ class SQLiteAuthorityRegistry:
             except Exception:
                 connection.rollback()
                 raise
+
+    def get_resource_commit_receipt(
+        self,
+        nonce: str,
+    ) -> dict[str, object] | None:
+        """Return the durable receipt used by filesystem-journal recovery."""
+        if not isinstance(nonce, str) or not nonce or len(nonce) > 256:
+            raise ValueError("resource commit nonce must be a bounded non-empty string")
+        with closing(self._connect()) as connection:
+            row = connection.execute(
+                "SELECT r.nonce,r.authority_id,r.tenant,r.task_id,r.action,r.resource_key,"
+                "r.request_digest,r.payload_digest,r.committed_at,"
+                "COALESCE(r.result_version,v.version) AS version "
+                "FROM paca_resource_commit_receipts r "
+                "LEFT JOIN paca_resource_values v ON v.commit_nonce=r.nonce "
+                "WHERE r.nonce=?",
+                (nonce,),
+            ).fetchone()
+        # Prefer the immutable schema-v7 result version to a mutable current-value join.
+        return dict(row) if row is not None else None
 
     def has_message_receipt(
         self,
