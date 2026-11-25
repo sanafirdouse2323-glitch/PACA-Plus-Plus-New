@@ -65,8 +65,13 @@ def _seed_resource(registry, authority, signed):
         payload_digest=payload_digest,
     )
     permit = authority.verify_resource_commit_permit(permit_token)
-    registry.commit_fenced_resource_write(permit, payload)
-    return resource, payload
+    provenance = {"classification": "internal", "source": "trusted-adapter"}
+    registry.commit_fenced_resource_write(
+        permit,
+        payload,
+        provenance_metadata=provenance,
+    )
+    return resource, payload, provenance
 
 
 def _receipt(operation_id: str):
@@ -118,7 +123,7 @@ def test_fenced_write_can_bind_commit_to_authenticated_principal(tmp_path):
 
 def test_fenced_read_binds_principal_and_rejects_mismatch_without_receipt(tmp_path):
     registry, authority, signed = _environment(tmp_path)
-    resource, _ = _seed_resource(registry, authority, signed)
+    resource, _, _ = _seed_resource(registry, authority, signed)
     used_before = registry.usage(signed.capability.cap_id)[0]
 
     with pytest.raises(AuthorityRegistryError, match="session does not match"):
@@ -142,9 +147,13 @@ def test_fenced_read_enforces_actual_disclosure_size_before_receipt_and_quota(
     tmp_path,
 ):
     registry, authority, signed = _environment(tmp_path)
-    resource, payload = _seed_resource(registry, authority, signed)
+    resource, payload, provenance = _seed_resource(registry, authority, signed)
     used_before = registry.usage(signed.capability.cap_id)[0]
     receipt = _receipt("bounded-read")
+    response_bytes = canonical_value_bytes(
+        {"value": payload, "provenance_metadata": provenance}
+    )
+    byte_limit = len(response_bytes) - 1
 
     with pytest.raises(AuthorityRegistryError, match="disclosure byte limit"):
         registry.read_fenced_resource(
@@ -156,7 +165,7 @@ def test_fenced_read_enforces_actual_disclosure_size_before_receipt_and_quota(
             max_calls=20,
             access_receipt=receipt,
             expected_principal="agent-a",
-            max_bytes=1,
+            max_bytes=byte_limit,
         )
 
     assert registry.usage(signed.capability.cap_id)[0] == used_before
@@ -171,8 +180,9 @@ def test_fenced_read_enforces_actual_disclosure_size_before_receipt_and_quota(
         max_calls=20,
         access_receipt=receipt,
         expected_principal="agent-a",
-        max_bytes=4096,
+        max_bytes=byte_limit + 1,
     )
     assert result["found"] is True
     assert result["value"] == payload
+    assert result["provenance_metadata"] == provenance
     assert _access_receipt_count(registry) == 1
