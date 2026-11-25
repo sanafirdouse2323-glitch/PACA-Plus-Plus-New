@@ -140,7 +140,8 @@ The reference core now exposes `BrokerSessionContext`, `BrokerOperationVerifier`
 5. Requires the request's grant reference to match the grant reference resolved by the caller.
 6. Recomputes the request-intent digest after removing exactly `proof` and `commit_permit_ref`.
 7. Recomputes the domain-separated payload digest when a payload is present.
-8. Derives the registry-compatible nonce digest and exposes an access-receipt builder for the existing transactional resource registry. The verified result also retains the detached canonical signed message bytes for downstream trusted mediation.
+8. Enforces configured canonical-message and requested-read-size ceilings. The defaults are 1 MiB each; configured ceilings cannot exceed 16 MiB per message or 64 MiB per requested read.
+9. Derives the registry-compatible nonce digest and exposes an access-receipt builder for the existing transactional resource registry. The verified result also retains the detached canonical signed message bytes for downstream trusted mediation.
 
 `BrokerSessionContext` is a trusted hand-off value, not an authentication mechanism. A transport adapter must authenticate the peer and derive the channel-binding digest from the live transport before constructing it. Principal, workload, tenant, task and purpose values must come from that trusted session/identity context, never from the worker's broker-operation body.
 
@@ -150,7 +151,7 @@ The verifier is intentionally stateless and does not:
 - resolve a grant, check its current status, delegation chain, policy epoch, scope or quota;
 - resolve or release provenance evidence;
 - authenticate or consume a commit permit;
-- enforce `read_constraints.max_bytes` against returned resource bytes;
+- enforce `read_constraints.max_bytes` against the actual returned resource bytes (the verifier checks the requested bound, but the resource adapter must enforce it on the result);
 - access a database, filesystem, memory store or external provider; or
 - execute a broker operation.
 
