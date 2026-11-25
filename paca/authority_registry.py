@@ -91,9 +91,7 @@ def _record_from_dict(data: Mapping[str, object]) -> AuthorityLineage:
             or max_calls < 1
         ):
             raise ValueError("max_calls is invalid")
-        if audience is not None and (
-            not isinstance(audience, str) or not audience
-        ):
+        if audience is not None and (not isinstance(audience, str) or not audience):
             raise ValueError("audience is invalid")
         return AuthorityLineage.create(
             authority_id=str(data["authority_id"]),
@@ -883,10 +881,7 @@ class SQLiteAuthorityRegistry:
                     raise AuthorityRegistryError(
                         "resource commit permit does not match the active authority record"
                     )
-                if (
-                    record.max_calls is not None
-                    and permit.max_calls > record.max_calls
-                ):
+                if record.max_calls is not None and permit.max_calls > record.max_calls:
                     raise AuthorityRegistryError(
                         "resource commit permit exceeds the persisted capability call limit"
                     )
