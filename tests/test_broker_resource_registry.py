@@ -196,3 +196,26 @@ def test_fenced_read_enforces_actual_disclosure_size_before_receipt_and_quota(
     assert result["value"] == payload
     assert result["provenance_metadata"] == provenance
     assert _access_receipt_count(registry) == 1
+
+
+
+def test_authority_record_persists_and_enforces_per_capability_call_ceiling(
+    tmp_path,
+):
+    registry, _, signed = _environment(tmp_path)
+    authority_id = signed.capability.cap_id
+
+    record = registry.get_authority(authority_id)
+    assert record is not None
+    assert record.max_calls == 20
+    assert record.as_dict()["max_calls"] == 20
+
+    # A caller cannot raise the durable per-capability limit by supplying a
+    # larger max_calls argument to a generic registry operation.
+    for _ in range(20):
+        registry.consume_effect(authority_id, max_calls=10_000)
+
+    with pytest.raises(AuthorityRegistryError, match="call budget is exhausted"):
+        registry.consume_effect(authority_id, max_calls=10_000)
+
+    assert registry.usage(authority_id)[0] == 20
