@@ -523,6 +523,22 @@ class SQLiteAuthorityRegistry:
                         raise AuthorityRegistryError(
                             "delegation requires the authenticated parent call budget"
                         )
+                    parent_record = graph.get(record.parent_id)
+                    if (
+                        parent_record is not None
+                        and parent_record.max_calls is not None
+                        and parent_max_calls != parent_record.max_calls
+                    ):
+                        raise AuthorityRegistryError(
+                            "delegation parent call limit differs from its immutable authority record"
+                        )
+                    if (
+                        record.max_calls is not None
+                        and record.max_calls > parent_max_calls
+                    ):
+                        raise AuthorityRegistryError(
+                            "delegated call limit exceeds the authenticated parent limit"
+                        )
                     usage = connection.execute(
                         "SELECT calls_used FROM authority_usage WHERE authority_id=?",
                         (record.parent_id,),
@@ -635,6 +651,8 @@ class SQLiteAuthorityRegistry:
                         "durable capability usage state is missing"
                     )
                 used = int(row["calls_used"])
+                if record.max_calls is not None:
+                    max_calls = min(max_calls, record.max_calls)
                 if used >= max_calls:
                     raise AuthorityRegistryError("capability call budget is exhausted")
 
@@ -858,6 +876,13 @@ class SQLiteAuthorityRegistry:
                 ):
                     raise AuthorityRegistryError(
                         "resource commit permit does not match the active authority record"
+                    )
+                if (
+                    record.max_calls is not None
+                    and permit.max_calls > record.max_calls
+                ):
+                    raise AuthorityRegistryError(
+                        "resource commit permit exceeds the persisted capability call limit"
                     )
                 patterns = dict(record.grants).get(permit.action, ())
                 if not any(
@@ -1125,6 +1150,8 @@ class SQLiteAuthorityRegistry:
                     raise AuthorityRegistryError(
                         "resource read session does not match the active authority"
                     )
+                if record.max_calls is not None:
+                    max_calls = min(max_calls, record.max_calls)
                 patterns = dict(record.grants).get("read_file", ())
                 if not any(
                     grant_pattern_is_subset(resource, pattern) for pattern in patterns
