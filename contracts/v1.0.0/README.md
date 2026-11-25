@@ -154,7 +154,7 @@ The verifier is intentionally stateless and does not:
 - access a database, filesystem, memory store or external provider; or
 - execute a broker operation.
 
-For `delete`, the schema carries a digest of the canonical deletion intent but no payload object; the verifier therefore preserves that digest for later comparison with the separately authenticated commit permit rather than pretending it can recompute it. The verifier returns structured request facts only. A caller MUST NOT treat `VerifiedBrokerOperation` as an authorization decision or permit resource access based on it alone.
+For `delete`, the schema carries a digest of the canonical deletion intent but no payload object; the verifier therefore preserves that digest for later comparison with the separately authenticated commit permit rather than pretending it can recompute it. The verifier returns immutable structured request facts together with the detached canonical signed message bytes. A caller MUST NOT treat `VerifiedBrokerOperation` as an authorization decision or permit resource access based on it alone.
 
 This increment is a protocol-verification primitive, not the broker process/IPC boundary. A production-facing ingress still needs authenticated transport/session establishment, authoritative grant and provenance checks, persistent replay protection, a resource PEP, commit-time revalidation, bounded read disclosure and adversarial bypass tests.
 
