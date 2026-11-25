@@ -326,7 +326,6 @@ def test_broker_enforces_actual_response_size_without_charging_on_failure(tmp_pa
     assert env["registry"].usage(env["grant"].capability.cap_id)[0] == 1
 
 
-
 def test_broker_rechecks_revocation_after_provenance_release_callback(tmp_path):
     env = _environment(tmp_path)
 
@@ -339,7 +338,9 @@ def test_broker_rechecks_revocation_after_provenance_release_callback(tmp_path):
 
     env["mediator"]._provenance_release_check = revoke_during_release
 
-    with pytest.raises(BrokerResourceDenied, match="verification or authority enforcement"):
+    with pytest.raises(
+        BrokerResourceDenied, match="verification or authority enforcement"
+    ):
         env["mediator"].read(_read_message(env), session=env["session"])
 
     # The logical read already linearized and its receipt/budget remain consumed,
