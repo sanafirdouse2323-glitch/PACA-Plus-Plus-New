@@ -138,9 +138,9 @@ def test_verifier_accepts_signed_operation_bound_to_authenticated_session():
     assert verified.intent_digest == digest_object(intent, purpose="request")
     assert verified.commit_permit_ref == "permit-001"
     expected_nonce_digest = hashlib.sha256(
-        b"PACA++/BROKER-NONCE/V1\\n"
+        b"PACA++/BROKER-NONCE/V1\n"
         + session.session_id.encode("utf-8")
-        + b"\\n"
+        + b"\n"
         + message["request_nonce"].encode("utf-8")
     ).hexdigest()
     assert verified.nonce_digest == expected_nonce_digest
