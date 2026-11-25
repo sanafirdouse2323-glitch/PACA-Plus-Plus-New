@@ -115,9 +115,13 @@ class InProcessBrokerWriteMediator:
         if not isinstance(operation_verifier, BrokerOperationVerifier):
             raise TypeError("operation_verifier must be a BrokerOperationVerifier")
         if not isinstance(permit_verifier, MessageVerifier):
-            raise TypeError("permit_verifier must be a separately configured MessageVerifier")
+            raise TypeError(
+                "permit_verifier must be a separately configured MessageVerifier"
+            )
         if not isinstance(registry, SQLiteAuthorityRegistry):
-            raise TypeError("registry must implement the PACA authority registry contract")
+            raise TypeError(
+                "registry must implement the PACA authority registry contract"
+            )
         for name, value in (
             ("grant_issuer", grant_issuer),
             ("grant_audience", grant_audience),
@@ -126,7 +130,9 @@ class InProcessBrokerWriteMediator:
             ("destination_id", destination_id),
         ):
             if not isinstance(value, str) or not value:
-                raise ValueError(f"{name} must be a non-empty trusted configuration value")
+                raise ValueError(
+                    f"{name} must be a non-empty trusted configuration value"
+                )
         if not callable(permit_resolver):
             raise TypeError("permit_resolver must be a trusted callable")
         if not callable(provenance_commit_check):
@@ -188,12 +194,16 @@ class InProcessBrokerWriteMediator:
             )
             if operation.operation != "write" or operation.resource_type != "file":
                 raise BrokerResourceDenied(
-                    "this mediator supports write operations for local file resources only"
+                    "this mediator supports local file writes only"
                 )
             if operation.payload_digest is None:
-                raise BrokerResourceDenied("write operation has no verified payload digest")
+                raise BrokerResourceDenied(
+                    "write operation has no verified payload digest"
+                )
             if operation.resource_version_id is None:
-                raise BrokerResourceDenied("local write requires a resource version precondition")
+                raise BrokerResourceDenied(
+                    "local write requires a resource version precondition"
+                )
             if operation.idempotency_key is None:
                 raise BrokerResourceDenied("write operation has no idempotency key")
             if operation.idempotency_key != operation.operation_id:
@@ -222,7 +232,7 @@ class InProcessBrokerWriteMediator:
                 ) from exc
             if expected_version < 0 or str(expected_version) != resource_version:
                 raise BrokerResourceDenied(
-                    "local resource version must use canonical non-negative decimal notation"
+                    "local resource version must use canonical decimal notation"
                 )
 
             record = self._registry.assert_active(operation.authorization_grant_ref)
@@ -235,7 +245,7 @@ class InProcessBrokerWriteMediator:
                 or record.purpose != operation.purpose
             ):
                 raise BrokerResourceDenied(
-                    "resolved grant does not match trusted issuer, audience or session identity"
+                    "resolved grant does not match trusted issuer, audience or identity"
                 )
             if record.max_calls is None:
                 raise BrokerResourceDenied(
@@ -244,22 +254,32 @@ class InProcessBrokerWriteMediator:
 
             permit_ref = operation.commit_permit_ref
             if not isinstance(permit_ref, str) or not permit_ref:
-                raise BrokerResourceDenied("write operation has no commit permit reference")
+                raise BrokerResourceDenied(
+                    "write operation has no commit permit reference"
+                )
             try:
                 permit_message_input = self._permit_resolver(permit_ref)
             except Exception as exc:
-                raise BrokerResourceDenied("trusted commit-permit resolution failed") from exc
+                raise BrokerResourceDenied(
+                    "trusted commit-permit resolution failed"
+                ) from exc
             if not isinstance(permit_message_input, Mapping):
-                raise BrokerResourceDenied("commit-permit resolver returned a non-object")
+                raise BrokerResourceDenied(
+                    "commit-permit resolver returned a non-object"
+                )
 
             try:
                 permit_bytes = canonicalize(dict(permit_message_input))
                 if len(permit_bytes) > self._max_permit_bytes:
-                    raise BrokerResourceDenied("commit permit exceeds the configured size limit")
+                    raise BrokerResourceDenied(
+                        "commit permit exceeds the configured size limit"
+                    )
                 permit_message = parse_json(permit_bytes)
                 validate_message(permit_message)
                 if permit_message.get("message_type") != "paca.commit-permit.v1":
-                    raise BrokerResourceDenied("resolved message is not a v1.0.0 commit permit")
+                    raise BrokerResourceDenied(
+                        "resolved message is not a v1.0.0 commit permit"
+                    )
                 verified_permit = self._permit_verifier.verify(permit_message)
             except BrokerResourceDenied:
                 raise
@@ -302,7 +322,7 @@ class InProcessBrokerWriteMediator:
                 or permit_message.get("idempotency_key") != operation.idempotency_key
             ):
                 raise BrokerResourceDenied(
-                    "commit permit does not match trusted grant, operation or destination"
+                    "commit permit does not match grant, operation or destination"
                 )
 
             permit_resource = permit_message.get("resource")
@@ -314,10 +334,11 @@ class InProcessBrokerWriteMediator:
                 or permit_resource.get("version_id") != resource_version
                 or permit_resource.get("provider") is not None
                 or permit_resource.get("precondition_digest") is not None
-                or permit_message.get("resource_version_precondition") != resource_version
+                or permit_message.get("resource_version_precondition")
+                != resource_version
             ):
                 raise BrokerResourceDenied(
-                    "commit permit resource or version precondition does not match the write"
+                    "commit permit resource/version precondition mismatch"
                 )
 
             arguments_digest = _digest_value(
@@ -333,7 +354,7 @@ class InProcessBrokerWriteMediator:
                 or payload_digest != operation.payload_digest
             ):
                 raise BrokerResourceDenied(
-                    "commit permit request or payload digest does not match the signed write"
+                    "commit permit request/payload digest does not match the write"
                 )
             if (
                 issued_at > now + self._clock_skew_seconds
