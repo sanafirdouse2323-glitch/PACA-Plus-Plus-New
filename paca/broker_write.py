@@ -128,7 +128,6 @@ class InProcessBrokerWriteMediator:
             raise ValueError("clock_skew_seconds must be between 0 and 300")
 
         self._operation_verifier = operation_verifier
-        self._permit_verifier = permit_verifier
         self._protocol_permit_verifier = ProtocolCommitPermitVerifier(
             permit_verifier,
             issuer=permit_issuer,
@@ -146,10 +145,7 @@ class InProcessBrokerWriteMediator:
         self._destination_id = destination_id
         self._permit_resolver = permit_resolver
         self._provenance_commit_check = provenance_commit_check
-        self._clock = clock
         self._max_permit_bytes = max_permit_bytes
-        self._max_permit_lifetime_seconds = max_permit_lifetime_seconds
-        self._clock_skew_seconds = clock_skew_seconds
 
     def write(
         self,
@@ -371,8 +367,7 @@ class InProcessBrokerWriteMediator:
             BrokerOperationError,
             AuthorityRegistryError,
             CanonicalizationError,
-            ContractValidationError,
-            MessageAuthenticationError,
+            CommitPermitError,
             KeyError,
             TypeError,
             ValueError,
