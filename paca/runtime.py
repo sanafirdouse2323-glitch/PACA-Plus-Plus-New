@@ -144,6 +144,7 @@ class Capability:
                 grants=self.grants,
                 expires=self.expires,
                 parent_id=self.parent,
+                max_calls=self.max_calls,
             )
 
 
