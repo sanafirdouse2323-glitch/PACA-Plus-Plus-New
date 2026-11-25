@@ -257,6 +257,95 @@ def test_ed25519_message_key_is_scoped_to_issuer_audience_and_type() -> None:
         verifier.verify(signed)
 
 
+def test_trusted_message_key_copies_mutable_scopes() -> None:
+    from paca.contracts import TrustedMessageKey
+
+    private_key = Ed25519PrivateKey.generate()
+    audiences = {"paca-core"}
+    message_types = {"paca.identity-context.v1"}
+    trusted = TrustedMessageKey(
+        public_key=private_key.public_key(),
+        issuer="identity-authority",
+        audiences=audiences,
+        message_types=message_types,
+    )
+
+    audiences.add("untrusted-audience")
+    message_types.add("paca.broker-operation.v1")
+
+    assert trusted.audiences == frozenset({"paca-core"})
+    assert trusted.message_types == frozenset({"paca.identity-context.v1"})
+
+
+def test_message_verifier_rejects_unhashable_scope_fields() -> None:
+    from paca.contracts import (
+        MessageAuthenticationError,
+        MessageSigner,
+        MessageVerifier,
+        TrustedMessageKey,
+    )
+
+    private_key = Ed25519PrivateKey.generate()
+    signed = MessageSigner(
+        key_id="key-1",
+        issuer="identity-authority",
+        audiences=frozenset({"paca-core"}),
+        private_key=private_key,
+    ).sign(_base_message())
+    verifier = MessageVerifier(
+        {
+            "key-1": TrustedMessageKey(
+                public_key=private_key.public_key(),
+                issuer="identity-authority",
+                audiences=frozenset({"paca-core"}),
+                message_types=frozenset({"paca.identity-context.v1"}),
+            )
+        }
+    )
+
+    for field in ("audience", "message_type"):
+        malformed = dict(signed)
+        malformed[field] = []
+        with pytest.raises(MessageAuthenticationError):
+            verifier.verify(malformed)
+
+
+def test_message_verifier_rejects_noncanonical_base64url_signature() -> None:
+    from paca.contracts import (
+        MessageAuthenticationError,
+        MessageSigner,
+        MessageVerifier,
+        TrustedMessageKey,
+    )
+
+    private_key = Ed25519PrivateKey.generate()
+    signed = MessageSigner(
+        key_id="key-1",
+        issuer="identity-authority",
+        audiences=frozenset({"paca-core"}),
+        private_key=private_key,
+    ).sign(_base_message())
+    verifier = MessageVerifier(
+        {
+            "key-1": TrustedMessageKey(
+                public_key=private_key.public_key(),
+                issuer="identity-authority",
+                audiences=frozenset({"paca-core"}),
+                message_types=frozenset({"paca.identity-context.v1"}),
+            )
+        }
+    )
+
+    alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
+    proof = signed["proof"]
+    encoded = proof["signature"]
+    last_index = alphabet.index(encoded[-1])
+    proof["signature"] = encoded[:-1] + alphabet[last_index + 1]
+
+    with pytest.raises(MessageAuthenticationError):
+        verifier.verify(signed)
+
+
 def test_message_signer_rejects_preexisting_proof_and_wrong_audience() -> None:
     from paca.contracts import MessageSigner
 
