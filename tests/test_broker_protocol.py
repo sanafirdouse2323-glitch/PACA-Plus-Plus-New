@@ -4,12 +4,6 @@ import pytest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 from paca.contracts import (
-    MessageSigner,
-    MessageVerifier,
-    TrustedMessageKey,
-    digest_object,
-)
-from paca.contracts.broker import (
     BrokerOperationError,
     BrokerOperationVerifier,
     BrokerSessionContext,
@@ -18,7 +12,6 @@ from paca.contracts.broker import (
     TrustedMessageKey,
     digest_object,
 )
-
 
 MESSAGE_TYPE = "paca.broker-operation.v1"
 ISSUER = "worker-issuer"
