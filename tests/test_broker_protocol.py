@@ -380,7 +380,11 @@ def test_verifier_rejects_read_bound_above_configured_disclosure_limit():
     signed = signer.sign(message)
 
     with pytest.raises(BrokerOperationError, match="disclosure limit"):
-        BrokerOperationVerifier(verifier, max_read_bytes=4096).verify(
+        BrokerOperationVerifier(
+            verifier,
+            max_read_bytes=4096,
+            clock=lambda: TEST_NOW,
+        ).verify(
             signed,
             session=session,
             expected_grant_ref="grant-001",
