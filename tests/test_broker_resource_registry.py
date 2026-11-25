@@ -198,7 +198,6 @@ def test_fenced_read_enforces_actual_disclosure_size_before_receipt_and_quota(
     assert _access_receipt_count(registry) == 1
 
 
-
 def test_authority_record_persists_and_enforces_per_capability_call_ceiling(
     tmp_path,
 ):
