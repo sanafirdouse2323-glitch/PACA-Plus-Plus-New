@@ -317,6 +317,7 @@ class InProcessBrokerWriteMediator:
                 or permit_message.get("grant_id") != record.authority_id
                 or permit_message.get("operation_id") != operation.operation_id
                 or not isinstance(permit_message.get("subject"), Mapping)
+                or permit_message["subject"].get("kind") != operation.principal_kind
                 or permit_message["subject"].get("id") != operation.principal_id
                 or permit_message.get("tenant_id") != operation.tenant_id
                 or permit_message.get("task_id") != operation.task_id
