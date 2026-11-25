@@ -9,8 +9,9 @@ execute operations. Those responsibilities remain separate enforcement layers.
 from __future__ import annotations
 
 import re
+from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Any, Mapping
+from typing import Any
 
 from .canonical import digest_object
 from .signatures import MessageAuthenticationError, MessageVerifier
