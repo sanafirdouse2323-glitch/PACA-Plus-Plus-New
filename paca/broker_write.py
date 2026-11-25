@@ -261,9 +261,11 @@ class InProcessBrokerWriteMediator:
                 )
             except BrokerResourceDenied:
                 raise
-            except (CommitPermitError, CanonicalizationError, TypeError, ValueError) as exc:
+            except CommitPermitError as exc:
+                raise BrokerResourceDenied(str(exc)) from exc
+            except (CanonicalizationError, TypeError, ValueError) as exc:
                 raise BrokerResourceDenied(
-                    "commit permit failed canonical, schema, signature or freshness verification"
+                    "commit permit failed canonicalization or parsing"
                 ) from exc
             if (
                 verified_permit.issuer != self._permit_issuer
@@ -336,7 +338,9 @@ class InProcessBrokerWriteMediator:
                 nonce=verified_permit.nonce,
                 issuer=record.issuer,
                 key_id=verified_permit.key_id,
-                audience=verified_permit.audience,
+                # The registry projection uses the grant audience; the distinct
+                # protocol PEP audience was independently checked above.
+                audience=record.audience or "",
                 authority_id=record.authority_id,
                 tenant=record.tenant,
                 task_id=record.task_id,
