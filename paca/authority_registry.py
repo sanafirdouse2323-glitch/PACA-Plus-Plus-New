@@ -675,6 +675,7 @@ class SQLiteAuthorityRegistry:
         provenance_metadata: Mapping[str, object] | None = None,
         protocol_payload_digest: bool = False,
         expected_resource_version: int | None = None,
+        expected_principal: str | None = None,
     ) -> dict[str, object]:
         """Commit one resource mutation under the same transaction as revocation.
 
@@ -737,6 +738,10 @@ class SQLiteAuthorityRegistry:
                 )
         if not isinstance(payload, Mapping):
             raise TypeError("fenced resource payload must be a JSON object")
+        if expected_principal is not None and (
+            not isinstance(expected_principal, str) or not expected_principal
+        ):
+            raise ValueError("expected_principal must be a non-empty string or None")
         if not isinstance(protocol_payload_digest, bool):
             raise TypeError("protocol_payload_digest must be a boolean")
         if expected_resource_version is not None and (
@@ -836,6 +841,10 @@ class SQLiteAuthorityRegistry:
                     or record.task_id != permit.task_id
                     or record.purpose != permit.purpose
                     or record.policy_epoch != permit.policy_epoch
+                    or (
+                        expected_principal is not None
+                        and record.principal != expected_principal
+                    )
                 ):
                     raise AuthorityRegistryError(
                         "resource commit permit does not match the active authority record"
@@ -1015,6 +1024,8 @@ class SQLiteAuthorityRegistry:
         max_calls: int,
         access_receipt: Mapping[str, object],
         expected_resource_version: int | None = None,
+        expected_principal: str | None = None,
+        max_bytes: int | None = None,
     ) -> dict[str, object]:
         """Read one logical resource under current authority and replay state.
 
@@ -1045,6 +1056,16 @@ class SQLiteAuthorityRegistry:
             or expected_resource_version < 0
         ):
             raise ValueError("expected_resource_version must be a non-negative integer")
+        if expected_principal is not None and (
+            not isinstance(expected_principal, str) or not expected_principal
+        ):
+            raise ValueError("expected_principal must be a non-empty string or None")
+        if max_bytes is not None and (
+            isinstance(max_bytes, bool)
+            or not isinstance(max_bytes, int)
+            or max_bytes < 1
+        ):
+            raise ValueError("max_bytes must be a positive integer or None")
         required_receipt_fields = {
             "session_id",
             "nonce_digest",
@@ -1083,6 +1104,10 @@ class SQLiteAuthorityRegistry:
                     record.tenant != tenant
                     or record.task_id != task_id
                     or record.purpose != purpose
+                    or (
+                        expected_principal is not None
+                        and record.principal != expected_principal
+                    )
                 ):
                     raise AuthorityRegistryError(
                         "resource read session does not match the active authority"
@@ -1182,6 +1207,23 @@ class SQLiteAuthorityRegistry:
                         "provenance_metadata": metadata,
                     }
                     outcome = "found"
+
+                # Enforce the requested disclosure ceiling against the actual
+                # canonical resource value and provenance metadata, not merely
+                # the caller-supplied max_bytes field. This check happens before
+                # receipt insertion and quota charging; failure rolls back the
+                # transaction without disclosing any bytes.
+                if max_bytes is not None:
+                    disclosed = _canonical(
+                        {
+                            "value": result["value"],
+                            "provenance_metadata": result["provenance_metadata"],
+                        }
+                    )
+                    if len(disclosed) > max_bytes:
+                        raise AuthorityRegistryError(
+                            "resource read exceeds the requested disclosure byte limit"
+                        )
 
                 try:
                     connection.execute(
