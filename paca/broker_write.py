@@ -417,6 +417,8 @@ class InProcessBrokerWriteMediator:
                 resource=operation.resource_id,
                 request_digest=operation.intent_digest,
                 payload_digest=operation.payload_digest,
+                permit_id=permit_message["permit_id"],
+                idempotency_key=permit_message["idempotency_key"],
             )
             return self._registry.commit_fenced_resource_write(
                 internal_permit,
