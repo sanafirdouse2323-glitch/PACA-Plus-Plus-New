@@ -219,7 +219,10 @@ def test_broker_rejects_principal_mismatch_before_resource_access(tmp_path):
         purpose=PURPOSE,
     )
 
-    with pytest.raises(BrokerResourceDenied, match="trusted issuer"):
+    with pytest.raises(
+        BrokerResourceDenied,
+        match="verification or authority enforcement",
+    ):
         env["mediator"].read(_read_message(env), session=session)
 
     assert _access_receipts(env["registry"]) == 0
