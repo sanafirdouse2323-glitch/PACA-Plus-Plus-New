@@ -9,6 +9,7 @@ authorization or a host kernel/container-runtime security review.
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import hashlib
 import hmac
@@ -396,6 +397,9 @@ class DockerSandbox:
 class DockerSandboxExecutor:
     """Adapt a trusted action-to-command registry to PACA's executor callback.
 
+    Configuration is sealed after construction so a runtime that requires this
+    concrete executor cannot have its runner or command map replaced afterwards.
+
     Only action name, argument values and the pinned tool manifest are sent to
     the worker. No capability token, grant set, authority record, signing key,
     registry handle or provider credential is serialized into the container.
@@ -403,12 +407,18 @@ class DockerSandboxExecutor:
     still pass through a separate resource-side commit authorization gate.
     """
 
+    def __setattr__(self, name: str, value: Any) -> None:
+        if getattr(self, "_sealed", False):
+            raise AttributeError("DockerSandboxExecutor configuration is immutable")
+        object.__setattr__(self, name, value)
+
     def __init__(
         self,
         sandbox: DockerSandbox,
         *,
         commands: Mapping[str, Sequence[str]],
     ) -> None:
+        object.__setattr__(self, "_sealed", False)
         if not callable(getattr(sandbox, "run", None)):
             raise TypeError(
                 "sandbox must provide a callable run(argv, input_data) method"
@@ -428,6 +438,7 @@ class DockerSandboxExecutor:
         # Prevent runtime mutation of the trusted action-to-command map. The
         # implementation-digest check also detects changed sandbox configuration.
         self.commands = MappingProxyType(normalized)
+        object.__setattr__(self, "_sealed", True)
 
     def __call__(self, request: Any) -> Any:
         from .provenance import Arg
@@ -525,6 +536,14 @@ class DockerSandboxExecutor:
                 "isolated worker returned an invalid result envelope"
             )
         return response["result"]
+
+    async def aexecute(self, request: Any) -> Any:
+        """Execute this worker through a non-blocking async runtime adapter.
+
+        Docker's CLI call is blocking, so it is moved to a worker thread. The
+        same synchronous validation, digest check and result parsing are used.
+        """
+        return await asyncio.to_thread(self.__call__, request)
 
 
 __all__ = [
