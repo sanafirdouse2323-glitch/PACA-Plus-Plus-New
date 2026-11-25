@@ -129,13 +129,7 @@ For `paca.broker-operation.v1`, compute the permit request digest from the compl
 
 The worker's Ed25519 signature covers the full message including `commit_permit_ref`. The commit permit is separately signed by the capability issuer and binds the operation-intent digest and payload digest. The broker verifies both signatures and all cross-bindings. A permit reference cannot be swapped without invalidating the worker signature.
 
-## 13. Reference broker-operation verifier## 14. Legacy authority-registry integration boundary
-
-The existing local authority registry uses `AuthorityLineage` records rather than the v1.0.0 `authorization-grant` message as its persisted grant format. Newly issued legacy capabilities now include the immutable per-capability `max_calls` value and grant audience in their stored authority record; registry effect, message, read and commit operations cap caller-supplied limits against that stored ceiling. Delegated records cannot exceed a persisted parent's ceiling or change its audience.
-
-Historical authority records without `max_calls` or `audience` remain readable and verifiable without changing their canonical bytes or parent-chain digests. Their historical per-capability ceiling and grant audience are not reconstructed from an untrusted broker request. A broker resolver MUST fail closed when the referenced record omits either field. These additive record fields do not implement the v1.0.0 grant schema, typed protocol predicates, protocol grant usage-limit counters, OIDC identity, or protocol commit-permit verification.
-
-
+## 13. Reference broker-operation verifier
 
 The reference core now exposes `BrokerSessionContext`, `BrokerOperationVerifier` and `VerifiedBrokerOperation` from `paca.contracts`. The verifier performs the following checks on a v1.0.0 broker-operation message:
 
@@ -168,6 +162,12 @@ For `delete`, the schema carries a digest of the canonical deletion intent but n
 This increment is a protocol-verification primitive, not the broker process/IPC boundary. A production-facing ingress still needs authenticated transport/session establishment, authoritative grant and provenance checks, persistent replay protection, a resource PEP, commit-time revalidation, bounded read disclosure and adversarial bypass tests.
 
 
+
+## 14. Legacy authority-registry integration boundary
+
+The existing local authority registry uses `AuthorityLineage` records rather than the v1.0.0 `authorization-grant` message as its persisted grant format. Newly issued legacy capabilities now include the immutable per-capability `max_calls` value and grant audience in their stored authority record; registry effect, message, read and commit operations cap caller-supplied limits against that stored ceiling. Delegated records cannot exceed a persisted parent's ceiling or change its audience.
+
+Historical authority records without `max_calls` or `audience` remain readable and verifiable without changing their canonical bytes or parent-chain digests. Their historical per-capability ceiling and grant audience are not reconstructed from an untrusted broker request. A broker resolver MUST fail closed when the referenced record omits either field. These additive record fields do not implement the v1.0.0 grant schema, typed protocol predicates, protocol grant usage-limit counters, OIDC identity, or protocol commit-permit verification.
 
 ## 15. In-process broker read mediator
 
