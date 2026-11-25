@@ -117,9 +117,12 @@ def test_fenced_write_can_bind_commit_to_authenticated_principal(tmp_path):
 
     assert registry.usage(signed.capability.cap_id)[0] == 0
     with sqlite3.connect(registry.database) as connection:
-        assert connection.execute(
-            "SELECT COUNT(*) FROM paca_resource_values"
-        ).fetchone()[0] == 0
+        assert (
+            connection.execute("SELECT COUNT(*) FROM paca_resource_values").fetchone()[
+                0
+            ]
+            == 0
+        )
 
 
 def test_fenced_read_binds_principal_and_rejects_mismatch_without_receipt(tmp_path):
