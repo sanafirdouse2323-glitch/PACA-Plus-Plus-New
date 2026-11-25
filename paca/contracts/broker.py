@@ -63,9 +63,8 @@ class BrokerSessionContext:
             value = getattr(self, field_name)
             if not isinstance(value, str) or not value:
                 raise ValueError(f"{field_name} must be a non-empty string")
-        if (
-            not isinstance(self.channel_binding_digest, str)
-            or not _SHA256_RE.fullmatch(self.channel_binding_digest)
+        if not isinstance(self.channel_binding_digest, str) or not _SHA256_RE.fullmatch(
+            self.channel_binding_digest
         ):
             raise ValueError(
                 "channel_binding_digest must be a lowercase SHA-256 hex digest"
@@ -152,7 +151,9 @@ class BrokerOperationVerifier:
         try:
             validate_message(snapshot)
         except ContractValidationError as exc:
-            raise BrokerOperationError("broker operation schema validation failed") from exc
+            raise BrokerOperationError(
+                "broker operation schema validation failed"
+            ) from exc
 
         if snapshot.get("message_type") != _BROKER_MESSAGE_TYPE:
             raise BrokerOperationError("message is not a v1.0.0 broker operation")
@@ -160,7 +161,9 @@ class BrokerOperationVerifier:
         try:
             verified = self._message_verifier.verify(snapshot)
         except MessageAuthenticationError as exc:
-            raise BrokerOperationError("broker operation signature verification failed") from exc
+            raise BrokerOperationError(
+                "broker operation signature verification failed"
+            ) from exc
 
         if verified.issuer != session.issuer or verified.key_id != session.key_id:
             raise BrokerOperationError(
@@ -225,7 +228,9 @@ class BrokerOperationVerifier:
                 )
         elif supplied_payload_digest is not None:
             if not isinstance(supplied_payload_digest, Mapping):
-                raise BrokerOperationError("broker operation payload digest is malformed")
+                raise BrokerOperationError(
+                    "broker operation payload digest is malformed"
+                )
             digest_value = supplied_payload_digest.get("value")
             if (
                 supplied_payload_digest.get("algorithm") != _DIGEST_ALGORITHM
@@ -244,14 +249,20 @@ class BrokerOperationVerifier:
         max_bytes: int | None = None
         if isinstance(read_constraints, Mapping):
             candidate = read_constraints.get("max_bytes")
-            if isinstance(candidate, bool) or not isinstance(candidate, int) or candidate < 1:
+            if (
+                isinstance(candidate, bool)
+                or not isinstance(candidate, int)
+                or candidate < 1
+            ):
                 raise BrokerOperationError("broker read maximum byte bound is invalid")
             max_bytes = candidate
 
         operation = snapshot["operation"]
         commit_permit_ref = snapshot.get("commit_permit_ref")
         if operation in _MUTATING_OPERATIONS and not isinstance(commit_permit_ref, str):
-            raise BrokerOperationError("mutating broker operation lacks a commit permit reference")
+            raise BrokerOperationError(
+                "mutating broker operation lacks a commit permit reference"
+            )
 
         return VerifiedBrokerOperation(
             message_id=snapshot["message_id"],
