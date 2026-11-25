@@ -251,14 +251,30 @@ def test_commit_permit_reference_is_signature_bound_but_not_in_intent_digest():
     message = _message("write")
     signer, verifier, session = _verifier_and_session()
     signed = signer.sign(message)
-    signed["commit_permit_ref"] = "substituted-permit"
+    broker_verifier = BrokerOperationVerifier(verifier)
+    first = broker_verifier.verify(
+        signed,
+        session=session,
+        expected_grant_ref="grant-001",
+    )
 
+    tampered = dict(signed)
+    tampered["commit_permit_ref"] = "substituted-permit"
     with pytest.raises(BrokerOperationError, match="signature"):
-        BrokerOperationVerifier(verifier).verify(
-            signed,
+        broker_verifier.verify(
+            tampered,
             session=session,
             expected_grant_ref="grant-001",
         )
+
+    reissued = dict(message)
+    reissued["commit_permit_ref"] = "different-valid-permit"
+    second = broker_verifier.verify(
+        signer.sign(reissued),
+        session=session,
+        expected_grant_ref="grant-001",
+    )
+    assert first.intent_digest == second.intent_digest
 
 
 def test_verifier_rejects_wrong_signing_key_for_session():
@@ -273,7 +289,7 @@ def test_verifier_rejects_wrong_signing_key_for_session():
     _, verifier, session = _verifier_and_session()
     signed = signer.sign(message)
 
-    with pytest.raises(BrokerOperationError, match="key"):
+    with pytest.raises(BrokerOperationError, match="signature"):
         BrokerOperationVerifier(verifier).verify(
             signed,
             session=session,
