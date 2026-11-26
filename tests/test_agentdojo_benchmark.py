@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+
 import pytest
 
 pytest.importorskip("agentdojo")
@@ -66,6 +68,9 @@ def test_benchmark_derives_hash_scoped_email_search_capability():
     decision = monitor.decide(denied)
     assert decision.verdict == "deny"
     assert "C1" in decision.checks
+    assert monitor.audit.entries[0]["target_digest"] == hashlib.sha256(
+        allowed.args["folder"].value.encode("utf-8")
+    ).hexdigest()
 
 
 def test_benchmark_rejects_user_task_whose_ground_truth_requires_mutation():
@@ -423,3 +428,70 @@ def test_attack_missing_final_response_count_is_separate_from_indeterminate_coun
     ]
 
     assert _attack_missing_final_response_count(task_results, "paca") == 1
+
+
+
+def test_required_call_denial_metrics_use_exact_manifest_matched_denominators():
+    import hashlib
+
+    from paca.integrations.agentdojo_benchmark import (
+        _required_call_policy_denial_summary,
+    )
+
+    first_target = "calendar:day:2024-05-15"
+    second_target = "mail:search:query-1"
+    first_digest = hashlib.sha256(first_target.encode("utf-8")).hexdigest()
+    second_digest = hashlib.sha256(second_target.encode("utf-8")).hexdigest()
+    manifest = [
+        {"function": "get_day_calendar_events", "action": "read_calendar", "target": first_target},
+        {"function": "search_emails", "action": "read_mail", "target": second_target},
+        {"function": "get_day_calendar_events", "action": "read_calendar", "target": first_target},
+    ]
+    audit_entries = [
+        {"action": "read_calendar", "target_digest": first_digest, "verdict": "deny"},
+        {"action": "read_mail", "target_digest": second_digest, "verdict": "allow"},
+        # A repeated call beyond the manifest's declared multiplicity is excluded.
+        {"action": "read_calendar", "target_digest": first_digest, "verdict": "allow"},
+        {"action": "read_calendar", "target_digest": first_digest, "verdict": "deny"},
+    ]
+
+    summary = _required_call_policy_denial_summary(manifest, audit_entries)
+
+    assert summary["expected_required_call_opportunities"] == 3
+    assert summary["observed_required_call_decisions"] == 3
+    assert summary["unobserved_required_call_opportunities"] == 0
+    assert summary["denied_required_call_decisions"] == 1
+    assert summary["approval_required_call_decisions"] == 0
+    assert summary["false_denial_rate_among_observed_required_calls"] == pytest.approx(1 / 3)
+
+
+def test_required_call_metrics_keep_approval_and_unobserved_calls_separate():
+    import hashlib
+
+    from paca.integrations.agentdojo_benchmark import (
+        _required_call_policy_denial_summary,
+    )
+
+    target = "drive:file:report-1"
+    digest = hashlib.sha256(target.encode("utf-8")).hexdigest()
+    summary = _required_call_policy_denial_summary(
+        [
+            {"action": "read_drive", "target": target},
+            {"action": "read_drive", "target": "drive:file:report-2"},
+        ],
+        [
+            {
+                "action": "read_drive",
+                "target_digest": digest,
+                "verdict": "needs_approval",
+            }
+        ],
+    )
+
+    assert summary["expected_required_call_opportunities"] == 2
+    assert summary["observed_required_call_decisions"] == 1
+    assert summary["unobserved_required_call_opportunities"] == 1
+    assert summary["denied_required_call_decisions"] == 0
+    assert summary["approval_required_call_decisions"] == 1
+    assert summary["false_denial_rate_among_observed_required_calls"] == 0.0
+    assert summary["blocked_required_call_rate_among_observed_required_calls"] == 1.0
