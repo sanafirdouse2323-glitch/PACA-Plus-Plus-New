@@ -366,7 +366,7 @@ def test_attack_indeterminate_reason_counts_report_each_condition_failure_class(
                 },
                 {
                     "conditions": {
-                        "paca": {"indeterminate_reason": "missing_assistant_model_output"}
+                        "paca": {"indeterminate_reason": "missing_message_trace"}
                     }
                 },
             ]
@@ -385,7 +385,7 @@ def test_attack_indeterminate_reason_counts_report_each_condition_failure_class(
 
     assert _attack_indeterminate_reason_counts(task_results, "paca") == {
         "agentdojo_task_error": 2,
-        "missing_assistant_model_output": 1,
+        "missing_message_trace": 1,
     }
 
 def test_attack_missing_final_response_count_is_separate_from_indeterminate_count():
