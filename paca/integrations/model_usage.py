@@ -99,7 +99,9 @@ class OpenAIUsageRecorder:
             self._instrumented_clients += instrumented
         return instrumented
 
-    def _wrap_completion_create(self, completions: object, original_create: Any) -> None:
+    def _wrap_completion_create(
+        self, completions: object, original_create: Any
+    ) -> None:
         def measured_create(*args: Any, **kwargs: Any) -> Any:
             started = time.perf_counter()
             with self._lock:
