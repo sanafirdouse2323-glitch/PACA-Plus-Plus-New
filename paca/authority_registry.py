@@ -63,6 +63,12 @@ class VerifiedResourceCommitPermit:
     idempotency_key: str | None = None
 
 
+# Reserved internal key prefix keeps backend-specific resource state out of the
+# public logical-resource namespace. Public resource keys using this prefix are
+# rejected below so they cannot address filesystem sidecar rows.
+_INTERNAL_RESOURCE_NAMESPACE_PREFIX = "__paca_internal_resource_namespace_v1__/"
+
+
 def _canonical(value: object) -> bytes:
     return json.dumps(
         value,
@@ -790,10 +796,11 @@ class SQLiteAuthorityRegistry:
             )
         if not callable(commit_callback):
             raise TypeError("filesystem commit callback must be callable")
-        return self.commit_fenced_resource_write(
+        return self._commit_resource_write_in_namespace(
             permit,
             payload,
             _commit_callback=commit_callback,
+            _resource_namespace="filesystem",
         )
 
     def commit_fenced_resource_write(
@@ -806,7 +813,31 @@ class SQLiteAuthorityRegistry:
         protocol_payload_digest: bool = False,
         expected_resource_version: int | None = None,
         expected_principal: str | None = None,
+    ) -> dict[str, object]:
+        """Commit one logical resource mutation through the authority fence."""
+        return self._commit_resource_write_in_namespace(
+            permit,
+            payload,
+            access_receipt=access_receipt,
+            provenance_metadata=provenance_metadata,
+            protocol_payload_digest=protocol_payload_digest,
+            expected_resource_version=expected_resource_version,
+            expected_principal=expected_principal,
+            _resource_namespace="logical",
+        )
+
+    def _commit_resource_write_in_namespace(
+        self,
+        permit: VerifiedResourceCommitPermit,
+        payload: Mapping[str, object],
+        *,
+        access_receipt: Mapping[str, object] | None = None,
+        provenance_metadata: Mapping[str, object] | None = None,
+        protocol_payload_digest: bool = False,
+        expected_resource_version: int | None = None,
+        expected_principal: str | None = None,
         _commit_callback: Callable[[], None] | None = None,
+        _resource_namespace: str,
     ) -> dict[str, object]:
         """Commit one resource mutation under the same transaction as revocation.
 
@@ -833,6 +864,10 @@ class SQLiteAuthorityRegistry:
             or any(ord(character) < 32 for character in permit.resource)
         ):
             raise ValueError("resource key must be a bounded, printable string")
+        if _resource_namespace not in {"logical", "filesystem"}:
+            raise ValueError("resource namespace is not supported")
+        if permit.resource.startswith(_INTERNAL_RESOURCE_NAMESPACE_PREFIX):
+            raise ValueError("resource key uses a reserved internal namespace")
         for name, value in (
             ("nonce", permit.nonce),
             ("issuer", permit.issuer),
@@ -875,6 +910,24 @@ class SQLiteAuthorityRegistry:
             or len(permit.idempotency_key) > 256
         ):
             raise ValueError("commit permit idempotency_key is invalid")
+
+        if permit.idempotency_key is not None and permit.idempotency_key.startswith(
+            _INTERNAL_RESOURCE_NAMESPACE_PREFIX
+        ):
+            raise ValueError("commit permit idempotency_key uses a reserved namespace")
+        resource_storage_key = (
+            permit.resource
+            if _resource_namespace == "logical"
+            else (f"{_INTERNAL_RESOURCE_NAMESPACE_PREFIX}filesystem/{permit.resource}")
+        )
+        stored_idempotency_key = (
+            permit.idempotency_key
+            if _resource_namespace == "logical" or permit.idempotency_key is None
+            else (
+                f"{_INTERNAL_RESOURCE_NAMESPACE_PREFIX}filesystem/"
+                f"{permit.idempotency_key}"
+            )
+        )
         for name, digest in (
             ("request_digest", permit.request_digest),
             ("payload_digest", permit.payload_digest),
@@ -1048,7 +1101,7 @@ class SQLiteAuthorityRegistry:
                         "request_digest,payload_digest,committed_at,result_version "
                         "FROM paca_resource_commit_receipts "
                         "WHERE tenant=? AND task_id=? AND idempotency_key=?",
-                        (permit.tenant, permit.task_id, permit.idempotency_key),
+                        (permit.tenant, permit.task_id, stored_idempotency_key),
                     ).fetchone()
                     if prior_commit is not None:
                         same_commit = (
@@ -1184,7 +1237,7 @@ class SQLiteAuthorityRegistry:
                             permit.payload_digest,
                             now,
                             permit.permit_id,
-                            permit.idempotency_key,
+                            stored_idempotency_key,
                         ),
                     )
                 except sqlite3.IntegrityError as exc:
@@ -1209,7 +1262,7 @@ class SQLiteAuthorityRegistry:
                 existing = connection.execute(
                     "SELECT version FROM paca_resource_values "
                     "WHERE tenant=? AND task_id=? AND resource_key=?",
-                    (record.tenant, record.task_id, permit.resource),
+                    (record.tenant, record.task_id, resource_storage_key),
                 ).fetchone()
                 current_version = (
                     int(existing["version"]) if existing is not None else 0
@@ -1239,7 +1292,7 @@ class SQLiteAuthorityRegistry:
                     (
                         record.tenant,
                         record.task_id,
-                        permit.resource,
+                        resource_storage_key,
                         permit.action,
                         encoded_value,
                         permit.payload_digest,
@@ -1258,7 +1311,7 @@ class SQLiteAuthorityRegistry:
                         (
                             record.tenant,
                             record.task_id,
-                            permit.resource,
+                            resource_storage_key,
                             version,
                             encoded_provenance.decode("utf-8"),
                         ),
@@ -1342,6 +1395,8 @@ class SQLiteAuthorityRegistry:
         ):
             if not isinstance(value, str) or not value:
                 raise ValueError(f"{name} must be a non-empty string")
+        if resource.startswith(_INTERNAL_RESOURCE_NAMESPACE_PREFIX):
+            raise ValueError("resource key uses a reserved internal namespace")
         if (
             isinstance(max_calls, bool)
             or not isinstance(max_calls, int)
@@ -1594,7 +1649,8 @@ class SQLiteAuthorityRegistry:
         with closing(self._connect()) as connection:
             row = connection.execute(
                 "SELECT r.nonce,r.authority_id,r.tenant,r.task_id,r.action,r.resource_key,"
-                "r.request_digest,r.payload_digest,r.committed_at,v.version AS version "
+                "r.request_digest,r.payload_digest,r.committed_at,v.version AS version,"
+                "r.result_version AS committed_version "
                 "FROM paca_resource_commit_receipts r "
                 "LEFT JOIN paca_resource_values v ON v.commit_nonce=r.nonce "
                 "WHERE r.nonce=?",

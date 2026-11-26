@@ -210,6 +210,24 @@ def _stored_resource(registry, *, resource="/acme/reports/report.txt"):
     return row
 
 
+def test_logical_resource_reads_reject_reserved_internal_backend_namespace(tmp_path):
+    env = _environment(tmp_path)
+    reserved_resource = (
+        "__paca_internal_resource_namespace_v1__/filesystem//acme/reports/report.txt"
+    )
+
+    with pytest.raises(ValueError, match="reserved internal namespace"):
+        env["registry"].read_fenced_resource(
+            authority_id=env["signed"].capability.cap_id,
+            tenant="acme",
+            task_id="task-fence",
+            purpose="write-report",
+            resource=reserved_resource,
+            max_calls=40,
+            access_receipt={},
+        )
+
+
 def test_resource_write_and_effect_budget_commit_in_one_authority_transaction(tmp_path):
     env = _environment(tmp_path)
     decision, result = env["runtime"].execute_effect(
@@ -827,6 +845,118 @@ def test_filesystem_commit_rolls_back_file_when_database_transaction_fails_after
     executor.close()
 
 
+@pytest.mark.parametrize("filesystem_first", [True, False])
+@pytest.mark.skipif(
+    sys.platform != "linux", reason="filesystem commit fence requires Linux openat2"
+)
+def test_logical_and_filesystem_backends_use_independent_resource_namespaces(
+    tmp_path,
+    filesystem_first,
+):
+    env = _environment(tmp_path)
+    root, _, filesystem_executor = _filesystem_executor(env, tmp_path)
+
+    def filesystem_write():
+        decision, result = env["runtime"].execute_effect(
+            env["signed"].token,
+            env["request"],
+            filesystem_executor,
+        )
+        assert decision.verdict == "allow"
+        return result
+
+    def logical_write():
+        decision, result = env["runtime"].execute_effect(
+            env["signed"].token,
+            env["request"],
+            env["executor"],
+        )
+        assert decision.verdict == "allow"
+        return result
+
+    if filesystem_first:
+        filesystem_result = filesystem_write()
+        logical_result = logical_write()
+    else:
+        logical_result = logical_write()
+        filesystem_result = filesystem_write()
+
+    assert filesystem_result["version"] == 1
+    assert logical_result["version"] == 1
+    filesystem_receipt = env["registry"].get_resource_commit_receipt(
+        filesystem_result["commit_nonce"]
+    )
+    logical_receipt = env["registry"].get_resource_commit_receipt(
+        logical_result["commit_nonce"]
+    )
+    assert filesystem_receipt is not None
+    assert filesystem_receipt["version"] == 1
+    assert logical_receipt is not None
+    assert logical_receipt["version"] == 1
+    stored_logical = _stored_resource(env["registry"])
+    assert stored_logical is not None
+    assert stored_logical[2] == 1
+    target = _filesystem_relative_target(root, env["signed"].capability.task_id)
+    assert target.read_bytes() == b"approved report body"
+    filesystem_executor.close()
+
+
+@pytest.mark.skipif(
+    sys.platform != "linux", reason="filesystem commit fence requires Linux openat2"
+)
+def test_logical_write_does_not_invalidate_pending_filesystem_journal(
+    tmp_path,
+    monkeypatch,
+):
+    env = _environment(tmp_path)
+    root, state_dir, filesystem_executor = _filesystem_executor(env, tmp_path)
+
+    def leave_journal_for_restart(*_args, **_kwargs):
+        raise OSError("simulated crash after durable filesystem commit")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(
+            FilesystemFencedResourceExecutor,
+            "_recover_one_locked",
+            leave_journal_for_restart,
+        )
+        decision, filesystem_result = env["runtime"].execute_effect(
+            env["signed"].token,
+            env["request"],
+            filesystem_executor,
+        )
+
+    target = _filesystem_relative_target(root, env["signed"].capability.task_id)
+    assert decision.verdict == "allow"
+    assert filesystem_result["recovery_pending"] is True
+    assert len(list(state_dir.glob("*.json"))) == 1
+
+    logical_decision, logical_result = env["runtime"].execute_effect(
+        env["signed"].token,
+        env["request"],
+        env["executor"],
+    )
+    assert logical_decision.verdict == "allow"
+    assert logical_result["version"] == 1
+    filesystem_receipt = env["registry"].get_resource_commit_receipt(
+        filesystem_result["commit_nonce"]
+    )
+    assert filesystem_receipt is not None
+    assert filesystem_receipt["version"] == 1
+    assert filesystem_receipt["committed_version"] == 1
+
+    filesystem_executor.close()
+    recovered = FilesystemFencedResourceExecutor(
+        env["executor"].authority,
+        root=root,
+        state_dir=state_dir,
+    )
+    assert recovered.recover_pending() == {"committed": 0, "rolled_back": 0}
+    assert target.read_bytes() == b"approved report body"
+    assert sorted(path.name for path in state_dir.iterdir()) == ["broker.lock"]
+    recovered.close()
+
+
 @pytest.mark.skipif(
     sys.platform != "linux", reason="filesystem commit fence requires Linux openat2"
 )
@@ -1060,6 +1190,7 @@ def test_filesystem_commit_permit_replay_cannot_replace_file_twice(
     )
     assert stale_receipt is not None
     assert stale_receipt["version"] is None
+    assert stale_receipt["committed_version"] == 1
     final_content = _filesystem_relative_target(
         root,
         env["signed"].capability.task_id,
