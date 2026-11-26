@@ -566,9 +566,10 @@
       "evidence_level": "D",
       "live_test_status": "not_run",
       "documented_capability_summary": [
-        "Reference-monitor design attenuates initiating-user authority across purpose, information labels, operations, sinks and delegation depth",
-        "Mediates data-moving actions outside the LLM and propagates revocation through a delegation graph",
-        "Paper reports adaptive adversary, model-action and multi-turn evaluations, including a large Enron-email corpus"
+        "External reference monitor attenuates initiating-user authority across purpose, information labels, operations, sinks and delegation depth; data-moving actions are mediated outside the LLM and revocation cascades through the delegation graph",
+        "The abstract reports four baselines, an adaptive within-authority adversary, deterministic trace conformance/scale checks and studies over 517,401 Enron emails",
+        "Author-reported model-action results: two open models proposed attacker-goal actions on 42/45 and 44/45 injected traces, with all proposed actions blocked at execution",
+        "Author-reported 90-run multi-turn study reports leakage falling from 0.844 to 0.20 with full task completion and microsecond-scale per-decision overhead"
       ],
       "relevant_research_dimensions": [
         "delegation_attenuation",
@@ -581,14 +582,14 @@
         "multi_agent_workflows"
       ],
       "documented_scope_or_constraints": [
-        "All quantitative findings are author-reported for the paper's exact implementations, models, tasks and threat assumptions",
-        "The abstract's observed-sink workflows and declared reference-monitor placement define the tested coverage; do not infer arbitrary provider transaction guarantees",
-        "The paper is a close comparator for delegation and information-flow claims and must be reviewed before asserting novelty in those dimensions"
+        "All quantitative results are author-reported for the paper's exact implementation, two open models, prompts, tasks, observed sinks, baselines and threat assumptions; none has been reproduced in this repository",
+        "The paper's own abstract bounds its claim to declared reference-monitor placement and externally observable sinks; do not infer arbitrary SaaS provider transaction atomicity or uninstrumented internal state coverage",
+        "This is a direct novelty comparator for authority attenuation, purpose binding, information labels, model-independent mediation, revocation cascades and model-in-loop multi-agent evaluation"
       ],
       "not_established_by_documentation_alone": [
-        "Independent replication of the reported model-action and multi-turn results",
-        "Atomic commit or delivery fencing at arbitrary third-party providers",
-        "Complete mediation of uninstrumented model context, memory stores or external runtimes outside the declared monitor boundary"
+        "Independent reproduction of the paper's four-baseline comparison, 42/45 and 44/45 model-action traces or 90-run leakage/utility results",
+        "Atomic commit, delivery fencing or ambiguous-outcome reconciliation at arbitrary third-party providers",
+        "Complete semantic dependency discovery for hidden model context and uninstrumented memory outside the declared monitor boundary"
       ],
       "live_test_requirements": [
         "Retrieve and pin the full paper version, implementation and all released task/configuration artefacts",
@@ -599,7 +600,7 @@
       "official_sources": [
         "https://arxiv.org/abs/2610.16005"
       ],
-      "next_action": "Pin the paper and implementation artefacts, then reproduce its native delegation, revocation and observable-sink evaluations before any comparative claim."
+      "next_action": "Pin the paper, implementation and its baseline artefacts; reproduce the native adaptive-adversary, model-action and multi-turn experiments before making any distinct contribution claim."
     },
     {
       "id": "delegation-without-trust",
@@ -608,9 +609,9 @@
       "evidence_level": "D",
       "live_test_status": "not_run",
       "documented_capability_summary": [
-        "Frames multi-agent security around confused deputies, token theft/replay, prompt-injection privilege escalation and compromised sub-agents",
-        "Proposes an authorization broker to constrain delegated actions under an untrusted-model threat assumption",
-        "Paper reports adversarial tests, forged-token attempts and randomized reachable-action comparisons"
+        "Authorization broker is designed for an untrusted-model threat model covering confused deputy, token theft/replay, prompt-injection privilege escalation and compromised sub-agents",
+        "Paper-reported broker tests resist 11 direct design attacks and accept 0 of 200,000 forged tokens",
+        "In 2,000 randomized synthetic scenarios, the paper reports mean reachable actions of 1.5 under broker-constrained delegation versus all 8,100 actions under bearer delegation; reported decision cost is about 2.6 microseconds"
       ],
       "relevant_research_dimensions": [
         "untrusted_model_assumption",
@@ -622,14 +623,14 @@
         "cross_framework_comparison"
       ],
       "documented_scope_or_constraints": [
-        "The abstract reports results for its declared broker, attacks, four framework/authorization comparisons and randomized scenarios",
-        "The reported result does not establish coverage for every version, plugin, tool adapter or provider deployment of the named frameworks",
-        "The paper's broker design and threat model are a direct novelty challenge and require source-level comparison before PACA's distinct contribution is stated"
+        "The figures are author-reported for a separate minimal Python reference implementation and an abstract tool/resource-action model; they are not independently reproduced here",
+        "The paper says its broker was not integrated end-to-end with the evaluated frameworks and was not run with a live model; its framework comparisons do not prove that every version, plugin or deployment has identical coverage",
+        "The broker design and untrusted-model threat model directly challenge generic PACA claims about delegated authorization and model-independent enforcement"
       ],
       "not_established_by_documentation_alone": [
-        "Independent reproduction of the reported attack counts, token-forgery trials or reachable-action distribution",
-        "Arbitrary provider-side commit atomicity and reconciliation under ambiguous delivery",
-        "Semantic lineage detection across arbitrary paraphrase, memory reconstruction and unobserved model context"
+        "Independent replication of the 11 attack, 200,000 token, 2,000-scenario and latency results",
+        "End-to-end framework/provider integration, live-model effectiveness or arbitrary provider-side commit atomicity",
+        "Semantic lineage inference across arbitrary paraphrase, reconstruction or hidden memory context"
       ],
       "live_test_requirements": [
         "Pin the paper version and any public broker implementation, dependencies and configuration",
@@ -640,7 +641,7 @@
       "official_sources": [
         "https://arxiv.org/abs/2609.00267"
       ],
-      "next_action": "Pin the paper and broker artefact, then reproduce its threat model and broker baseline before claiming a distinct delegation-security contribution."
+      "next_action": "Pin the paper and broker artefact and reproduce its broker security tests, framework coverage assumptions and model-in-loop limitations before making a novelty comparison."
     },
     {
       "id": "paca-plus-plus",
