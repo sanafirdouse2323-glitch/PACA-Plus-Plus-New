@@ -14,7 +14,11 @@ from __future__ import annotations
 import argparse
 import importlib.metadata
 import json
+import math
+import platform
 import statistics
+import sys
+import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -365,6 +369,63 @@ def _sum_metrics(records: list[dict[str, int]]) -> dict[str, int]:
     return {key: sum(record.get(key, 0) for record in records) for key in keys}
 
 
+def _nearest_rank_percentile(values: list[float], quantile: float) -> float | None:
+    if not 0.0 < quantile <= 1.0:
+        raise ValueError("quantile must be greater than zero and at most one")
+    if not values:
+        return None
+    ordered = sorted(values)
+    index = max(0, min(len(ordered) - 1, math.ceil(quantile * len(ordered)) - 1))
+    return round(ordered[index], 6)
+
+
+def _episode_operational_metrics(records: list[dict[str, Any]]) -> dict[str, Any]:
+    """Summarise measured AgentDojo episode durations and error outcomes.
+
+    This is per-episode benchmark telemetry, not a concurrent service-load test
+    or an SLA availability measurement.
+    """
+    durations: list[float] = []
+    error_count = 0
+    for record in records:
+        error_count += int(bool(record.get("error")))
+        try:
+            duration = float(record.get("duration_seconds"))
+        except (TypeError, ValueError):
+            continue
+        if math.isfinite(duration) and duration > 0:
+            durations.append(duration)
+
+    total_duration = sum(durations)
+    attempted = len(records)
+    timed = len(durations)
+    return {
+        "attempted_episodes": attempted,
+        "timed_episodes": timed,
+        "episodes_without_timing": attempted - timed,
+        "error_count": error_count,
+        "error_free_episode_fraction": (
+            round((attempted - error_count) / attempted, 6) if attempted else None
+        ),
+        "latency_seconds": {
+            "p50": _nearest_rank_percentile(durations, 0.50),
+            "p95": _nearest_rank_percentile(durations, 0.95),
+            "p99": _nearest_rank_percentile(durations, 0.99),
+        },
+        "episodes_per_measured_second": (
+            round(timed / total_duration, 6) if total_duration > 0 else None
+        ),
+        "throughput_qualification": (
+            "Sequential per-episode rate computed from AgentDojo-reported durations; "
+            "not concurrent throughput or production capacity."
+        ),
+        "availability_qualification": (
+            "Error-free episode fraction for this selected run; not an SLA or "
+            "long-term service-availability measurement."
+        ),
+    }
+
+
 def _preflight_attack_pairs(
     api: dict[str, Any],
     suite: Any,
@@ -416,6 +477,7 @@ def run_workspace_benchmark(
     attack, prompt, output format, and iteration limit. The official AgentDojo
     tool_filter condition is available only for OpenAI-backed models.
     """
+    run_started_monotonic = time.perf_counter()
     api = _agentdojo_imports()
     from agentdojo.models import MODEL_PROVIDERS, ModelsEnum
 
@@ -479,7 +541,24 @@ def run_workspace_benchmark(
     output_path.parent.mkdir(parents=True, exist_ok=True)
     results: dict[str, Any] = {
         "status": "running",
+        "evidence": {
+            "class": "R",
+            "experiment_type": "model_in_loop_agentdojo_reproduction",
+            "model_in_loop": True,
+            "live_model_requests": True,
+            "live_vendor_security_products_tested": False,
+            "scope": (
+                "Selected AgentDojo workspace tasks and supported read-tool mapper; "
+                "not full AgentDojo suite coverage."
+            ),
+        },
         "started_at": datetime.now(timezone.utc).isoformat(),
+        "environment": {
+            "python_version": sys.version.split()[0],
+            "platform": platform.platform(),
+            "agentdojo_package_version": _distribution_version("agentdojo"),
+            "paca_package_version": _distribution_version("paca-plus-plus"),
+        },
         "configuration": {
             "agentdojo_package_version": _distribution_version("agentdojo"),
             "paca_package_version": _distribution_version("paca-plus-plus"),
@@ -820,8 +899,40 @@ def run_workspace_benchmark(
                         counts[condition] += int(bool(record["error"]))
         return counts
 
+    operational_metrics: dict[str, Any] = {}
+    for condition in (
+        "agentdojo_no_defense",
+        "agentdojo_tool_filter",
+        "paca_plus_plus",
+    ):
+        benign_episodes = [
+            {
+                "duration_seconds": item["benign"]["duration_seconds"][condition],
+                "error": item["benign"]["error"][condition],
+            }
+            for item in results["task_results"]
+        ]
+        attacked_episodes = [
+            pair_result["conditions"][condition]
+            for item in results["task_results"]
+            for pair_result in item["attacked_pairs"]
+        ]
+        operational_metrics[condition] = {
+            "benign": _episode_operational_metrics(benign_episodes),
+            "attacked": _episode_operational_metrics(attacked_episodes),
+        }
+
     results["summary"] = {
         "benign_task_count": len(user_task_ids),
+        "overall_wall_clock_seconds": round(
+            time.perf_counter() - run_started_monotonic, 6
+        ),
+        "operational_metrics": operational_metrics,
+        "provider_cost_usd": None,
+        "provider_cost_status": (
+            "not_captured: this runner does not currently ingest provider billing "
+            "or token-cost telemetry; join a provider usage export before making cost claims"
+        ),
         "attack_pair_count": applicable_pair_count,
         "skipped_attack_pair_count": len(skipped_pairs),
         "benign_utility": {
