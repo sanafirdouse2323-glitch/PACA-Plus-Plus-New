@@ -387,6 +387,41 @@ def test_broker_write_replays_exact_commit_idempotently_without_second_effect(tm
     assert env["registry"].usage(env["grant"].capability.cap_id)[0] == 2
 
 
+def test_broker_write_recovers_after_committed_response_is_lost(tmp_path, monkeypatch):
+    """A lost client response must not create a second local effect on exact retry."""
+    env = _environment(tmp_path)
+    message = _signed_write(env)
+    registry = env["registry"]
+    commit = registry.commit_fenced_resource_write
+
+    def commit_then_lose_response(*args, **kwargs):
+        commit(*args, **kwargs)
+        raise TimeoutError("simulated response loss after durable commit")
+
+    monkeypatch.setattr(
+        registry,
+        "commit_fenced_resource_write",
+        commit_then_lose_response,
+    )
+    with pytest.raises(TimeoutError, match="response loss"):
+        env["mediator"].write(message, session=env["session"])
+
+    # The first attempt already committed. The caller cannot know that from its
+    # timeout, so it retries the identical signed operation and idempotency key.
+    assert _read_value(registry)[2] == 2
+    assert len(_receipts(registry)) == 1
+    assert registry.usage(env["grant"].capability.cap_id)[0] == 2
+
+    monkeypatch.setattr(registry, "commit_fenced_resource_write", commit)
+    retry = env["mediator"].write(message, session=env["session"])
+
+    assert retry["version"] == 2
+    assert retry["idempotent_replay"] is True
+    assert _read_value(registry)[2] == 2
+    assert len(_receipts(registry)) == 1
+    assert registry.usage(env["grant"].capability.cap_id)[0] == 2
+
+
 def test_broker_write_consumes_replacement_permit_on_safe_idempotent_retry(
     tmp_path,
 ):
