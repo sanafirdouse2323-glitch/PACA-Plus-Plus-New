@@ -224,7 +224,6 @@ def test_untracked_or_incomplete_dependency_fails_closed_for_explicit_lineage():
         )
 
 
-
 def test_opaque_model_output_without_recorded_source_edges_stays_incomplete():
     """Unknown model context must not be silently upgraded into complete lineage."""
     opaque_model_output = Arg(
