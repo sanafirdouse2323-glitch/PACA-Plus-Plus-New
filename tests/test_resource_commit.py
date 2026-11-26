@@ -334,21 +334,155 @@ def test_strict_runtime_rejects_in_process_executor_before_any_budget_or_effect(
     assert _stored_resource(env["registry"]) is None
 
 
-def test_revocation_between_runtime_authorization_and_resource_commit_blocks_write(
+def test_strict_runtime_rejects_overriding_fenced_executor_subclass_before_sync_effect(
     tmp_path,
 ):
     env = _environment(tmp_path)
-    executor = env["executor"]
-    original = executor.execute_authorized
+    invoked = []
 
-    def revoke_before_commit(request, permit):
-        env["registry"].revoke(
+    class UntrustedExecutor(FencedResourceExecutor):
+        def execute_authorized(self, request, permit_token):
+            invoked.append("sync")
+            return {"storage": "unfenced"}
+
+        async def aexecute_authorized(self, request, permit_token):
+            invoked.append("async")
+            return {"storage": "unfenced"}
+
+    executor = UntrustedExecutor(env["executor"].authority)
+    with pytest.raises(MemoryAccessDenied, match="allow-listed concrete adapter"):
+        env["runtime"].execute_effect(
+            env["signed"].token,
+            env["request"],
+            executor,
+        )
+
+    assert invoked == []
+    assert _stored_resource(env["registry"]) is None
+    assert env["registry"].usage(env["signed"].capability.cap_id)[0] == 2
+
+
+def test_strict_runtime_rejects_overriding_fenced_executor_subclass_before_async_effect(
+    tmp_path,
+):
+    env = _environment(tmp_path)
+    invoked = []
+
+    class UntrustedExecutor(FencedResourceExecutor):
+        def execute_authorized(self, request, permit_token):
+            invoked.append("sync")
+            return {"storage": "unfenced"}
+
+        async def aexecute_authorized(self, request, permit_token):
+            invoked.append("async")
+            return {"storage": "unfenced"}
+
+    executor = UntrustedExecutor(env["executor"].authority)
+
+    async def exercise():
+        with pytest.raises(MemoryAccessDenied, match="allow-listed concrete adapter"):
+            await env["runtime"].aexecute_effect(
+                env["signed"].token,
+                env["request"],
+                executor,
+            )
+
+    asyncio.run(exercise())
+    assert invoked == []
+    assert _stored_resource(env["registry"]) is None
+    assert env["registry"].usage(env["signed"].capability.cap_id)[0] == 2
+
+
+def test_strict_runtime_ignores_instance_level_sync_executor_method_replacement(
+    tmp_path,
+):
+    env = _environment(tmp_path)
+    invoked = []
+
+    def untrusted_commit(request, permit_token):
+        invoked.append("sync")
+        return {"storage": "unfenced"}
+
+    def untrusted_verify(request, permit_token):
+        invoked.append("verify")
+        return None, {}
+
+    env["executor"].execute_authorized = untrusted_commit
+    env["executor"]._verify_request = untrusted_verify
+
+    decision, result = env["runtime"].execute_effect(
+        env["signed"].token,
+        env["request"],
+        env["executor"],
+    )
+
+    assert decision.verdict == "allow"
+    assert result["version"] == 1
+    assert invoked == []
+    assert _stored_resource(env["registry"]) is not None
+
+
+def test_strict_runtime_ignores_instance_level_async_executor_method_replacement(
+    tmp_path,
+):
+    env = _environment(tmp_path)
+    invoked = []
+
+    async def untrusted_commit(request, permit_token):
+        invoked.append("async")
+        return {"storage": "unfenced"}
+
+    env["executor"].aexecute_authorized = untrusted_commit
+
+    async def exercise():
+        decision, result = await env["runtime"].aexecute_effect(
+            env["signed"].token,
+            env["request"],
+            env["executor"],
+        )
+        assert decision.verdict == "allow"
+        assert result["version"] == 1
+
+    asyncio.run(exercise())
+    assert invoked == []
+    assert _stored_resource(env["registry"]) is not None
+
+
+def test_strict_runtime_rejects_executor_bound_to_replaced_registry_client(tmp_path):
+    env = _environment(tmp_path)
+    env["executor"].registry = object()
+
+    with pytest.raises(MemoryAccessDenied, match="allow-listed concrete adapter"):
+        env["runtime"].execute_effect(
+            env["signed"].token,
+            env["request"],
+            env["executor"],
+        )
+
+    assert _stored_resource(env["registry"]) is None
+    assert env["registry"].usage(env["signed"].capability.cap_id)[0] == 2
+
+
+def test_revocation_between_runtime_authorization_and_resource_commit_blocks_write(
+    tmp_path,
+    monkeypatch,
+):
+    env = _environment(tmp_path)
+    registry = env["registry"]
+    original = registry.commit_fenced_resource_write
+
+    def revoke_before_commit(permit, payload):
+        registry.revoke(
             env["signed"].capability.cap_id,
             "test revocation before resource commit",
         )
-        return original(request, permit)
+        return original(permit, payload)
 
-    executor.execute_authorized = revoke_before_commit
+    monkeypatch.setattr(
+        registry,
+        "commit_fenced_resource_write",
+        revoke_before_commit,
+    )
     with pytest.raises(ResourceCommitDenied, match="atomic authority fence"):
         env["runtime"].execute_effect(
             env["signed"].token,
