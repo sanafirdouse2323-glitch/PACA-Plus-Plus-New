@@ -28,7 +28,7 @@ def _restricted_source(graph: ProvenanceGraph) -> Arg:
         source_class="confidential_customer_record",
         content_digest=_digest(value),
         label=Label(
-            integrity="trusted",
+            integrity="untrusted",
             sensitivity=3,
             tenant="tenant-acme",
             origins=frozenset({"crm:customer-record-17"}),
@@ -84,7 +84,7 @@ def test_reworded_derived_value_retains_restricted_source_lineage(
         purpose="customer-support",
     )
 
-    assert derived.label.integrity == "trusted"
+    assert derived.label.integrity == "untrusted"
     assert derived.label.sensitivity == 3
     assert derived.label.tenant == "tenant-acme"
     assert "crm:customer-record-17" in derived.label.origins
@@ -146,7 +146,7 @@ def test_restrictions_survive_memory_compaction_retrieval_and_agent_transfer():
     )
 
     assert transferred.label.sensitivity == 3
-    assert transferred.label.integrity == "trusted"
+    assert transferred.label.integrity == "untrusted"
     assert transferred.label.tenants == frozenset({"tenant-acme"})
     assert transferred.label.origins == frozenset({"crm:customer-record-17"})
 
