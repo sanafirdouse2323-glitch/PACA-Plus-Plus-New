@@ -909,6 +909,8 @@ class Monitor:
                 "step": req.step,
                 "task": cap.task_id,
                 "action": req.action,
+                # Unkeyed digest supports manifest matching but is not anonymisation:
+                # low-entropy targets may be recovered by dictionary attack.
                 "target_digest": (
                     hashlib.sha256(tval.encode("utf-8")).hexdigest()
                     if tgt is not None
