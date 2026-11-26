@@ -918,10 +918,7 @@ class SQLiteAuthorityRegistry:
         resource_storage_key = (
             permit.resource
             if _resource_namespace == "logical"
-            else (
-                f"{_INTERNAL_RESOURCE_NAMESPACE_PREFIX}filesystem/"
-                f"{permit.resource}"
-            )
+            else (f"{_INTERNAL_RESOURCE_NAMESPACE_PREFIX}filesystem/{permit.resource}")
         )
         stored_idempotency_key = (
             permit.idempotency_key
