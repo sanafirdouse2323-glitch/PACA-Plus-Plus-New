@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import sqlite3
+import threading
 
 import pytest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
@@ -16,7 +17,9 @@ from paca.contracts import (
     MessageVerifier,
     TrustedMessageKey,
 )
+from paca.durable import SQLiteProvenanceRepository
 from paca.memory import canonical_value_bytes
+from paca.provenance import Label, LineageNode
 
 BROKER_ISSUER = "worker-issuer"
 BROKER_KEY_ID = "worker-key-1"
@@ -38,6 +41,24 @@ def _environment(tmp_path, *, provenance_release_check=None, max_calls=5):
         return now[0]
 
     registry = SQLiteAuthorityRegistry(tmp_path / "authority.sqlite3", clock=clock)
+    provenance_repository = SQLiteProvenanceRepository(
+        tmp_path / "provenance.sqlite3"
+    )
+    provenance_node = LineageNode(
+        object_id="report-source",
+        version_id="source-v1",
+        source="trusted-test-source",
+        source_class="external_content",
+        content_digest="b" * 64,
+        label=Label(
+            integrity="untrusted",
+            sensitivity=1,
+            tenant=TENANT,
+            origins=frozenset({"mail:tenant-1"}),
+        ),
+        purpose=PURPOSE,
+    )
+    provenance_repository.add(provenance_node)
     authority = HMACCapabilityAuthority(
         registry,
         issuer_id=GRANT_ISSUER,
@@ -83,6 +104,7 @@ def _environment(tmp_path, *, provenance_release_check=None, max_calls=5):
     provenance = {
         "classification": "internal",
         "source": "trusted-fixture",
+        "lineage_refs": [provenance_node.node_id],
     }
     registry.commit_fenced_resource_write(
         permit,
@@ -123,21 +145,29 @@ def _environment(tmp_path, *, provenance_release_check=None, max_calls=5):
         message_verifier,
         clock=lambda: 1_795_600_800.0,
     )
-    release_check = provenance_release_check or (
-        lambda operation, record, result: (
+    def default_release_check(operation, record, result, repository):
+        refs = result["provenance_metadata"].get("lineage_refs", ())
+        return (
             record.authority_id == signed_grant.capability.cap_id
             and result["provenance_metadata"] == provenance
+            and tuple(refs) == (provenance_node.node_id,)
+            and repository.get_node(provenance_node.node_id) is not None
+            and not repository.is_revoked(provenance_node.node_id)
         )
-    )
+
+    release_check = provenance_release_check or default_release_check
     mediator = InProcessBrokerReadMediator(
         verifier,
         registry,
         grant_issuer=GRANT_ISSUER,
         grant_audience=GRANT_AUDIENCE,
+        provenance_repository=provenance_repository,
         provenance_release_check=release_check,
     )
     return {
         "registry": registry,
+        "provenance_repository": provenance_repository,
+        "provenance_node": provenance_node,
         "authority": authority,
         "grant": signed_grant,
         "signer": signer,
@@ -270,7 +300,8 @@ def test_broker_rejects_untrusted_grant_audience(tmp_path):
         env["registry"],
         grant_issuer=GRANT_ISSUER,
         grant_audience="different-audience",
-        provenance_release_check=lambda operation, record, result: True,
+        provenance_repository=env["provenance_repository"],
+        provenance_release_check=lambda operation, record, result, repository: True,
     )
     with pytest.raises(BrokerResourceDenied, match="trusted issuer"):
         mediator.read(_read_message(env), session=env["session"])
@@ -326,10 +357,64 @@ def test_broker_enforces_actual_response_size_without_charging_on_failure(tmp_pa
     assert env["registry"].usage(env["grant"].capability.cap_id)[0] == 1
 
 
+def test_broker_rejects_already_revoked_source_lineage_before_disclosure(tmp_path):
+    env = _environment(tmp_path)
+    node_id = env["provenance_node"].node_id
+    env["provenance_repository"].revoke_lineage(
+        node_id,
+        "source revoked before broker read",
+    )
+
+    with pytest.raises(BrokerResourceDenied, match="provenance or disclosure"):
+        env["mediator"].read(_read_message(env), session=env["session"])
+
+    # The registry read and replay/quota receipt happened first, but revoked
+    # source data was not disclosed.
+    assert _access_receipts(env["registry"]) == 1
+    assert env["registry"].usage(env["grant"].capability.cap_id)[0] == 2
+
+
+def test_broker_read_serializes_disclosure_before_concurrent_lineage_revocation(
+    tmp_path,
+):
+    env = _environment(tmp_path)
+    repository = env["provenance_repository"]
+    node_id = env["provenance_node"].node_id
+    original = env["mediator"]._provenance_release_check
+    attempted = threading.Event()
+    completed = threading.Event()
+    threads = []
+
+    def release_with_concurrent_revocation(operation, record, result, repo):
+        def revoke():
+            attempted.set()
+            repo.revoke_lineage(node_id, "concurrent source revocation")
+            completed.set()
+
+        worker = threading.Thread(target=revoke, daemon=True)
+        threads.append(worker)
+        worker.start()
+        assert attempted.wait(timeout=5)
+        # BEGIN IMMEDIATE in the broker guard prevents the revocation writer
+        # from committing until the current disclosure has linearized.
+        assert not completed.wait(timeout=0.1)
+        return original(operation, record, result, repo)
+
+    env["mediator"]._provenance_release_check = release_with_concurrent_revocation
+    result = env["mediator"].read(_read_message(env), session=env["session"])
+    for worker in threads:
+        worker.join(timeout=5)
+        assert not worker.is_alive()
+
+    assert result["value"] == {"content": "brokered secret"}
+    assert completed.is_set()
+    assert repository.is_revoked(node_id)
+
+
 def test_broker_rechecks_revocation_after_provenance_release_callback(tmp_path):
     env = _environment(tmp_path)
 
-    def revoke_during_release(operation, record, result):
+    def revoke_during_release(operation, record, result, repository):
         env["registry"].revoke(
             record.authority_id,
             "revoked during provenance release evaluation",
