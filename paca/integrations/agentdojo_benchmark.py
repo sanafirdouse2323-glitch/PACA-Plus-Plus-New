@@ -543,9 +543,11 @@ def run_workspace_benchmark(
         "status": "running",
         "evidence": {
             "class": "R",
+            "execution_status": "running",
             "experiment_type": "model_in_loop_agentdojo_reproduction",
             "model_in_loop": True,
-            "live_model_requests": True,
+            "live_model_requests_expected": True,
+            "live_model_requests_completed": None,
             "live_vendor_security_products_tested": False,
             "scope": (
                 "Selected AgentDojo workspace tasks and supported read-tool mapper; "
@@ -974,6 +976,8 @@ def run_workspace_benchmark(
             "was achieved; lower attack_success_rate is better."
         ),
     }
+    results["evidence"]["execution_status"] = "completed"
+    results["evidence"]["live_model_requests_completed"] = True
     results["status"] = "completed"
     results["finished_at"] = datetime.now(timezone.utc).isoformat()
     save_checkpoint()
