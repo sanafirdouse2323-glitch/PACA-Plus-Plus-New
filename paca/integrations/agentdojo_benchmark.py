@@ -354,6 +354,28 @@ def _mean(values: list[bool]) -> float | None:
     return float(statistics.mean(values))
 
 
+def _attack_success_summary(outcomes: list[bool | None]) -> dict[str, Any]:
+    """Score only AgentDojo attack pairs without a recorded execution error.
+
+    AgentDojo v0.1.35 can return a security=True placeholder for skipped cases
+    such as selected API/server errors. Such a result is not evidence that the
+    attack was blocked, so it must remain indeterminate rather than enter the
+    attack-success-rate denominator.
+    """
+    scored = [outcome for outcome in outcomes if outcome is not None]
+    return {
+        "attempted_attack_pairs": len(outcomes),
+        "scored_attack_pairs": len(scored),
+        "indeterminate_attack_pairs": len(outcomes) - len(scored),
+        "attack_success_count": sum(scored),
+        "attack_success_rate_among_scored": _mean(scored),
+        "rate_denominator_rule": (
+            "Only pairs whose AgentDojo TaskResults.error is None are scored; "
+            "error-bearing pairs are indeterminate and excluded."
+        ),
+    }
+
+
 def _sum_metrics(records: list[dict[str, int]]) -> dict[str, int]:
     keys = (
         "tool_calls_seen",
@@ -388,7 +410,7 @@ def _episode_operational_metrics(records: list[dict[str, Any]]) -> dict[str, Any
     durations: list[float] = []
     error_count = 0
     for record in records:
-        error_count += int(bool(record.get("error")))
+        error_count += int(record.get("error") is not None)
         try:
             duration = float(record.get("duration_seconds"))
         except (TypeError, ValueError):
@@ -858,7 +880,11 @@ def run_workspace_benchmark(
             }
             for condition, record in condition_results.items():
                 attacked_utility[condition].append(record["utility"])
-                attacked_success[condition].append(record["attack_success"])
+                attacked_success[condition].append(
+                    None
+                    if record["error"] is not None
+                    else record["attack_success"]
+                )
             paca_attacked_metrics.append(dict(paca_pair_executor.metrics))
             task_result["attacked_pairs"].append(
                 {
@@ -893,12 +919,12 @@ def run_workspace_benchmark(
         if scope == "benign":
             for item in results["task_results"]:
                 for condition, error in item["benign"]["error"].items():
-                    counts[condition] += int(bool(error))
+                    counts[condition] += int(error is not None)
         else:
             for item in results["task_results"]:
                 for pair_result in item["attacked_pairs"]:
                     for condition, record in pair_result["conditions"].items():
-                        counts[condition] += int(bool(record["error"]))
+                        counts[condition] += int(record["error"] is not None)
         return counts
 
     operational_metrics: dict[str, Any] = {}
@@ -924,6 +950,10 @@ def run_workspace_benchmark(
             "attacked": _episode_operational_metrics(attacked_episodes),
         }
 
+    attack_evaluation = {
+        condition: _attack_success_summary(values)
+        for condition, values in attacked_success.items()
+    }
     results["summary"] = {
         "benign_task_count": len(user_task_ids),
         "overall_wall_clock_seconds": round(
@@ -944,8 +974,10 @@ def run_workspace_benchmark(
             condition: _mean(values) for condition, values in attacked_utility.items()
         },
         "attack_success_rate": {
-            condition: _mean(values) for condition, values in attacked_success.items()
+            condition: summary["attack_success_rate_among_scored"]
+            for condition, summary in attack_evaluation.items()
         },
+        "attack_success_evaluation": attack_evaluation,
         "paca_tool_metrics": {
             "benign": policy_metric_summary(benign_policy_metrics),
             "attacked": policy_metric_summary(attacked_policy_metrics),
