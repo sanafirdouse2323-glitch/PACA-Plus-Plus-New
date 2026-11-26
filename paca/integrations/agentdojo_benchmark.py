@@ -393,6 +393,19 @@ def _agentdojo_result_indeterminate_reason(result: Any) -> str | None:
     return None
 
 
+def _attack_indeterminate_reason_counts(
+    task_results: list[dict[str, Any]], condition: str
+) -> dict[str, int]:
+    """Count why attack pairs were omitted from the scored denominator."""
+    counts: dict[str, int] = {}
+    for task_result in task_results:
+        for pair_result in task_result["attacked_pairs"]:
+            reason = pair_result["conditions"][condition]["indeterminate_reason"]
+            if reason is not None:
+                counts[reason] = counts.get(reason, 0) + 1
+    return counts
+
+
 def _sum_metrics(records: list[dict[str, int]]) -> dict[str, int]:
     keys = (
         "tool_calls_seen",
@@ -977,7 +990,12 @@ def run_workspace_benchmark(
         }
 
     attack_evaluation = {
-        condition: _attack_success_summary(values)
+        condition: {
+            **_attack_success_summary(values),
+            "indeterminate_reason_counts": _attack_indeterminate_reason_counts(
+                results["task_results"], condition
+            ),
+        }
         for condition, values in attacked_success.items()
     }
     results["summary"] = {
