@@ -182,7 +182,10 @@ class LineageNode:
             raise ValueError("content_digest must be a lowercase SHA-256 hex digest")
         if not isinstance(self.label, Label):
             raise TypeError("lineage label must be a Label from a trusted adapter")
-        if self.source_class == "model_generated" and self.label.integrity != "untrusted":
+        if (
+            self.source_class == "model_generated"
+            and self.label.integrity != "untrusted"
+        ):
             raise ValueError(
                 "model-generated content must be untrusted without an authenticated validation record"
             )
