@@ -915,6 +915,7 @@ def run_workspace_benchmark(
                 model_id=model_id,
                 pipeline_name=baseline_name,
                 max_iters=max_iters,
+                model_usage_recorder=model_usage_recorders["agentdojo_no_defense"],
             )
             baseline_attack = api["load_attack"](
                 attack_name, suite, baseline_attack_pipeline
@@ -949,6 +950,7 @@ def run_workspace_benchmark(
                 pipeline_name=filter_name,
                 max_iters=max_iters,
                 defense="tool_filter",
+                model_usage_recorder=model_usage_recorders["agentdojo_tool_filter"],
             )
             filter_attack = api["load_attack"](
                 attack_name, suite, filter_attack_pipeline
