@@ -170,16 +170,25 @@ A passing deterministic conformance test proves only that the tested adapter pre
 
 ### 6.1 Test sink design
 
-Build a dedicated, resettable test resource/sink with:
-- a durable authority epoch/fencing token;
-- request-bound principal, operation, canonical target, policy version, expiry, operation ID and idempotency key;
-- an atomic serialization point that checks the current epoch and commits the test effect in one transaction or enforces a monotonically increasing fencing epoch;
-- a durable sink receipt with commit identity and observed outcome;
-- fault injection before prepare, after prepare, before commit, after commit and before receipt delivery;
-- independent clients/processes to create real concurrency;
-- a deterministic inspection endpoint that reports committed state and receipt identifiers.
+Do not duplicate the existing test sink without first reusing its tested boundaries. The repository already contains:
+- SQLite-backed logical-resource commits in `SQLiteAuthorityRegistry`, with a transaction-scoped active-authority check, quota charge, resource version and receipt in one database transaction.
+- A PostgreSQL-backed `PostgresAuthorityRegistry` using a shared-primary transaction/lock profile; tests create independent clients and exercise commit-versus-revocation ordering.
+- A Linux filesystem commit adapter with staged replacement and rollback/recovery tests; this is a local host filesystem profile, not a remote provider.
+- A narrow in-process broker write mediator that binds an operation ID/idempotency key, signed commit permit and broker access receipt to the local logical-resource transaction. Its registry can return the original committed result on an exact safe retry and reject changed-operation key reuse.
+- Existing tests in `tests/test_resource_commit.py`, `tests/test_postgres_authority.py`, `tests/test_broker_write_mediator.py` and `tests/test_broker_write_mediator.py` cover local commit/revocation races, permit replay, quota rollback, broker idempotent retry and receipt checks. PostgreSQL-specific tests require `PACA_TEST_POSTGRES_DSN`; if unset, pytest skips them.
 
-Use PostgreSQL or an equivalent transactional store as a test sink. Keep the local logical resource executor and filesystem fence as separate profiles; neither establishes a remote provider's semantics.
+Extend those fixtures only where the required schedules are genuinely missing. The minimum research test sink must expose:
+- a durable authority epoch/fencing token and a single, documented serialization point;
+- request-bound principal, operation, canonical target, policy version, expiry, stable operation ID and idempotency key;
+- a transaction that compares current authority and commits the logical test effect atomically, or an explicit monotonic fencing-token contract;
+- a durable receipt with commit identity and observable outcome;
+- fault injection before prepare, after prepare, before commit, after commit and before receipt delivery;
+- independent clients/processes for concurrency and race schedules;
+- a deterministic inspection method for committed state and receipt IDs.
+
+**Important path distinction:** the direct `PACAAgentRuntime` + `FencedResourceExecutor` path mints a short-lived one-use permit for a local `write_file`/`mem_write` operation. That prevents replay of the same permit, but it is not the same contract as the broker's stable operation ID/idempotency-key plus access-receipt path. Do not infer that a fresh permit for a repeated request is a provider-side exactly-once guarantee. The broker protocol is also an in-process reference mediator and writes only to the local logical resource registry; it is not a production network broker or remote-provider commit protocol.
+
+Use the SQLite/PostgreSQL logical-resource stores as **project-owned transactional test sinks**. Keep the local filesystem and broker profiles separate. None proves a remote provider's atomic commit, host-level universal mediation, or multi-primary/distributed failover safety. A new network-facing sink fixture is justified only if it tests a real service boundary that the current adapters do not expose.
 
 ### 6.2 Required schedules
 
