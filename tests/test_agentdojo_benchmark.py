@@ -290,7 +290,7 @@ def test_attack_success_summary_excludes_error_pairs_from_the_scored_denominator
     assert summary["indeterminate_attack_pairs"] == 2
     assert summary["attack_success_count"] == 1
     assert summary["attack_success_rate_among_scored"] == 0.5
-    assert "error-bearing pairs are indeterminate" in summary["rate_denominator_rule"]
+    assert "errored or output-less pairs are indeterminate" in summary["rate_denominator_rule"]
 
 
 def test_attack_success_summary_returns_no_rate_when_every_pair_is_indeterminate():
@@ -336,4 +336,41 @@ def test_agentdojo_result_error_and_missing_output_are_indeterminate():
         )
         is None
     )
+
+def test_attack_indeterminate_reason_counts_report_each_condition_failure_class():
+    from paca.integrations.agentdojo_benchmark import (
+        _attack_indeterminate_reason_counts,
+    )
+
+    task_results = [
+        {
+            "attacked_pairs": [
+                {
+                    "conditions": {
+                        "paca": {"indeterminate_reason": "agentdojo_task_error"}
+                    }
+                },
+                {
+                    "conditions": {
+                        "paca": {"indeterminate_reason": "missing_assistant_model_output"}
+                    }
+                },
+            ]
+        },
+        {
+            "attacked_pairs": [
+                {"conditions": {"paca": {"indeterminate_reason": None}}},
+                {
+                    "conditions": {
+                        "paca": {"indeterminate_reason": "agentdojo_task_error"}
+                    }
+                },
+            ]
+        },
+    ]
+
+    assert _attack_indeterminate_reason_counts(task_results, "paca") == {
+        "agentdojo_task_error": 2,
+        "missing_assistant_model_output": 1,
+    }
 
