@@ -326,6 +326,18 @@ def test_agentdojo_result_error_and_missing_output_are_indeterminate():
     )
     assert (
         _agentdojo_result_indeterminate_reason(
+            SimpleNamespace(error=None, messages=["not-a-message-object"])
+        )
+        == "invalid_final_message"
+    )
+    assert (
+        _agentdojo_result_indeterminate_reason(
+            SimpleNamespace(error=None, messages=[{"role": "tool", "content": ["ok"]}])
+        )
+        == "missing_final_assistant_message"
+    )
+    assert (
+        _agentdojo_result_indeterminate_reason(
             SimpleNamespace(error=None, messages=[{"role": "assistant", "content": None}])
         )
         == "missing_assistant_model_output"
