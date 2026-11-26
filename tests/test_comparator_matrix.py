@@ -5,7 +5,9 @@ from pathlib import Path
 
 
 def test_industry_comparator_matrix_keeps_vendor_documentation_separate_from_live_tests():
-    path = Path(__file__).resolve().parents[1] / "docs" / "industry_comparator_matrix.json"
+    path = (
+        Path(__file__).resolve().parents[1] / "docs" / "industry_comparator_matrix.json"
+    )
     matrix = json.loads(path.read_text(encoding="utf-8"))
 
     assert matrix["schema_version"] == "1.0.0"
