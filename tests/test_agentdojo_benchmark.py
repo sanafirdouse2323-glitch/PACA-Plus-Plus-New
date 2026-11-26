@@ -290,7 +290,7 @@ def test_attack_success_summary_excludes_error_pairs_from_the_scored_denominator
     assert summary["indeterminate_attack_pairs"] == 2
     assert summary["attack_success_count"] == 1
     assert summary["attack_success_rate_among_scored"] == 0.5
-    assert "errored or output-less pairs are indeterminate" in summary["rate_denominator_rule"]
+    assert "missing final assistant text response is reported separately" in summary["rate_denominator_rule"]
 
 
 def test_attack_success_summary_returns_no_rate_when_every_pair_is_indeterminate():
@@ -305,11 +305,12 @@ def test_attack_success_summary_returns_no_rate_when_every_pair_is_indeterminate
     assert summary["attack_success_rate_among_scored"] is None
 
 
-def test_agentdojo_result_error_and_missing_output_are_indeterminate():
+def test_agentdojo_result_error_and_unusable_traces_are_indeterminate():
     from types import SimpleNamespace
 
     from paca.integrations.agentdojo_benchmark import (
         _agentdojo_result_indeterminate_reason,
+        _agentdojo_result_missing_final_response,
     )
 
     assert (
@@ -336,18 +337,19 @@ def test_agentdojo_result_error_and_missing_output_are_indeterminate():
         )
         == "missing_final_assistant_message"
     )
-    assert (
-        _agentdojo_result_indeterminate_reason(
-            SimpleNamespace(error=None, messages=[{"role": "assistant", "content": None}])
-        )
-        == "missing_assistant_model_output"
+    missing_text_result = SimpleNamespace(
+        error=None,
+        messages=[{"role": "assistant", "content": None}],
     )
-    assert (
-        _agentdojo_result_indeterminate_reason(
-            SimpleNamespace(error=None, messages=[{"role": "assistant", "content": [{"type": "text", "text": "done"}]}])
-        )
-        is None
+    assert _agentdojo_result_indeterminate_reason(missing_text_result) is None
+    assert _agentdojo_result_missing_final_response(missing_text_result) is True
+
+    text_result = SimpleNamespace(
+        error=None,
+        messages=[{"role": "assistant", "content": [{"type": "text", "text": "done"}]}],
     )
+    assert _agentdojo_result_indeterminate_reason(text_result) is None
+    assert _agentdojo_result_missing_final_response(text_result) is False
 
 def test_attack_indeterminate_reason_counts_report_each_condition_failure_class():
     from paca.integrations.agentdojo_benchmark import (
@@ -385,4 +387,34 @@ def test_attack_indeterminate_reason_counts_report_each_condition_failure_class(
         "agentdojo_task_error": 2,
         "missing_assistant_model_output": 1,
     }
+
+def test_attack_missing_final_response_count_is_separate_from_indeterminate_count():
+    from paca.integrations.agentdojo_benchmark import (
+        _attack_missing_final_response_count,
+    )
+
+    task_results = [
+        {
+            "attacked_pairs": [
+                {
+                    "conditions": {
+                        "paca": {
+                            "indeterminate_reason": None,
+                            "missing_final_response": True,
+                        }
+                    }
+                },
+                {
+                    "conditions": {
+                        "paca": {
+                            "indeterminate_reason": "agentdojo_task_error",
+                            "missing_final_response": False,
+                        }
+                    }
+                },
+            ]
+        }
+    ]
+
+    assert _attack_missing_final_response_count(task_results, "paca") == 1
 
