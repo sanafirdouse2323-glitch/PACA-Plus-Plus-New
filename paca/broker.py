@@ -47,8 +47,10 @@ class InProcessBrokerReadMediator:
     passes the verified nonce receipt and signed read-byte ceiling into the
     registry's atomic read transaction.
 
-    A mandatory trusted provenance-release callback must approve the returned
-    value and provenance metadata before the mediator returns any content.
+    A mandatory trusted provenance-release callback receives the exact
+    SQLiteProvenanceRepository and must validate every source-lineage reference
+    against it. The mediator holds that repository's revocation guard while the
+    callback runs, revalidates the authority grant, and materializes the response.
     Callback denial or failure occurs after the registry transaction, so the
     request receipt and quota remain consumed. This is intentionally fail-closed.
 
