@@ -227,6 +227,7 @@ def test_logical_resource_reads_reject_reserved_internal_backend_namespace(tmp_p
             access_receipt={},
         )
 
+
 def test_resource_write_and_effect_budget_commit_in_one_authority_transaction(tmp_path):
     env = _environment(tmp_path)
     decision, result = env["runtime"].execute_effect(
@@ -954,6 +955,7 @@ def test_logical_write_does_not_invalidate_pending_filesystem_journal(
     assert target.read_bytes() == b"approved report body"
     assert sorted(path.name for path in state_dir.iterdir()) == ["broker.lock"]
     recovered.close()
+
 
 @pytest.mark.skipif(
     sys.platform != "linux", reason="filesystem commit fence requires Linux openat2"
