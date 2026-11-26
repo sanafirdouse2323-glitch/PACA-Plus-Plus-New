@@ -7,16 +7,16 @@ aggregated into that template before calling this module.
 
 from __future__ import annotations
 
+import collections.abc
 import math
 import random
-from collections.abc import Sequence
-from typing import TypedDict
+import typing
 
 
 CONFIRMATORY_TEMPLATE_FLOOR = 30
 
 
-class TemplateOutcome(TypedDict):
+class TemplateOutcome(typing.TypedDict):
     """Aggregated paired outcomes for one independent scenario template."""
 
     template_id: str
@@ -49,7 +49,7 @@ def _percentile(sorted_values: list[float], probability: float) -> float:
 
 
 def paired_template_effect(
-    templates: Sequence[TemplateOutcome],
+    templates: collections.abc.Sequence[TemplateOutcome],
     *,
     bootstrap_replicates: int = 10_000,
     seed: int = 20261126,
