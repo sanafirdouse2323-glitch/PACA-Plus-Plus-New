@@ -17,19 +17,21 @@ from typing import Any
 
 from .canonical import canonicalize
 
+def _load_ed25519_key_types() -> tuple[Any, Any]:
+    """Load optional cryptography key classes without weakening static types."""
+    try:
+        from cryptography.hazmat.primitives.asymmetric.ed25519 import (
+            Ed25519PrivateKey,
+            Ed25519PublicKey,
+        )
+    except ImportError:  # pragma: no cover - depends on optional crypto installation
+        return None, None
+    return Ed25519PrivateKey, Ed25519PublicKey
+
+
 Ed25519PrivateKey: Any
 Ed25519PublicKey: Any
-try:
-    from cryptography.hazmat.primitives.asymmetric.ed25519 import (
-        Ed25519PrivateKey as _Ed25519PrivateKey,
-        Ed25519PublicKey as _Ed25519PublicKey,
-    )
-except ImportError:  # pragma: no cover - depends on optional crypto installation
-    Ed25519PrivateKey = None
-    Ed25519PublicKey = None
-else:
-    Ed25519PrivateKey = _Ed25519PrivateKey
-    Ed25519PublicKey = _Ed25519PublicKey
+Ed25519PrivateKey, Ed25519PublicKey = _load_ed25519_key_types()
 
 
 _SIGNATURE_DOMAIN = b"PACA++/MESSAGE/V1\n"
