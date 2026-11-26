@@ -14,10 +14,10 @@ def test_industry_comparator_matrix_keeps_vendor_documentation_separate_from_liv
     assert matrix["repository"]["no_live_vendor_comparison_claim"] is True
 
     by_id = {item["id"]: item for item in matrix["comparators"]}
-    assert len(by_id) == len(matrix["comparators"]) == 15
+    assert len(by_id) == len(matrix["comparators"]) == 17
     assert (
         len([item for item in matrix["comparators"] if item["id"] != "paca-plus-plus"])
-        == 14
+        == 16
     )
 
     vendor_ids = (
@@ -37,6 +37,8 @@ def test_industry_comparator_matrix_keeps_vendor_documentation_separate_from_liv
         "agentspec",
         "caplease",
         "aid-guard",
+        "delegateguard-purpose-bound-capabilities",
+        "delegation-without-trust",
     )
     for comparator_id in vendor_ids:
         comparator = by_id[comparator_id]
