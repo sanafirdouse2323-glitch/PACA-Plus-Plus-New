@@ -61,6 +61,10 @@ def test_industry_comparator_matrix_keeps_vendor_documentation_separate_from_liv
         "P",
     }
     assert by_id["paca-plus-plus"]["evidence_level"] == ["I", "R", "S", "F"]
+    for comparator in matrix["comparators"]:
+        if comparator["id"] != "paca-plus-plus":
+            assert comparator["live_test_status"] == "not_run"
+            assert comparator["next_action"]
 
     # These controls address distinct research questions and must not be
     # collapsed into one synthetic "cohort" or ranked as interchangeable.
