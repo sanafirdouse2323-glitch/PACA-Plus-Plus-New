@@ -226,6 +226,8 @@ Keep two experiments separate.
 
 Use a published benchmark such as AgentDojo only within its supported task/attack coverage, and explicitly document all task adaptations. Do not treat adapter tests, dry-runs, scripted tests, or skipped credential-gated CI jobs as live model results.
 
+The current AgentDojo runner is limited to its selected workspace read-tool mapping and supports matched no-defence, official AgentDojo `tool_filter`, and PACA conditions for an OpenAI-backed model. It now captures package/platform metadata, per-condition AgentDojo episode durations and errors, p50/p95/p99 episode latency, error-free episode fraction, the sequential measured episode rate, and PACA policy-decision telemetry. It labels the report as a model-in-the-loop reproduction and distinguishes a completed run from a failed/interrupted run. The sequential rate is not concurrent throughput; the error-free episode fraction is not an SLA availability statistic. Provider/API cost is explicitly not captured until billing/token-usage telemetry is joined to the run.
+
 Live runs require a model-provider credential stored as a protected GitHub Actions secret or local environment secret. Do not commit or paste credentials into source, issues, logs or chat. If a credential is unavailable, complete the harness and dry-run validation, record the live test as blocked, and make no model-effectiveness claim.
 
 ## 8. Workstream 6 — security, utility and operational metrics
@@ -252,8 +254,8 @@ Live runs require a model-provider credential stored as a protected GitHub Actio
 ### 8.3 Operational outcomes
 
 - Decision and end-to-end latency (p50, p95, p99).
-- Throughput under stated concurrency and workload mix.
-- Availability and recovery time under injected component failures.
+- Throughput under stated concurrency and workload mix. The current AgentDojo episode rate is sequential and must not be called concurrent throughput.
+- Availability and recovery time under injected component failures. The current per-run error-free episode fraction is not an SLA or long-term availability estimate.
 - CPU, memory, network and durable-storage overhead.
 - State growth per workflow and cleanup/retention cost.
 - Pending/unresolved reservations, retries, reconciliation time and duplicate-effect rate.
@@ -293,11 +295,11 @@ G2 is the decision gate for any additional PACA mechanism. No generic "continuou
 
 | Existing path | Role in this programme | Work required |
 |---|---|---|
-| `paca/bench.py` | Current deterministic simulator | Preserve as regression simulation; do not relabel toy models as vendor products. Add versioned machine-readable result records and separate evaluation modes. |
+| `paca/bench.py` | Current deterministic simulator | Result JSON now carries schema version and `S` (project-owned simulation) evidence metadata, including explicit toy-baseline and no-live-vendor/no-model flags. Preserve as regression simulation; not industry evidence. |
 | `paca/baselines.py` | Hand-authored toy baselines | Keep explicitly labelled as simulations. Add adapters only for real/native product execution profiles; avoid pretending a hand-coded policy equals a vendor engine. |
-| `paca/scenarios.py` | Current authored attack/benign fixtures | Add versioned workflow templates, source/derived artifact relations, transformation operations, multi-agent steps and sink outcomes. Mark dependencies/variants by independent template ID. |
-| `paca/integrations/agentdojo_benchmark.py` | Existing bounded AgentDojo adapter/runner | Extend only within actual supported tasks and benchmark APIs; retain task exclusions and credential-gated live execution. |
-| `paca/resource_commit.py`, `paca/filesystem_commit.py`, `paca/postgres_authority.py` | Existing logical/filesystem commit fences and PostgreSQL authority state | Build separate protected test-sink profiles and concurrency/fault schedules; do not conflate local resource commits with remote provider transactions. |
+| `paca/scenarios.py` | Current authored attack/benign fixtures | Existing 30 attack and 11 benign examples remain author-defined fixtures, not independent confirmation templates. Build a versioned independent workflow-template corpus with lineage transformations, multi-agent steps and sink outcomes. |
+| `paca/integrations/agentdojo_benchmark.py` | Existing bounded AgentDojo adapter/runner | Runner now adds model-in-the-loop evidence status and per-condition episode latency/error/sequential-rate telemetry. It still requires a protected model credential, has selected workspace read-tool coverage only, and does not capture provider billing cost. |
+| `paca/resource_commit.py`, `paca/filesystem_commit.py`, `paca/postgres_authority.py`, `paca/broker_write.py` | Existing local logical/filesystem commit fences, PostgreSQL authority state and in-process broker writes | Reuse and extend existing revocation-race, quota, permit replay, broker idempotency and receipt tests. These are local/reference sink contracts, not remote-provider atomic effects or distributed failover. |
 | `models/*.tla` | Existing bounded formal models | Add or refine only selected invariants relevant to the frozen primary policy; record TLC bounds and keep formal properties separate from runtime tests. |
 | `docs/CONTAINMENT_EVALUATION.md` | Existing containment protocol, including OpenShell context | Link to this protocol and update only when new real evidence exists. |
 | `docs/security-roadmap.md` | Implementation maturity and remaining gates | Keep product/production claims aligned with tested code and independent evidence. |
@@ -321,15 +323,17 @@ Release only synthetic data and reviewed traces. Never publish live credentials,
 
 ## 12. Current status and immediate next actions
 
-At this commit, the documentary source register and the execution protocol are prepared. The local project simulation and existing AgentDojo adapter exist, but the six-point evaluation is **not yet completed**.
+At this branch revision, the documentary comparator protocol and evidence labels are in place; the deterministic simulator is explicitly labelled `S`; synthetic lineage-conformance tests have been added; the AgentDojo runner has model-run status and basic operational telemetry; and the existing local commit/revocation/idempotency test infrastructure has been mapped for reuse. The six-point evaluation is **not completed**. No live vendor-service test, residual-gap reproduction against a fully configured industry stack, model-generated benchmark result, external-provider commit test, or confirmatory independent-template analysis has been produced by this work.
 
 The immediate implementation order is:
 
-1. Update the result schema and benchmark labels so toy simulation, source audit, artefact reproduction and live vendor runs cannot be mixed.
-2. Build the frozen transformation/lineage scenario corpus with independent template IDs and benign controls.
-3. Build the transactional test sink and fault/concurrency schedules on top of the existing authority/commit interfaces.
-4. Implement vendor-native adapters/profile harnesses only for services the operator can access; maintain D/I evidence records for the rest.
-5. Extend the model-in-the-loop runner and capture raw AgentDojo results when a protected provider credential and valid task scope are configured.
-6. Add cluster-aware analysis and latency/throughput/availability/cost reporting; freeze confirmatory rules after pilot evidence.
+1. Pass CI for the new AgentDojo telemetry and transformation tests, then review their traces and evidence labels.
+2. Build the versioned independent workflow-template corpus; keep the 30 attack/11 benign simulator fixtures distinct from independent confirmatory units.
+3. Add missing fault schedules to existing SQLite/PostgreSQL/broker sinks and retain the provider boundary as explicitly untested until a real external sink is configured.
+4. Obtain permitted test environments for AWS, NVIDIA, Microsoft and Google, pin configurations and perform native smoke tests; keep D/I audits for anything not available.
+5. Configure an approved model credential as a protected secret and execute a bounded real AgentDojo run; no token, key or secret should be posted in a chat or committed.
+6. Add model-generated semantic transformation variants and cluster-aware evaluation; capture provider usage/billing telemetry if cost-per-task is required; add true concurrent load tests before reporting throughput or availability.
+
+No comparative effectiveness, superiority, commercial readiness, complete five-domain mediation, or future-incident-prevention claim is made by this protocol.
 
 No comparative effectiveness, superiority, commercial readiness, complete five-domain mediation, or future-incident-prevention claim is made by this protocol.
