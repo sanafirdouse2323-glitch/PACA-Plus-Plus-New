@@ -432,8 +432,6 @@ def test_attack_missing_final_response_count_is_separate_from_indeterminate_coun
 
 
 def test_required_call_denial_metrics_use_exact_manifest_matched_denominators():
-    import hashlib
-
     from paca.integrations.agentdojo_benchmark import (
         _required_call_policy_denial_summary,
     )
@@ -443,9 +441,17 @@ def test_required_call_denial_metrics_use_exact_manifest_matched_denominators():
     first_digest = hashlib.sha256(first_target.encode("utf-8")).hexdigest()
     second_digest = hashlib.sha256(second_target.encode("utf-8")).hexdigest()
     manifest = [
-        {"function": "get_day_calendar_events", "action": "read_calendar", "target": first_target},
+        {
+            "function": "get_day_calendar_events",
+            "action": "read_calendar",
+            "target": first_target,
+        },
         {"function": "search_emails", "action": "read_mail", "target": second_target},
-        {"function": "get_day_calendar_events", "action": "read_calendar", "target": first_target},
+        {
+            "function": "get_day_calendar_events",
+            "action": "read_calendar",
+            "target": first_target,
+        },
     ]
     audit_entries = [
         {"action": "read_calendar", "target_digest": first_digest, "verdict": "deny"},
@@ -466,8 +472,6 @@ def test_required_call_denial_metrics_use_exact_manifest_matched_denominators():
 
 
 def test_required_call_metrics_keep_approval_and_unobserved_calls_separate():
-    import hashlib
-
     from paca.integrations.agentdojo_benchmark import (
         _required_call_policy_denial_summary,
     )
