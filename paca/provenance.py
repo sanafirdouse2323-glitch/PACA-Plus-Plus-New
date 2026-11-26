@@ -82,6 +82,14 @@ class Label:
             tenant_unknown=any(label.tenant_unknown for label in ls),
         )
 
+    def as_model_output(self) -> Label:
+        """Mark model-produced content untrusted without losing data-flow labels.
+
+        A complete parent graph and output digest establish recorded origin and
+        byte identity, not semantic correctness of a model transformation.
+        """
+        return replace(self, integrity="untrusted")
+
     def short(self) -> str:
         s = ("U" if self.integrity == "untrusted" else "T") + f"/S{self.sensitivity}"
         if self.tenant_unknown:
@@ -127,7 +135,7 @@ def derive(value: Any, *inputs: Arg) -> Arg:
         raise TypeError(
             "derive() accepts only Arg inputs; label every source before deriving"
         )
-    joined = Label.join(*(arg.label for arg in inputs))
+    joined = Label.join(*(arg.label for arg in inputs)).as_model_output()
     refs = (
         frozenset().union(*(arg.lineage_refs for arg in inputs))
         if inputs
@@ -174,6 +182,10 @@ class LineageNode:
             raise ValueError("content_digest must be a lowercase SHA-256 hex digest")
         if not isinstance(self.label, Label):
             raise TypeError("lineage label must be a Label from a trusted adapter")
+        if self.source_class == "model_generated" and self.label.integrity != "untrusted":
+            raise ValueError(
+                "model-generated content must be untrusted without an authenticated validation record"
+            )
         if self.purpose is not None and (
             not isinstance(self.purpose, str) or not self.purpose
         ):
@@ -382,7 +394,7 @@ class ProvenanceGraph:
             raise ValueError(
                 "derived value references lineage not present in this graph"
             )
-        label = Label.join(*(arg.label for arg in inputs))
+        label = Label.join(*(arg.label for arg in inputs)).as_model_output()
         node = LineageNode(
             object_id=object_id,
             version_id=version_id,
