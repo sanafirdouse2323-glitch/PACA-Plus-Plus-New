@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased — 2026-11-24
+## Unreleased — 2026-11-26
 
 This section records changes merged to `main` after the 0.3.2 packaging release. It does not claim production readiness or improved real-agent attack resistance.
 
@@ -10,6 +10,10 @@ This section records changes merged to `main` after the 0.3.2 packaging release.
 - Adds AgentDojo, LangGraph, LangChain and PostgreSQL checkpoint integrations, plus opt-in Docker worker and local resource-commit reference components.
 - Hardens the consequential monitor profile and Qdrant tenant filtering; reconciles project documentation and security boundaries.
 - Expands repository checks and documents remaining bypass, identity, key-management, remote-commit and evaluation gaps.
+- Hardens strict resource commits with concrete built-in executor allow-listing, runtime-bound authority/registry checks, built-in sync/async dispatch and sealed filesystem adapter configuration.
+- Serializes in-process broker provenance checks against lineage revocation on one host using the shared SQLite provenance repository; distributed and multi-host revocation consistency remain unsupported.
+- Separates logical resource values from filesystem recovery sidecar state and preserves immutable committed-version evidence for filesystem journal recovery; legacy rows are retained without guessing their original backend.
+- Gates Docker image publication on the complete non-credential-dependent CI set and expands mypy checks to selected security-critical modules and untyped function bodies.
 
 These are reference implementations. They do not establish complete lifecycle mediation or independently measured real-world security effectiveness.
 
