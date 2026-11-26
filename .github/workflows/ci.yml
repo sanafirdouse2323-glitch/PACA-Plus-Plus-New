@@ -300,7 +300,13 @@ jobs:
     permissions:
       contents: read
       packages: write
-    needs: tests
+    needs:
+      - tests
+      - wheel-smoke-test
+      - agentdojo-integration
+      - lint
+      - langgraph-postgres-checkpoint
+      - langgraph-integration
     steps:
       - uses: actions/checkout@v4
       - name: Set up Docker Buildx
