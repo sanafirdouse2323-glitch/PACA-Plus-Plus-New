@@ -711,14 +711,14 @@
       "name": "Each eligible native product or research artefact",
       "type": "native_profile",
       "evidence_level": "D_or_R_or_V_according_to_actual_run",
-      "purpose": "Run strongest supported configuration without changing native semantics."
+      "purpose": "Run each eligible external product and research artefact separately in its strongest supported native configuration, without changing semantics. DelegateGuard and Delegation Without Trust are close prior-art baselines and require their own pinned native reproductions where artefacts and dependencies permit."
     },
     {
       "id": "B3-layered",
       "name": "Strongest compatible layered controls",
       "type": "integrated_native_profile",
       "evidence_level": "not_run",
-      "purpose": "Test only integrations shown to interoperate; record token/session/identity translation and all routing boundaries."
+      "purpose": "Test only an actually interoperable strongest combination of identity, gateway/temporal enforcement, runtime isolation and provenance/authorization controls. Include a research capability/broker PEP such as DelegateGuard or Delegation Without Trust only after a real integration smoke test; record token/session/identity translation and routing boundaries."
     },
     {
       "id": "P",
