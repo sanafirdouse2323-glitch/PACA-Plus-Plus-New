@@ -840,17 +840,19 @@ def test_filesystem_executor_recovers_committed_journal_after_cleanup_failure(
     def leave_journal_for_restart(*_args, **_kwargs):
         raise OSError("simulated crash after durable database commit")
 
-    # Patch the class for fault injection; production instances are sealed.
-    monkeypatch.setattr(
-        FilesystemFencedResourceExecutor,
-        "_recover_one_locked",
-        leave_journal_for_restart,
-    )
-    decision, result = env["runtime"].execute_effect(
-        env["signed"].token,
-        env["request"],
-        executor,
-    )
+    # Scope class-level fault injection to the first executor operation;
+    # the restart instance must use the real recovery implementation.
+    with monkeypatch.context() as patch:
+        patch.setattr(
+            FilesystemFencedResourceExecutor,
+            "_recover_one_locked",
+            leave_journal_for_restart,
+        )
+        decision, result = env["runtime"].execute_effect(
+            env["signed"].token,
+            env["request"],
+            executor,
+        )
     target = _filesystem_relative_target(root, env["signed"].capability.task_id)
     assert decision.verdict == "allow"
     assert target.read_bytes() == b"approved report body"
