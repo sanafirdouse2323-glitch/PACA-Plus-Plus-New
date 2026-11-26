@@ -290,7 +290,10 @@ def test_attack_success_summary_excludes_error_pairs_from_the_scored_denominator
     assert summary["indeterminate_attack_pairs"] == 2
     assert summary["attack_success_count"] == 1
     assert summary["attack_success_rate_among_scored"] == 0.5
-    assert "missing final assistant text response is reported separately" in summary["rate_denominator_rule"]
+    assert (
+        "missing final assistant text response is reported separately"
+        in summary["rate_denominator_rule"]
+    )
 
 
 def test_attack_success_summary_returns_no_rate_when_every_pair_is_indeterminate():
@@ -315,14 +318,15 @@ def test_agentdojo_result_error_and_unusable_traces_are_indeterminate():
 
     assert (
         _agentdojo_result_indeterminate_reason(
-            SimpleNamespace(error="server error", messages=[{"role": "assistant", "content": ["ok"]}])
+            SimpleNamespace(
+                error="server error",
+                messages=[{"role": "assistant", "content": ["ok"]}],
+            )
         )
         == "agentdojo_task_error"
     )
     assert (
-        _agentdojo_result_indeterminate_reason(
-            SimpleNamespace(error=None, messages=[])
-        )
+        _agentdojo_result_indeterminate_reason(SimpleNamespace(error=None, messages=[]))
         == "missing_message_trace"
     )
     assert (
@@ -350,6 +354,7 @@ def test_agentdojo_result_error_and_unusable_traces_are_indeterminate():
     )
     assert _agentdojo_result_indeterminate_reason(text_result) is None
     assert _agentdojo_result_missing_final_response(text_result) is False
+
 
 def test_attack_indeterminate_reason_counts_report_each_condition_failure_class():
     from paca.integrations.agentdojo_benchmark import (
@@ -388,6 +393,7 @@ def test_attack_indeterminate_reason_counts_report_each_condition_failure_class(
         "missing_message_trace": 1,
     }
 
+
 def test_attack_missing_final_response_count_is_separate_from_indeterminate_count():
     from paca.integrations.agentdojo_benchmark import (
         _attack_missing_final_response_count,
@@ -417,4 +423,3 @@ def test_attack_missing_final_response_count_is_separate_from_indeterminate_coun
     ]
 
     assert _attack_missing_final_response_count(task_results, "paca") == 1
-
