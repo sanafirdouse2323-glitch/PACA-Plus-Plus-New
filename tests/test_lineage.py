@@ -107,13 +107,13 @@ def test_graph_derive_records_parent_edges_and_never_upgrades_trust():
     assert graph.get_node(node.parent_ids[0]) is not None
     assert graph.ancestors(node_id) == (graph.get_node(node.parent_ids[0]), node)
 
-    # Explicitly attempting to insert a trusted child of an untrusted source fails.
+    # Even a non-model transformation may not promote an untrusted parent.
     parent_id = next(iter(source.lineage_refs))
     upgraded = LineageNode(
         object_id="forged-summary",
         version_id="v1",
-        source="model_generated",
-        source_class="model_generated",
+        source="validation-service",
+        source_class="validated_transform",
         content_digest=_digest("trusted summary"),
         label=Label("trusted", sensitivity=1, tenant="acme"),
         parent_ids=(parent_id,),
@@ -122,6 +122,59 @@ def test_graph_derive_records_parent_edges_and_never_upgrades_trust():
     )
     with pytest.raises(ValueError, match="upgrade"):
         graph.add_lineage_node(upgraded)
+
+
+def test_model_generated_derivation_downgrades_trusted_sources():
+    graph = ProvenanceGraph()
+    source = graph.add_source(
+        "authenticated internal policy",
+        object_id="internal-policy",
+        version_id="v1",
+        source="policy-store:refunds",
+        source_class="authoritative_policy",
+        content_digest=_digest("authenticated internal policy"),
+        label=Label("trusted", sensitivity=2, tenant="acme"),
+        purpose="prepare-refund",
+    )
+
+    derived = graph.derive(
+        "model-generated summary",
+        source,
+        object_id="model-summary",
+        version_id="v1",
+        content_digest=_digest("model-generated summary"),
+        transformation="summarise",
+        purpose="prepare-refund",
+    )
+
+    assert source.label.integrity == "trusted"
+    assert derived.label.integrity == "untrusted"
+    assert derived.label.sensitivity == source.label.sensitivity == 2
+    assert derived.label.tenants == source.label.tenants == frozenset({"acme"})
+    assert derived.label.origins == source.label.origins
+    node = graph.get_node(next(iter(derived.lineage_refs)))
+    assert node is not None
+    assert node.source_class == "model_generated"
+    assert node.label.integrity == "untrusted"
+
+    unrecorded = derive("unrecorded model summary", source)
+    assert unrecorded.label.integrity == "untrusted"
+    assert unrecorded.label.sensitivity == 2
+    assert unrecorded.label.origins == source.label.origins
+
+    with pytest.raises(
+        ValueError, match="model-generated content must be untrusted"
+    ):
+        LineageNode(
+            object_id="trusted-model-output",
+            version_id="v1",
+            source="model_generated",
+            source_class="model_generated",
+            content_digest=_digest("unverified model output"),
+            label=Label("trusted", sensitivity=2, tenant="acme"),
+            parent_ids=tuple(source.lineage_refs),
+            transformation="summarise",
+        )
 
 
 def test_derived_lineage_requires_known_parents_and_cannot_drop_tenant_or_origin():
