@@ -379,17 +379,24 @@ class PACAAgentRuntime:
         return executor
 
     def _require_fenced_executor(self, executor: Any) -> Any:
-        """Require the exact runtime-bound local resource commit adapter."""
+        """Require an allow-listed concrete adapter bound to runtime authority state."""
         if not self.require_resource_commit_fence:
             return None
+        from .filesystem_commit import FilesystemFencedResourceExecutor
         from .resource_commit import FencedResourceExecutor
 
+        allowed_executor_types = (
+            FencedResourceExecutor,
+            FilesystemFencedResourceExecutor,
+        )
         if (
-            not isinstance(executor, FencedResourceExecutor)
+            type(executor) not in allowed_executor_types
             or executor.authority is not self.resource_commit_verifier
+            or executor.registry is not self.resource_commit_verifier.registry
         ):
             raise MemoryAccessDenied(
-                "resource commit fence mode requires the runtime-bound FencedResourceExecutor"
+                "resource commit fence mode requires the runtime-bound allow-listed "
+                "concrete adapter and exact registry client"
             )
         return executor
 
@@ -481,7 +488,7 @@ class PACAAgentRuntime:
             docker_executor.aexecute
             if docker_executor is not None
             else (
-                fenced_executor.aexecute_authorized
+                type(fenced_executor).aexecute_authorized
                 if self.require_resource_commit_fence
                 else executor
             )
@@ -520,7 +527,7 @@ class PACAAgentRuntime:
                 decision,
                 snapshot,
             )
-            result = async_executor(snapshot, permit)
+            result = async_executor(fenced_executor, snapshot, permit)
         else:
             result = async_executor(snapshot)
         if inspect.isawaitable(result):
@@ -613,7 +620,11 @@ class PACAAgentRuntime:
                 decision,
                 snapshot,
             )
-            result = fenced_executor.execute_authorized(snapshot, permit)
+            result = type(fenced_executor).execute_authorized(
+                fenced_executor,
+                snapshot,
+                permit,
+            )
         else:
             result = executor(snapshot)
         if inspect.isawaitable(result):

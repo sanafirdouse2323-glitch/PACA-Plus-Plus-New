@@ -51,6 +51,20 @@ class FilesystemFencedResourceExecutor(FencedResourceExecutor):
 
     SUPPORTED_ACTIONS = frozenset({"write_file"})
 
+    def __setattr__(self, name: str, value: object) -> None:
+        if getattr(self, "_sealed", False):
+            raise AttributeError(
+                "filesystem resource executor is immutable after initialization"
+            )
+        object.__setattr__(self, name, value)
+
+    def __delattr__(self, name: str) -> None:
+        if getattr(self, "_sealed", False):
+            raise AttributeError(
+                "filesystem resource executor is immutable after initialization"
+            )
+        object.__delattr__(self, name)
+
     def __init__(
         self,
         authority: HMACCapabilityAuthority,
@@ -60,6 +74,7 @@ class FilesystemFencedResourceExecutor(FencedResourceExecutor):
         max_file_bytes: int = 8 * 1024 * 1024,
     ) -> None:
         super().__init__(authority)
+        self._sealed = False
         if (
             isinstance(max_file_bytes, bool)
             or not isinstance(max_file_bytes, int)
@@ -164,6 +179,7 @@ class FilesystemFencedResourceExecutor(FencedResourceExecutor):
         except Exception:
             self.close()
             raise
+        object.__setattr__(self, "_sealed", True)
 
     @contextmanager
     def _locked(self) -> Iterator[None]:
@@ -592,7 +608,9 @@ class FilesystemFencedResourceExecutor(FencedResourceExecutor):
         record = self._parse_journal(journal_name)
         parent_fd, target_name = self._parent_and_name(record["relative_path"])
         try:
-            receipt = self.registry.get_resource_commit_receipt(record["nonce"])
+            receipt = self.authority.registry.get_resource_commit_receipt(
+                record["nonce"]
+            )
             if receipt is not None:
                 if not self._receipt_matches(record, receipt):
                     raise ResourceCommitDenied(
@@ -640,7 +658,11 @@ class FilesystemFencedResourceExecutor(FencedResourceExecutor):
         request: Request,
         permit_token: str,
     ) -> dict[str, Any]:
-        permit, payload = self._verify_request(request, permit_token)
+        permit, payload = FencedResourceExecutor._verify_request(
+            self,
+            request,
+            permit_token,
+        )
         if permit.action != "write_file":
             raise ResourceCommitDenied(
                 "filesystem commit adapter only supports write_file"
@@ -668,7 +690,10 @@ class FilesystemFencedResourceExecutor(FencedResourceExecutor):
             # Fast replay rejection avoids mistaking an older receipt for the
             # result of a new journal with a reused one-use permit nonce. The
             # unique database receipt remains the authoritative concurrency gate.
-            if self.registry.get_resource_commit_receipt(permit.nonce) is not None:
+            if (
+                self.authority.registry.get_resource_commit_receipt(permit.nonce)
+                is not None
+            ):
                 raise ResourceCommitDenied("resource commit permit replay was rejected")
             parent_fd, target_name = self._parent_and_name(relative)
             try:
@@ -747,14 +772,14 @@ class FilesystemFencedResourceExecutor(FencedResourceExecutor):
                     os.fsync(parent_fd)
 
                 try:
-                    result = self.registry.commit_fenced_filesystem_write(
+                    result = self.authority.registry.commit_fenced_filesystem_write(
                         permit,
                         payload,
                         commit_callback=commit_filesystem_rename,
                     )
                 except Exception as exc:
                     try:
-                        receipt = self.registry.get_resource_commit_receipt(
+                        receipt = self.authority.registry.get_resource_commit_receipt(
                             permit.nonce
                         )
                         if receipt is not None:
@@ -811,11 +836,15 @@ class FilesystemFencedResourceExecutor(FencedResourceExecutor):
         permit_token: str,
     ) -> dict[str, Any]:
         """Async-compatible adapter; the final commit is synchronous and fenced."""
-        return self.execute_authorized(request, permit_token)
+        return FilesystemFencedResourceExecutor.execute_authorized(
+            self,
+            request,
+            permit_token,
+        )
 
     def close(self) -> None:
         if not self._closed:
-            self._closed = True
+            object.__setattr__(self, "_closed", True)
             with contextlib.suppress(OSError):
                 self.secure_root.close()
             with contextlib.suppress(OSError):

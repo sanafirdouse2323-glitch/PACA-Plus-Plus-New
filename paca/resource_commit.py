@@ -116,9 +116,16 @@ class FencedResourceExecutor:
 
     def execute_authorized(self, request: Request, permit_token: str) -> dict[str, Any]:
         """Perform a local mutation under the resource database commit fence."""
-        permit, payload = self._verify_request(request, permit_token)
+        permit, payload = FencedResourceExecutor._verify_request(
+            self,
+            request,
+            permit_token,
+        )
         try:
-            return self.registry.commit_fenced_resource_write(permit, payload)
+            return self.authority.registry.commit_fenced_resource_write(
+                permit,
+                payload,
+            )
         except Exception as exc:
             raise ResourceCommitDenied(
                 "resource commit was rejected by the atomic authority fence"
@@ -128,7 +135,11 @@ class FencedResourceExecutor:
         self, request: Request, permit_token: str
     ) -> dict[str, Any]:
         """Async-compatible adapter; the commit remains one synchronous DB transaction."""
-        return self.execute_authorized(request, permit_token)
+        return FencedResourceExecutor.execute_authorized(
+            self,
+            request,
+            permit_token,
+        )
 
 
 # Backwards-compatible name for callers that explicitly use the SQLite backend.
