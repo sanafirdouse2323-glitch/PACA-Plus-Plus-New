@@ -560,6 +560,89 @@
       "next_action": "Pin prototype and provider-contract versions; reproduce commit revalidation, reservations and ambiguous-delivery fencing."
     },
     {
+      "id": "delegateguard-purpose-bound-capabilities",
+      "provider": "Research comparator",
+      "product": "DelegateGuard — Purpose-Bound Capabilities for Delegated LLM Agent Workflows",
+      "evidence_level": "D",
+      "live_test_status": "not_run",
+      "documented_capability_summary": [
+        "Reference-monitor design attenuates initiating-user authority across purpose, information labels, operations, sinks and delegation depth",
+        "Mediates data-moving actions outside the LLM and propagates revocation through a delegation graph",
+        "Paper reports adaptive adversary, model-action and multi-turn evaluations, including a large Enron-email corpus"
+      ],
+      "relevant_research_dimensions": [
+        "delegation_attenuation",
+        "purpose_binding",
+        "information_label_propagation",
+        "sink_authorization",
+        "delegation_depth",
+        "revocation_cascade",
+        "model_in_loop_evaluation",
+        "multi_agent_workflows"
+      ],
+      "documented_scope_or_constraints": [
+        "All quantitative findings are author-reported for the paper's exact implementations, models, tasks and threat assumptions",
+        "The abstract's observed-sink workflows and declared reference-monitor placement define the tested coverage; do not infer arbitrary provider transaction guarantees",
+        "The paper is a close comparator for delegation and information-flow claims and must be reviewed before asserting novelty in those dimensions"
+      ],
+      "not_established_by_documentation_alone": [
+        "Independent replication of the reported model-action and multi-turn results",
+        "Atomic commit or delivery fencing at arbitrary third-party providers",
+        "Complete mediation of uninstrumented model context, memory stores or external runtimes outside the declared monitor boundary"
+      ],
+      "live_test_requirements": [
+        "Retrieve and pin the full paper version, implementation and all released task/configuration artefacts",
+        "Reproduce the native four-baseline comparison and declared adaptive attacker before mapping any scenario to PACA",
+        "Retain per-model traces, capability decisions, sink-side outcomes and benign utility",
+        "Compare only common observable-sink workflows without weakening the native monitor or changing its threat model"
+      ],
+      "official_sources": [
+        "https://arxiv.org/abs/2610.16005"
+      ],
+      "next_action": "Pin the paper and implementation artefacts, then reproduce its native delegation, revocation and observable-sink evaluations before any comparative claim."
+    },
+    {
+      "id": "delegation-without-trust",
+      "provider": "Research comparator",
+      "product": "Delegation Without Trust — An Empirical Gap Analysis of Identity, Authorization, and Runtime Governance in Multi-Agent LLM Systems",
+      "evidence_level": "D",
+      "live_test_status": "not_run",
+      "documented_capability_summary": [
+        "Frames multi-agent security around confused deputies, token theft/replay, prompt-injection privilege escalation and compromised sub-agents",
+        "Proposes an authorization broker to constrain delegated actions under an untrusted-model threat assumption",
+        "Paper reports adversarial tests, forged-token attempts and randomized reachable-action comparisons"
+      ],
+      "relevant_research_dimensions": [
+        "untrusted_model_assumption",
+        "authorization_broker",
+        "delegated_authority",
+        "sub_agent_confinement",
+        "token_replay",
+        "prompt_injection_privilege_escalation",
+        "cross_framework_comparison"
+      ],
+      "documented_scope_or_constraints": [
+        "The abstract reports results for its declared broker, attacks, four framework/authorization comparisons and randomized scenarios",
+        "The reported result does not establish coverage for every version, plugin, tool adapter or provider deployment of the named frameworks",
+        "The paper's broker design and threat model are a direct novelty challenge and require source-level comparison before PACA's distinct contribution is stated"
+      ],
+      "not_established_by_documentation_alone": [
+        "Independent reproduction of the reported attack counts, token-forgery trials or reachable-action distribution",
+        "Arbitrary provider-side commit atomicity and reconciliation under ambiguous delivery",
+        "Semantic lineage detection across arbitrary paraphrase, memory reconstruction and unobserved model context"
+      ],
+      "live_test_requirements": [
+        "Pin the paper version and any public broker implementation, dependencies and configuration",
+        "Reproduce the four named threat classes and the paper's exact authorization-broker baseline",
+        "Verify the identity, token, delegation and sink boundaries with independent traces",
+        "Run matched benign workflows and disclose unsupported framework/provider paths"
+      ],
+      "official_sources": [
+        "https://arxiv.org/abs/2609.00267"
+      ],
+      "next_action": "Pin the paper and broker artefact, then reproduce its threat model and broker baseline before claiming a distinct delegation-security contribution."
+    },
+    {
       "id": "paca-plus-plus",
       "provider": "Project under evaluation",
       "product": "PACA++",
