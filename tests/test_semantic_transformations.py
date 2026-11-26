@@ -11,7 +11,7 @@ import hashlib
 
 import pytest
 
-from paca.provenance import Arg, Label, ProvenanceGraph
+from paca.provenance import Arg, Label, ProvenanceGraph, derive as derive_untracked
 
 
 def _digest(value: str) -> str:
@@ -220,4 +220,40 @@ def test_untracked_or_incomplete_dependency_fails_closed_for_explicit_lineage():
             version_id="v1",
             content_digest=_digest("output that may depend on omitted context"),
             transformation="unknown_dependency",
+        )
+
+
+
+def test_opaque_model_output_without_recorded_source_edges_stays_incomplete():
+    """Unknown model context must not be silently upgraded into complete lineage."""
+    opaque_model_output = Arg(
+        "A reconstructed value derived from context the adapter did not record.",
+        label=Label(
+            integrity="untrusted",
+            sensitivity=3,
+            tenant="tenant-acme",
+        ),
+    )
+
+    derived = derive_untracked(
+        "A paraphrase emitted by a model from opaque context.",
+        opaque_model_output,
+    )
+
+    assert derived.lineage_refs == frozenset()
+    assert derived.lineage_incomplete is True
+    assert derived.label.integrity == "untrusted"
+    assert derived.label.sensitivity == 3
+    assert derived.label.tenants == frozenset({"tenant-acme"})
+
+    with pytest.raises(ValueError, match="complete explicit source lineage"):
+        ProvenanceGraph().derive(
+            "A value that must not be treated as lineage-complete.",
+            derived,
+            object_id="opaque-model-output",
+            version_id="v1",
+            content_digest=_digest(
+                "A value that must not be treated as lineage-complete."
+            ),
+            transformation="opaque_model_generation",
         )
