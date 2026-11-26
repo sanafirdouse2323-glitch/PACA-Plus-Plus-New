@@ -840,7 +840,12 @@ def test_filesystem_executor_recovers_committed_journal_after_cleanup_failure(
     def leave_journal_for_restart(*_args, **_kwargs):
         raise OSError("simulated crash after durable database commit")
 
-    monkeypatch.setattr(executor, "_recover_one_locked", leave_journal_for_restart)
+    # Patch the class for fault injection; production instances are sealed.
+    monkeypatch.setattr(
+        FilesystemFencedResourceExecutor,
+        "_recover_one_locked",
+        leave_journal_for_restart,
+    )
     decision, result = env["runtime"].execute_effect(
         env["signed"].token,
         env["request"],
