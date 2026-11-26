@@ -279,7 +279,7 @@ class PACAAgentRuntime:
                 "effect capability has no immutable authority lineage"
             )
         purpose = authority_record.purpose
-        accesses = []
+        accesses: list[_AuthorizedMemoryReference] = []
         for argument in snapshot.args.values():
             accesses.extend(
                 self.memory.authorize_argument(
@@ -477,7 +477,7 @@ class PACAAgentRuntime:
         """
         docker_executor = self._require_docker_sandbox_executor(executor)
         fenced_executor = self._require_fenced_executor(executor)
-        async_executor = (
+        async_executor: Callable[..., Any] = (
             docker_executor.aexecute
             if docker_executor is not None
             else (
