@@ -247,7 +247,17 @@
       "official_sources": [
         "https://arxiv.org/abs/2504.11703"
       ],
-      "next_action": "Pin the paper and available implementation; determine whether a reproducible native artefact exists before comparison."
+      "next_action": "Pin the paper and available implementation; determine whether a reproducible native artefact exists before comparison.",
+      "documented_scope_or_constraints": [
+        "Progent's published mechanism constrains tool names and typed arguments and includes mechanisms to restrict privilege expansion; the scope and guarantees must be read from the pinned paper and exact implementation version.",
+        "The original paper is the primary source for the mechanism description. Results should not be generalized to memory provenance, cross-agent data lineage, runtime isolation, or remote-resource commit fencing without a matching native artifact and test path."
+      ],
+      "live_test_requirements": [
+        "Pin the paper version and any author-released implementation commit; record whether a runnable public artefact is actually available.",
+        "Reproduce the native task and policy semantics instead of wrapping a PACA-specific policy around the artefact.",
+        "Test tool-name and typed-argument enforcement, privilege-expansion attempts, benign task completion, and any policy-update path the artefact supports.",
+        "If no reproducible implementation can be identified, retain documentary status and exclude Progent from the matched execution comparison rather than substituting a toy implementation."
+      ]
     },
     {
       "id": "camel",
