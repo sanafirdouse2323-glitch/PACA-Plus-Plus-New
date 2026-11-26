@@ -29,12 +29,12 @@ from typing import Any
 from ..provenance import Label
 from ..runtime import ACTIONS, Capability
 from .agentdojo import PacaToolsExecutor
-from .model_usage import OpenAIUsageRecorder
 from .agentdojo_workspace import (
     SUPPORTED_WORKSPACE_READ_TOOLS,
     WorkspaceTaskContext,
     make_workspace_request_builder,
 )
+from .model_usage import OpenAIUsageRecorder
 
 TENANT = "agentdojo-v1.2.2-workspace"
 DEFAULT_SUITE_VERSION = "v1.2.2"
