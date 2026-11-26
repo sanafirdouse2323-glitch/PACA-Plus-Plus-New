@@ -431,7 +431,6 @@ def test_attack_missing_final_response_count_is_separate_from_indeterminate_coun
     assert _attack_missing_final_response_count(task_results, "paca") == 1
 
 
-
 def test_required_call_denial_metrics_use_exact_manifest_matched_denominators():
     from paca.integrations.agentdojo_benchmark import (
         _required_call_policy_denial_summary,
