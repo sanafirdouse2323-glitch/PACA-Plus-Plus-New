@@ -701,6 +701,33 @@ def test_filesystem_resource_commit_writes_real_file_under_authority_fence(tmp_p
 @pytest.mark.skipif(
     sys.platform != "linux", reason="filesystem commit fence requires Linux openat2"
 )
+def test_filesystem_resource_commit_async_uses_the_concrete_filesystem_adapter(
+    tmp_path,
+):
+    env = _environment(tmp_path)
+    root, state_dir, executor = _filesystem_executor(env, tmp_path)
+
+    async def exercise():
+        decision, result = await env["runtime"].aexecute_effect(
+            env["signed"].token,
+            env["request"],
+            executor,
+        )
+        assert decision.verdict == "allow"
+        assert result["storage"] == "filesystem"
+        assert result["version"] == 1
+        assert result["recovery_pending"] is False
+
+    asyncio.run(exercise())
+    target = _filesystem_relative_target(root, env["signed"].capability.task_id)
+    assert target.read_bytes() == b"approved report body"
+    assert sorted(path.name for path in state_dir.iterdir()) == ["broker.lock"]
+    executor.close()
+
+
+@pytest.mark.skipif(
+    sys.platform != "linux", reason="filesystem commit fence requires Linux openat2"
+)
 def test_filesystem_commit_replaces_existing_file_and_keeps_single_link_inode(tmp_path):
     env = _environment(tmp_path)
     root, _, executor = _filesystem_executor(
