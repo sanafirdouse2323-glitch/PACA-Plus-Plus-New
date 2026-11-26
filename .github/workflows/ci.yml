@@ -278,8 +278,22 @@ jobs:
       - name: Verify repository-wide Python formatting (ruff)
         run: ruff format --check .
 
-      - name: Type check (mypy)
-        run: mypy --follow-imports=silent paca_executor.py
+      - name: Type check security-critical Python modules (mypy)
+        run: >
+          mypy --follow-imports=silent --check-untyped-defs
+          paca_executor.py
+          paca/agent_runtime.py
+          paca/resource_commit.py
+          paca/filesystem_commit.py
+          paca/authority_runtime.py
+          paca/authority_registry.py
+          paca/durable.py
+          paca/broker.py
+          paca/broker_write.py
+          paca/contracts/canonical.py
+          paca/contracts/signatures.py
+          paca/contracts/broker.py
+          paca/contracts/permits.py
 
   docker-build:
     runs-on: ubuntu-latest
