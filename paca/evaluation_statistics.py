@@ -7,11 +7,10 @@ aggregated into that template before calling this module.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
-from typing import TypedDict
-
 import math
 import random
+from collections.abc import Sequence
+from typing import TypedDict
 
 
 CONFIRMATORY_TEMPLATE_FLOOR = 30
