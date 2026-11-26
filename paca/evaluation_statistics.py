@@ -12,7 +12,6 @@ import random
 from collections.abc import Sequence
 from typing import TypedDict
 
-
 CONFIRMATORY_TEMPLATE_FLOOR = 30
 
 
