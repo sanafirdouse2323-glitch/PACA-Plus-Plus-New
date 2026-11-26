@@ -27,6 +27,7 @@ from .contracts.broker import (
 from .contracts.canonical import CanonicalizationError, canonicalize, parse_json
 from .contracts.permits import CommitPermitError, ProtocolCommitPermitVerifier
 from .contracts.signatures import MessageVerifier
+from .durable import ProvenanceStoreError, SQLiteProvenanceRepository
 
 PermitResolver = Callable[[str], Mapping[str, Any]]
 ProvenanceCommitCheck = Callable[
@@ -34,6 +35,7 @@ ProvenanceCommitCheck = Callable[
         VerifiedBrokerOperation,
         AuthorityLineage,
         list[dict[str, Any]],
+        SQLiteProvenanceRepository,
     ],
     Mapping[str, object],
 ]
@@ -49,8 +51,10 @@ class InProcessBrokerWriteMediator:
     the permit nonce in the same resource transaction, providing a durable
     one-use boundary for this restricted profile.
 
-    A trusted provenance callback must resolve and verify every immutable
-    provenance reference and return canonical metadata for persistence. A
+    A trusted provenance callback receives the exact SQLiteProvenanceRepository,
+    must resolve and verify every immutable reference against it, and returns
+    canonical metadata for persistence. The mediator holds the repository's
+    revocation guard from this check through the authority-registry commit. A
     trusted permit resolver must fetch a signed permit envelope by reference.
     Neither callback is an authentication mechanism by itself; both are part
     of the broker's trusted computing base.
@@ -73,6 +77,7 @@ class InProcessBrokerWriteMediator:
         permit_audience: str,
         destination_id: str,
         permit_resolver: PermitResolver,
+        provenance_repository: SQLiteProvenanceRepository,
         provenance_commit_check: ProvenanceCommitCheck,
         clock: Callable[[], float],
         max_permit_bytes: int = 1_048_576,
@@ -88,6 +93,10 @@ class InProcessBrokerWriteMediator:
         if not isinstance(registry, SQLiteAuthorityRegistry):
             raise TypeError(
                 "registry must implement the PACA authority registry contract"
+            )
+        if type(provenance_repository) is not SQLiteProvenanceRepository:
+            raise TypeError(
+                "provenance_repository must be the concrete SQLite provenance repository"
             )
         for name, value in (
             ("grant_issuer", grant_issuer),
@@ -137,6 +146,7 @@ class InProcessBrokerWriteMediator:
             max_message_bytes=max_permit_bytes,
         )
         self._registry = registry
+        self._provenance_repository = provenance_repository
         self._grant_issuer = grant_issuer
         self._grant_audience = grant_audience
         self._permit_issuer = permit_issuer
@@ -306,65 +316,72 @@ class InProcessBrokerWriteMediator:
                 raise BrokerResourceDenied(
                     "commit permit request/payload digest does not match the write"
                 )
-            provenance_refs = envelope.get("provenance_refs")
-            if not isinstance(provenance_refs, list) or not provenance_refs:
-                raise BrokerResourceDenied("write requires provenance references")
-            try:
-                provenance_metadata = self._provenance_commit_check(
-                    operation,
-                    record,
-                    provenance_refs,
-                )
-                if not isinstance(provenance_metadata, Mapping):
-                    raise TypeError("provenance callback must return a JSON object")
-                metadata_bytes = canonicalize(dict(provenance_metadata))
-                if len(metadata_bytes) > 65_536:
-                    raise ValueError("provenance commit metadata exceeds 64 KiB")
-                provenance_metadata = parse_json(metadata_bytes)
-            except Exception as exc:
-                raise BrokerResourceDenied(
-                    "trusted provenance commit evaluation failed"
-                ) from exc
+            # Serialize this source-lineage decision and the destination commit
+            # against concurrent revocation in the same local provenance store.
+            # The registry still performs its own independent atomic grant,
+            # quota, replay and resource-version checks in its own transaction.
+            with self._provenance_repository.revocation_guard():
+                provenance_refs = envelope.get("provenance_refs")
+                if not isinstance(provenance_refs, list) or not provenance_refs:
+                    raise BrokerResourceDenied("write requires provenance references")
+                try:
+                    provenance_metadata = self._provenance_commit_check(
+                        operation,
+                        record,
+                        provenance_refs,
+                        self._provenance_repository,
+                    )
+                    if not isinstance(provenance_metadata, Mapping):
+                        raise TypeError("provenance callback must return a JSON object")
+                    metadata_bytes = canonicalize(dict(provenance_metadata))
+                    if len(metadata_bytes) > 65_536:
+                        raise ValueError("provenance commit metadata exceeds 64 KiB")
+                    provenance_metadata = parse_json(metadata_bytes)
+                except Exception as exc:
+                    raise BrokerResourceDenied(
+                        "trusted provenance commit evaluation failed"
+                    ) from exc
 
-            # The internal projection preserves the legacy registry binding:
-            # the protocol permit issuer is independently checked above, while
-            # the registry's permit.issuer field names the immutable grant issuer.
-            internal_permit = VerifiedResourceCommitPermit(
-                nonce=verified_permit.nonce,
-                issuer=record.issuer,
-                key_id=verified_permit.key_id,
-                # The registry projection uses the grant audience; the distinct
-                # protocol PEP audience was independently checked above.
-                audience=record.audience or "",
-                authority_id=record.authority_id,
-                tenant=record.tenant,
-                task_id=record.task_id,
-                purpose=record.purpose,
-                policy_epoch=record.policy_epoch,
-                issued_at=verified_permit.issued_at,
-                expires_at=verified_permit.expires_at,
-                max_calls=record.max_calls,
-                action="write_file",
-                resource=operation.resource_id,
-                request_digest=operation.intent_digest,
-                payload_digest=operation.payload_digest,
-                permit_id=verified_permit.permit_id,
-                idempotency_key=verified_permit.idempotency_key,
-            )
-            return self._registry.commit_fenced_resource_write(
-                internal_permit,
-                payload,
-                access_receipt=operation.registry_access_receipt(),
-                provenance_metadata=provenance_metadata,
-                protocol_payload_digest=True,
-                expected_resource_version=expected_version,
-                expected_principal=operation.principal_id,
-            )
+                # The internal projection preserves the legacy registry binding:
+                # the protocol permit issuer is independently checked above, while
+                # the registry's permit.issuer field names the immutable grant issuer.
+                internal_permit = VerifiedResourceCommitPermit(
+                    nonce=verified_permit.nonce,
+                    issuer=record.issuer,
+                    key_id=verified_permit.key_id,
+                    # The registry projection uses the grant audience; the distinct
+                    # protocol PEP audience was independently checked above.
+                    audience=record.audience or "",
+                    authority_id=record.authority_id,
+                    tenant=record.tenant,
+                    task_id=record.task_id,
+                    purpose=record.purpose,
+                    policy_epoch=record.policy_epoch,
+                    issued_at=verified_permit.issued_at,
+                    expires_at=verified_permit.expires_at,
+                    max_calls=record.max_calls,
+                    action="write_file",
+                    resource=operation.resource_id,
+                    request_digest=operation.intent_digest,
+                    payload_digest=operation.payload_digest,
+                    permit_id=verified_permit.permit_id,
+                    idempotency_key=verified_permit.idempotency_key,
+                )
+                return self._registry.commit_fenced_resource_write(
+                    internal_permit,
+                    payload,
+                    access_receipt=operation.registry_access_receipt(),
+                    provenance_metadata=provenance_metadata,
+                    protocol_payload_digest=True,
+                    expected_resource_version=expected_version,
+                    expected_principal=operation.principal_id,
+                )
         except BrokerResourceDenied:
             raise
         except (
             BrokerOperationError,
             AuthorityRegistryError,
+            ProvenanceStoreError,
             CanonicalizationError,
             CommitPermitError,
             KeyError,

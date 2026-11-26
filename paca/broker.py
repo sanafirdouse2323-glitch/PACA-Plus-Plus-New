@@ -19,6 +19,7 @@ from .contracts.broker import (
     VerifiedBrokerOperation,
 )
 from .contracts.canonical import parse_json
+from .durable import ProvenanceStoreError, SQLiteProvenanceRepository
 
 
 class BrokerResourceDenied(PermissionError):
@@ -30,6 +31,7 @@ ProvenanceReleaseCheck = Callable[
         VerifiedBrokerOperation,
         AuthorityLineage,
         Mapping[str, object],
+        SQLiteProvenanceRepository,
     ],
     bool,
 ]
@@ -45,8 +47,10 @@ class InProcessBrokerReadMediator:
     passes the verified nonce receipt and signed read-byte ceiling into the
     registry's atomic read transaction.
 
-    A mandatory trusted provenance-release callback must approve the returned
-    value and provenance metadata before the mediator returns any content.
+    A mandatory trusted provenance-release callback receives the exact
+    SQLiteProvenanceRepository and must validate every source-lineage reference
+    against it. The mediator holds that repository's revocation guard while the
+    callback runs, revalidates the authority grant, and materializes the response.
     Callback denial or failure occurs after the registry transaction, so the
     request receipt and quota remain consumed. This is intentionally fail-closed.
 
@@ -64,12 +68,17 @@ class InProcessBrokerReadMediator:
         *,
         grant_issuer: str,
         grant_audience: str,
+        provenance_repository: SQLiteProvenanceRepository,
         provenance_release_check: ProvenanceReleaseCheck,
     ) -> None:
         if not isinstance(verifier, BrokerOperationVerifier):
             raise TypeError("verifier must be a configured BrokerOperationVerifier")
         if not isinstance(registry, SQLiteAuthorityRegistry):
             raise TypeError("registry must implement the authority registry contract")
+        if type(provenance_repository) is not SQLiteProvenanceRepository:
+            raise TypeError(
+                "provenance_repository must be the concrete SQLite provenance repository"
+            )
         for name, value in (
             ("grant_issuer", grant_issuer),
             ("grant_audience", grant_audience),
@@ -82,6 +91,7 @@ class InProcessBrokerReadMediator:
             raise TypeError("provenance_release_check must be a trusted callable")
         self._verifier = verifier
         self._registry = registry
+        self._provenance_repository = provenance_repository
         self._grant_issuer = grant_issuer
         self._grant_audience = grant_audience
         self._provenance_release_check = provenance_release_check
@@ -160,37 +170,42 @@ class InProcessBrokerReadMediator:
                 expected_principal=operation.principal_id,
                 max_bytes=operation.max_bytes,
             )
-            try:
-                released = self._provenance_release_check(
-                    operation,
-                    record,
-                    result,
-                )
-            except Exception as exc:
-                raise BrokerResourceDenied(
-                    "trusted provenance-release evaluation failed"
-                ) from exc
-            if released is not True:
-                raise BrokerResourceDenied(
-                    "resource provenance or disclosure policy denied the read"
-                )
+            # Hold the provenance-store writer reservation while the trusted
+            # release callback checks every source reference and while the
+            # response is materialized. A concurrent revoke_lineage() therefore
+            # linearizes either before this check or after this disclosure.
+            with self._provenance_repository.revocation_guard():
+                try:
+                    released = self._provenance_release_check(
+                        operation,
+                        record,
+                        result,
+                        self._provenance_repository,
+                    )
+                except Exception as exc:
+                    raise BrokerResourceDenied(
+                        "trusted provenance-release evaluation failed"
+                    ) from exc
+                if released is not True:
+                    raise BrokerResourceDenied(
+                        "resource provenance or disclosure policy denied the read"
+                    )
 
-            # The registry transaction linearizes the resource snapshot and its
-            # replay/quota receipt. Revalidate the grant after the potentially
-            # slow release callback so a revocation during that callback blocks
-            # the final disclosure. This is the last in-process authorization
-            # check before the result leaves the mediator.
-            current_record = self._registry.assert_active(record.authority_id)
-            if current_record != record:
-                raise BrokerResourceDenied(
-                    "resolved grant changed before resource disclosure"
-                )
-            return dict(result)
+                # The registry transaction linearizes the resource snapshot and
+                # replay/quota receipt. Revalidate the grant after the release
+                # callback while the provenance revocation guard is still held.
+                current_record = self._registry.assert_active(record.authority_id)
+                if current_record != record:
+                    raise BrokerResourceDenied(
+                        "resolved grant changed before resource disclosure"
+                    )
+                return dict(result)
         except BrokerResourceDenied:
             raise
         except (
             BrokerOperationError,
             AuthorityRegistryError,
+            ProvenanceStoreError,
             KeyError,
             TypeError,
             ValueError,

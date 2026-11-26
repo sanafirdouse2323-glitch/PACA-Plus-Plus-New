@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import sqlite3
+import threading
 
 import pytest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
@@ -17,7 +18,9 @@ from paca.contracts import (
     TrustedMessageKey,
     digest_object,
 )
+from paca.durable import SQLiteProvenanceRepository
 from paca.memory import canonical_value_bytes
+from paca.provenance import Label, LineageNode
 
 BROKER_ISSUER = "worker-issuer"
 BROKER_KEY_ID = "worker-key-1"
@@ -83,6 +86,22 @@ def _environment(tmp_path):
         tmp_path / "authority.sqlite3",
         clock=lambda: TEST_NOW,
     )
+    provenance_repository = SQLiteProvenanceRepository(tmp_path / "provenance.sqlite3")
+    provenance_node = LineageNode(
+        object_id="report-source",
+        version_id="source-v1",
+        source="trusted-test-source",
+        source_class="external_content",
+        content_digest="b" * 64,
+        label=Label(
+            integrity="untrusted",
+            sensitivity=1,
+            tenant=TENANT,
+            origins=frozenset({"trusted-test-source"}),
+        ),
+        purpose=PURPOSE,
+    )
+    provenance_repository.add(provenance_node)
     authority = HMACCapabilityAuthority(
         registry,
         issuer_id=GRANT_ISSUER,
@@ -147,7 +166,7 @@ def _environment(tmp_path):
     def resolve_permit(permit_id):
         return permit_store[permit_id]
 
-    def verify_provenance(operation, record, refs):
+    def verify_provenance(operation, record, refs, repository):
         if record.authority_id != grant.capability.cap_id:
             raise ValueError("wrong grant for provenance")
         if refs != [
@@ -161,9 +180,20 @@ def _environment(tmp_path):
             }
         ]:
             raise ValueError("unexpected provenance references")
+        source = repository.get_version("report-source", "source-v1")
+        if (
+            source is None
+            or source.node_id != provenance_node.node_id
+            or source.content_digest != "b" * 64
+            or source.purpose != PURPOSE
+            or TENANT not in source.label.tenants
+            or repository.is_revoked(source.node_id)
+        ):
+            raise ValueError("source lineage is absent, mismatched or revoked")
         return {
             "classification": "internal",
             "source_refs": ["report-source@source-v1"],
+            "lineage_refs": [source.node_id],
             "verified_by": "trusted-test-adapter",
         }
 
@@ -177,11 +207,14 @@ def _environment(tmp_path):
         permit_audience=PERMIT_AUDIENCE,
         destination_id=DESTINATION,
         permit_resolver=resolve_permit,
+        provenance_repository=provenance_repository,
         provenance_commit_check=verify_provenance,
         clock=lambda: TEST_NOW,
     )
     return {
         "registry": registry,
+        "provenance_repository": provenance_repository,
+        "provenance_node": provenance_node,
         "authority": authority,
         "grant": grant,
         "worker_signer": worker_signer,
@@ -502,12 +535,77 @@ def test_broker_write_rejects_stale_resource_version_without_charging_quota(tmp_
     assert env["registry"].usage(env["grant"].capability.cap_id)[0] == 1
 
 
+def test_broker_write_rejects_source_revoked_before_commit(tmp_path):
+    env = _environment(tmp_path)
+    node_id = env["provenance_node"].node_id
+    env["provenance_repository"].revoke_lineage(
+        node_id,
+        "source revoked before broker write",
+    )
+
+    with pytest.raises(
+        BrokerResourceDenied,
+        match="trusted provenance commit evaluation failed",
+    ):
+        env["mediator"].write(
+            _signed_write(env),
+            session=env["session"],
+        )
+
+    assert _read_value(env["registry"])[2] == 1
+    assert _receipts(env["registry"]) == []
+    assert env["registry"].usage(env["grant"].capability.cap_id)[0] == 1
+
+
+def test_broker_write_serializes_commit_before_concurrent_lineage_revocation(
+    tmp_path,
+):
+    env = _environment(tmp_path)
+    repository = env["provenance_repository"]
+    node_id = env["provenance_node"].node_id
+    original = env["provenance_check"]
+    attempted = threading.Event()
+    completed = threading.Event()
+    threads = []
+
+    def verify_with_concurrent_revocation(operation, record, refs, repo):
+        metadata = original(operation, record, refs, repo)
+
+        def revoke():
+            attempted.set()
+            repo.revoke_lineage(node_id, "concurrent source revocation")
+            completed.set()
+
+        worker = threading.Thread(target=revoke, daemon=True)
+        threads.append(worker)
+        worker.start()
+        assert attempted.wait(timeout=5)
+        # The destination registry commit runs while the provenance writer
+        # reservation is held, so this revocation must wait behind the commit.
+        assert not completed.wait(timeout=0.1)
+        return metadata
+
+    env["mediator"]._provenance_commit_check = verify_with_concurrent_revocation
+    result = env["mediator"].write(
+        _signed_write(env),
+        session=env["session"],
+    )
+    for worker in threads:
+        worker.join(timeout=5)
+        assert not worker.is_alive()
+
+    assert result["version"] == 2
+    assert _read_value(env["registry"])[2] == 2
+    assert completed.is_set()
+    assert repository.is_revoked(node_id)
+
+
 def test_broker_write_rechecks_revocation_at_commit_boundary(tmp_path):
     env = _environment(tmp_path)
     original = env["provenance_check"]
 
-    def revoke_before_commit(operation, record, refs):
-        result = original(operation, record, refs)
+    def revoke_before_commit(operation, record, refs, repository):
+        result = original(operation, record, refs, repository)
         env["registry"].revoke(record.authority_id, "revoked before resource commit")
         return result
 
