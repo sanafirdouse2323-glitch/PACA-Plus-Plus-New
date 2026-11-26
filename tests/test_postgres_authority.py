@@ -470,7 +470,9 @@ def _broker_access_receipt(
     return receipt
 
 
-def test_postgres_resource_read_and_write_receipts_are_shared_and_replay_safe(monkeypatch):
+def test_postgres_resource_read_and_write_receipts_are_shared_and_replay_safe(
+    monkeypatch,
+):
     from paca.authority_runtime import AuthorityRegistryError
     from paca.contracts import digest_object
 
