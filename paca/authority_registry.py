@@ -933,9 +933,7 @@ class SQLiteAuthorityRegistry:
                     or not text_value
                     or len(text_value) > 256
                 ):
-                    raise ValueError(
-                        f"broker access receipt {text_name} is invalid"
-                    )
+                    raise ValueError(f"broker access receipt {text_name} is invalid")
             for digest_name in ("nonce_digest", "request_digest", "payload_digest"):
                 digest_value = access_receipt.get(digest_name)
                 if (
@@ -955,15 +953,11 @@ class SQLiteAuthorityRegistry:
                 receipt_payload_digest, str
             ):
                 raise ValueError("broker access receipt digests are invalid")
-            if not hmac.compare_digest(
-                receipt_request_digest, permit.request_digest
-            ):
+            if not hmac.compare_digest(receipt_request_digest, permit.request_digest):
                 raise AuthorityRegistryError(
                     "broker access receipt request binding mismatch"
                 )
-            if not hmac.compare_digest(
-                receipt_payload_digest, permit.payload_digest
-            ):
+            if not hmac.compare_digest(receipt_payload_digest, permit.payload_digest):
                 raise AuthorityRegistryError(
                     "broker access receipt payload binding mismatch"
                 )
@@ -1395,13 +1389,10 @@ class SQLiteAuthorityRegistry:
                 not isinstance(digest_value, str)
                 or len(digest_value) != 64
                 or any(
-                    character not in "0123456789abcdef"
-                    for character in digest_value
+                    character not in "0123456789abcdef" for character in digest_value
                 )
             ):
-                raise ValueError(
-                    f"broker access receipt {digest_name} must be SHA-256"
-                )
+                raise ValueError(f"broker access receipt {digest_name} must be SHA-256")
 
         now = int(self.clock())
         with closing(self._connect()) as connection:
