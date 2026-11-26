@@ -32,6 +32,7 @@ langgraph-postgres = [
 [project.scripts]
 paca = "paca.cli:main"
 paca-agentdojo = "paca.integrations.agentdojo_benchmark:main"
+paca-agentdojo-load = "paca.integrations.agentdojo_load:main"
 
 [tool.setuptools]
 packages = ["paca", "paca.policies", "paca.integrations", "paca.contracts", "paca.contracts.schemas"]
