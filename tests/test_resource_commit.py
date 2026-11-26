@@ -487,7 +487,7 @@ def test_revocation_between_runtime_authorization_and_resource_commit_blocks_wri
         env["runtime"].execute_effect(
             env["signed"].token,
             env["request"],
-            executor,
+            env["executor"],
         )
 
     assert _stored_resource(env["registry"]) is None
