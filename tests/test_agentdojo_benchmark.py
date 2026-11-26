@@ -278,3 +278,29 @@ def test_episode_operational_metrics_handle_missing_and_invalid_timings():
     assert summary["error_free_episode_fraction"] == pytest.approx(2 / 3)
     assert summary["latency_seconds"] == {"p50": None, "p95": None, "p99": None}
     assert summary["episodes_per_measured_second"] is None
+
+
+def test_attack_success_summary_excludes_error_pairs_from_the_scored_denominator():
+    from paca.integrations.agentdojo_benchmark import _attack_success_summary
+
+    summary = _attack_success_summary([True, False, None, None])
+
+    assert summary["attempted_attack_pairs"] == 4
+    assert summary["scored_attack_pairs"] == 2
+    assert summary["indeterminate_attack_pairs"] == 2
+    assert summary["attack_success_count"] == 1
+    assert summary["attack_success_rate_among_scored"] == 0.5
+    assert "error-bearing pairs are indeterminate" in summary["rate_denominator_rule"]
+
+
+def test_attack_success_summary_returns_no_rate_when_every_pair_is_indeterminate():
+    from paca.integrations.agentdojo_benchmark import _attack_success_summary
+
+    summary = _attack_success_summary([None, None])
+
+    assert summary["attempted_attack_pairs"] == 2
+    assert summary["scored_attack_pairs"] == 0
+    assert summary["indeterminate_attack_pairs"] == 2
+    assert summary["attack_success_count"] == 0
+    assert summary["attack_success_rate_among_scored"] is None
+
