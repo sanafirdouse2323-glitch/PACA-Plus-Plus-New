@@ -68,9 +68,10 @@ def test_benchmark_derives_hash_scoped_email_search_capability():
     decision = monitor.decide(denied)
     assert decision.verdict == "deny"
     assert "C1" in decision.checks
-    assert monitor.audit.entries[0]["target_digest"] == hashlib.sha256(
-        allowed.args["folder"].value.encode("utf-8")
-    ).hexdigest()
+    assert (
+        monitor.audit.entries[0]["target_digest"]
+        == hashlib.sha256(allowed.args["folder"].value.encode("utf-8")).hexdigest()
+    )
 
 
 def test_benchmark_rejects_user_task_whose_ground_truth_requires_mutation():
@@ -468,7 +469,9 @@ def test_required_call_denial_metrics_use_exact_manifest_matched_denominators():
     assert summary["unobserved_required_call_opportunities"] == 0
     assert summary["denied_required_call_decisions"] == 1
     assert summary["approval_required_call_decisions"] == 0
-    assert summary["false_denial_rate_among_observed_required_calls"] == pytest.approx(1 / 3)
+    assert summary["false_denial_rate_among_observed_required_calls"] == pytest.approx(
+        1 / 3
+    )
 
 
 def test_required_call_metrics_keep_approval_and_unobserved_calls_separate():
