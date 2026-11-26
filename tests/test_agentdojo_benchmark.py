@@ -304,3 +304,36 @@ def test_attack_success_summary_returns_no_rate_when_every_pair_is_indeterminate
     assert summary["attack_success_count"] == 0
     assert summary["attack_success_rate_among_scored"] is None
 
+
+def test_agentdojo_result_error_and_missing_output_are_indeterminate():
+    from types import SimpleNamespace
+
+    from paca.integrations.agentdojo_benchmark import (
+        _agentdojo_result_indeterminate_reason,
+    )
+
+    assert (
+        _agentdojo_result_indeterminate_reason(
+            SimpleNamespace(error="server error", messages=[{"role": "assistant", "content": ["ok"]}])
+        )
+        == "agentdojo_task_error"
+    )
+    assert (
+        _agentdojo_result_indeterminate_reason(
+            SimpleNamespace(error=None, messages=[])
+        )
+        == "missing_message_trace"
+    )
+    assert (
+        _agentdojo_result_indeterminate_reason(
+            SimpleNamespace(error=None, messages=[{"role": "assistant", "content": None}])
+        )
+        == "missing_assistant_model_output"
+    )
+    assert (
+        _agentdojo_result_indeterminate_reason(
+            SimpleNamespace(error=None, messages=[{"role": "assistant", "content": [{"type": "text", "text": "done"}]}])
+        )
+        is None
+    )
+
