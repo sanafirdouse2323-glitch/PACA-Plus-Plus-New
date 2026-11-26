@@ -11,7 +11,8 @@ import hashlib
 
 import pytest
 
-from paca.provenance import Arg, Label, ProvenanceGraph, derive as derive_untracked
+from paca.provenance import Arg, Label, ProvenanceGraph
+from paca.provenance import derive as derive_untracked
 
 
 def _digest(value: str) -> str:
