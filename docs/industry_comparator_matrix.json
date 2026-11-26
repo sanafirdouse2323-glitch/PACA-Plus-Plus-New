@@ -27,7 +27,8 @@
       "documented_capability_summary": [
         "Gateway request enforcement using session-scoped prior action history",
         "Temporal requirements involving previous approvals and action sequences",
-        "Count/sum-style usage conditions over a policy session"
+        "Count/sum-style usage conditions over a policy session",
+        "Official regional table currently marks Asia Pacific (Hyderabad) unsupported and Asia Pacific (Mumbai) supported for Temporal Policies"
       ],
       "relevant_research_dimensions": [
         "tool_use",
@@ -38,8 +39,11 @@
       ],
       "documented_scope_or_constraints": [
         "Temporal history is scoped to an application-supplied policy session identifier",
-        "Documented session propagation is scoped to the same AWS account and Region",
-        "Published temporal policy limits include a maximum lookback and finite policy/operator quotas; revalidate these at test time"
+        "Native propagation across AgentCore Gateway/Runtime is within the same AWS account and Region; cross-account and cross-Region propagation is not supported",
+        "A non-AgentCore hop in the request chain must explicitly forward the Workload Access Token or temporal policy enforcement will not follow the chain",
+        "The Gateway role requires bedrock-agentcore:GetWorkloadAccessToken",
+        "Published temporal policy limits include 20 temporal policies per policy engine, at most 3 temporal operators per policy and a maximum 24-hour lookback; revalidate quotas before testing",
+        "The current published regional table lists Mumbai as supported and Hyderabad as unsupported; record the actual target Region instead of assuming India-wide availability"
       ],
       "not_established_by_documentation_alone": [
         "Memory provenance continuity across arbitrary internal transformations",
@@ -47,18 +51,20 @@
         "Commit-time atomic revocation at an arbitrary external provider"
       ],
       "live_test_requirements": [
-        "AWS account and supported Region",
-        "Bedrock AgentCore Gateway and policy engine configuration",
-        "Authenticated identity/session propagation",
+        "AWS account in a Region listed as supported for Temporal Policies; Mumbai is listed as supported and Hyderabad is not in the current table",
+        "Bedrock AgentCore Gateway and policy engine configured in the same account and Region",
+        "Authenticated identity/session propagation with WAT through every hop; instrument any non-AgentCore hop to prove forwarding",
+        "IAM permission bedrock-agentcore:GetWorkloadAccessToken on the Gateway role",
         "Protected test tool and sink with observable effect receipts",
-        "Pinned policy definitions, quotas, SDK and service configuration"
+        "Pinned policy definitions, quotas, SDK, region and service configuration",
+        "Native and layered runs must preserve the documented session boundaries and include any required non-AgentCore WAT forwarding"
       ],
       "official_sources": [
         "https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/policy-temporal.html",
         "https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/policy-session-based-temporal.html",
         "https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/bedrock-agentcore-limits.html"
       ],
-      "next_action": "Pin the product release, deployment configuration and protected test sink before native smoke testing."
+      "next_action": "Provision the native Gateway and protected sink in a currently supported Region (Mumbai is listed; Hyderabad is not), instrument WAT propagation and run the policy conformance/temporal-window schedules before baseline comparison."
     },
     {
       "id": "nvidia-openshell",
@@ -67,10 +73,11 @@
       "evidence_level": "D",
       "live_test_status": "not_run",
       "documented_capability_summary": [
-        "Agent runtime sandboxing and isolation",
-        "Kernel-level filesystem, process and network policy enforcement",
-        "Credential mediation to approved destinations",
-        "Policy verification and runtime boundary controls"
+        "Separate agent sandbox and supervisor/gateway architecture, with a protected control channel",
+        "Kernel-level enforcement of filesystem access, system calls/process controls and network egress; requests are mediated outside the agent process",
+        "Network policy can constrain the requesting binary, destination, method and path; approved credentials are supplied to approved destinations",
+        "Policy prover evaluates the risk of policy changes before they are applied",
+        "Documented compute drivers include Docker, Podman, MicroVM and Kubernetes; exact runtime boundary depends on the selected driver"
       ],
       "relevant_research_dimensions": [
         "runtime_containment",
@@ -80,9 +87,10 @@
         "credential_exposure"
       ],
       "documented_scope_or_constraints": [
-        "Runtime containment is a different enforcement layer from workflow-level information provenance and business usage authorization",
-        "Sentry or BlueField hardware-specific assertions require the actual hardware profile; software-only tests cannot establish hardware-backed guarantees",
-        "Repository, release and governance status must be pinned at test time"
+        "Runtime containment is a distinct enforcement layer from workflow-level information provenance, purpose/usage policy and semantic lineage",
+        "All relevant egress must traverse the supervisor/gateway boundary; direct bypass paths, host privileges, kernel and driver assumptions must be measured",
+        "The exact compute driver changes the isolation boundary and restart/persistence semantics; pin the driver and host profile",
+        "BlueField/Sentry/DPU hardware-specific assertions require the actual supported hardware profile; software-only tests cannot establish hardware-backed guarantees"
       ],
       "not_established_by_documentation_alone": [
         "PACA policy semantics or provenance continuity",
@@ -97,10 +105,12 @@
         "For DPU-specific claims, supported BlueField hardware and its documented deployment"
       ],
       "official_sources": [
-        "https://github.com/ai-openshell/openshell",
-        "https://build.nvidia.com/openshell"
+        "https://docs.nvidia.com/openshell/about/architecture",
+        "https://docs.nvidia.com/openshell/dev/how-it-works/sandboxes/runtimes",
+        "https://www.nvidia.com/en-us/ai/openshell/",
+        "https://github.com/ai-openshell/openshell"
       ],
-      "next_action": "Pin the product release, deployment configuration and protected test sink before native smoke testing."
+      "next_action": "Pin OpenShell release/commit, supervisor and selected compute driver; prove no direct network/filesystem bypass, verify credential mediation and capture policy-prover outputs before running semantic and effect scenarios."
     },
     {
       "id": "microsoft-entra-agent-id",
@@ -109,10 +119,9 @@
       "evidence_level": "D",
       "live_test_status": "not_run",
       "documented_capability_summary": [
-        "Dedicated agent identities",
-        "Authentication and authorization for agent access",
-        "Application and delegated permissions",
-        "Agent lifecycle and governance controls"
+        "Dedicated agent identities, authentication and resource permission governance",
+        "Agent lifecycle and accountability controls, including sponsor, reconfirmation and inactivity rules in the Agent ID lifecycle-policy preview",
+        "Conditional Access and least-privilege identity controls for agent access"
       ],
       "relevant_research_dimensions": [
         "agent_identity",
@@ -122,8 +131,10 @@
         "protected_api_access"
       ],
       "documented_scope_or_constraints": [
-        "Identity and permission governance do not by themselves demonstrate information-flow continuity through memory or transformations",
-        "A live result depends on the tenant, service plan, resource API and policy configuration actually tested"
+        "Identity and permission governance do not by themselves demonstrate information-flow continuity through memory, model transformations or cross-agent payloads",
+        "Agent ID lifecycle policies are currently documented as Preview, without an SLA and not recommended for production workloads",
+        "The lifecycle policy documentation lists license prerequisites (Microsoft 365 E7, or Agent 365 with at least Entra P1 or Microsoft 365 E3); record actual tenant licensing",
+        "A live result depends on the tenant, enabled capabilities, service plan, resource API and policy configuration actually tested"
       ],
       "not_established_by_documentation_alone": [
         "Semantic provenance tracking",
@@ -139,9 +150,11 @@
       ],
       "official_sources": [
         "https://learn.microsoft.com/en-us/entra/agent-id/",
-        "https://learn.microsoft.com/en-us/entra/agent-id/agent-identities"
+        "https://learn.microsoft.com/en-us/entra/agent-id/agent-identities",
+        "https://learn.microsoft.com/entra/id-governance/agent-lifecycle-policies",
+        "https://learn.microsoft.com/entra/agent-id/best-practices-agent-id"
       ],
-      "next_action": "Pin the product release, deployment configuration and protected test sink before native smoke testing."
+      "next_action": "Use a licensed test tenant, pin the preview/GA state and test an agent identity against the same protected API and effect oracle used for the other baselines; keep lifecycle preview capabilities separate from GA identity/authorization results."
     },
     {
       "id": "google-cloud-agent-gateway",
@@ -162,10 +175,11 @@
         "content_governance"
       ],
       "documented_scope_or_constraints": [
-        "Only traffic actually routed through the gateway is within its observed enforcement boundary.",
-        "Gateway documentation does not establish control over arbitrary unmediated internal memory or model planning.",
-        "The current Agent Gateway overview states that support for token-management policies and extension bindings is coming soon; the standalone token-management page also states that support is coming soon. Do not count either as available baseline features at this audit date.",
-        "Agent Gateway is listed for Gemini Enterprise Agent Platform and GKE; Cloud Run and cross-cloud Kubernetes are Limited Preview. Confirm the exact deployment model, region, and project eligibility before a live test."
+        "Only traffic actually routed through the gateway is within its observed enforcement boundary",
+        "Gateway documentation does not establish control over arbitrary unmediated internal memory or model planning",
+        "The current Agent Gateway overview states that support for token-management policies and extension bindings is coming soon; the standalone token-management page also states that support is coming soon. Do not count either as available baseline features",
+        "Agent Gateway is listed for Gemini Enterprise Agent Platform and GKE; Cloud Run and cross-cloud Kubernetes are Limited Preview. Confirm the exact deployment model, region and project eligibility before a live test",
+        "A configured semantic/content policy may protect routed payloads, but it must be recorded separately from identity, destination and protocol routing controls"
       ],
       "not_established_by_documentation_alone": [
         "Internal memory read/write mediation",
@@ -185,7 +199,7 @@
         "https://docs.cloud.google.com/gemini-enterprise-agent-platform/govern/policies/token-management-overview",
         "https://docs.cloud.google.com/gemini-enterprise-agent-platform/govern/gateways/cloud-run-overview"
       ],
-      "next_action": "Pin the product release, deployment configuration and protected test sink before native smoke testing."
+      "next_action": "Pin the current Agent Gateway release/deployment and selected routing path; smoke-test routed MCP/A2A/tool traffic and record the presently supported IAM/content/Model Armor functions, while excluding coming-soon token-management/extension-binding features."
     },
     {
       "id": "mcp-runtime-policy-enforcement-pep-2026",
