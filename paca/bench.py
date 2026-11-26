@@ -149,6 +149,20 @@ def compute() -> dict[str, Any]:
         if not res[s.id]["paca"]["vig"]["harmed"]
     }
     return {
+        "schema_version": "1.0.0",
+        "evidence": {
+            "class": "S",
+            "status": "internal_simulation",
+            "description": (
+                "Deterministic project-owned simulator with author-defined scenarios "
+                "and hand-authored comparison models."
+            ),
+            "model_in_loop": False,
+            "live_vendor_execution": False,
+            "baseline_type": "hand_authored_toy_models",
+            "independent_scenario_templates_verified": False,
+            "n_scenarios": len(REGISTRY),
+        },
         "defences": [{"key": key, "label": label} for key, label, _ in DEFENCES],
         "scenarios": [
             {
