@@ -51,6 +51,20 @@ class FilesystemFencedResourceExecutor(FencedResourceExecutor):
 
     SUPPORTED_ACTIONS = frozenset({"write_file"})
 
+    def __setattr__(self, name: str, value: object) -> None:
+        if getattr(self, "_sealed", False):
+            raise AttributeError(
+                "filesystem resource executor is immutable after initialization"
+            )
+        object.__setattr__(self, name, value)
+
+    def __delattr__(self, name: str) -> None:
+        if getattr(self, "_sealed", False):
+            raise AttributeError(
+                "filesystem resource executor is immutable after initialization"
+            )
+        object.__delattr__(self, name)
+
     def __init__(
         self,
         authority: HMACCapabilityAuthority,
@@ -60,6 +74,7 @@ class FilesystemFencedResourceExecutor(FencedResourceExecutor):
         max_file_bytes: int = 8 * 1024 * 1024,
     ) -> None:
         super().__init__(authority)
+        self._sealed = False
         if (
             isinstance(max_file_bytes, bool)
             or not isinstance(max_file_bytes, int)
@@ -164,6 +179,7 @@ class FilesystemFencedResourceExecutor(FencedResourceExecutor):
         except Exception:
             self.close()
             raise
+        object.__setattr__(self, "_sealed", True)
 
     @contextmanager
     def _locked(self) -> Iterator[None]:
@@ -828,7 +844,7 @@ class FilesystemFencedResourceExecutor(FencedResourceExecutor):
 
     def close(self) -> None:
         if not self._closed:
-            self._closed = True
+            object.__setattr__(self, "_closed", True)
             with contextlib.suppress(OSError):
                 self.secure_root.close()
             with contextlib.suppress(OSError):
