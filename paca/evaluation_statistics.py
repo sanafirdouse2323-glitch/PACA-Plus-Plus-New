@@ -26,7 +26,9 @@ class TemplateOutcome(TypedDict):
 
 def _require_count(name: str, value: object, *, minimum: int) -> int:
     if isinstance(value, bool) or not isinstance(value, int) or value < minimum:
-        raise ValueError(f"{name} must be an integer greater than or equal to {minimum}")
+        raise ValueError(
+            f"{name} must be an integer greater than or equal to {minimum}"
+        )
     return value
 
 
@@ -42,9 +44,9 @@ def _percentile(sorted_values: list[float], probability: float) -> float:
     if lower == upper:
         return sorted_values[lower]
     fraction = position - lower
-    return sorted_values[lower] + (
-        sorted_values[upper] - sorted_values[lower]
-    ) * fraction
+    return (
+        sorted_values[lower] + (sorted_values[upper] - sorted_values[lower]) * fraction
+    )
 
 
 def paired_template_effect(
