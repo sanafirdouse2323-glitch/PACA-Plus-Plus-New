@@ -7,16 +7,16 @@ aggregated into that template before calling this module.
 
 from __future__ import annotations
 
-import collections
 import math
 import random
-import typing
+from collections.abc import Sequence
+from typing import TypedDict
 
 
 CONFIRMATORY_TEMPLATE_FLOOR = 30
 
 
-class TemplateOutcome(typing.TypedDict):
+class TemplateOutcome(TypedDict):
     """Aggregated paired outcomes for one independent scenario template."""
 
     template_id: str
@@ -49,7 +49,7 @@ def _percentile(sorted_values: list[float], probability: float) -> float:
 
 
 def paired_template_effect(
-    templates: collections.abc.Sequence[TemplateOutcome],
+    templates: Sequence[TemplateOutcome],
     *,
     bootstrap_replicates: int = 10_000,
     seed: int = 20261126,
@@ -68,7 +68,7 @@ def paired_template_effect(
     A result with 30 or more templates is merely eligible for a separately
     preregistered confirmatory design and power/coverage assessment.
     """
-    if not isinstance(templates, collections.abc.Sequence) or isinstance(templates, (str, bytes)):
+    if not isinstance(templates, Sequence) or isinstance(templates, (str, bytes)):
         raise TypeError("templates must be a non-empty sequence of template outcomes")
     if not templates:
         raise ValueError("at least one independent template is required")
