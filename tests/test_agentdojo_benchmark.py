@@ -236,3 +236,45 @@ def test_runner_agentdojo_benchmark_function_signatures_are_available():
         in inspect.signature(api["run_task_with_injection_tasks"]).parameters
     )
     assert "logdir" in inspect.signature(api["load_task_results"]).parameters
+
+
+def test_episode_operational_metrics_report_latency_rate_and_error_fraction():
+    from paca.integrations.agentdojo_benchmark import _episode_operational_metrics
+
+    summary = _episode_operational_metrics(
+        [
+            {"duration_seconds": 1.0, "error": None},
+            {"duration_seconds": 2.0, "error": None},
+            {"duration_seconds": 3.0, "error": "provider timeout"},
+            {"duration_seconds": 4.0, "error": None},
+        ]
+    )
+
+    assert summary["attempted_episodes"] == 4
+    assert summary["timed_episodes"] == 4
+    assert summary["error_count"] == 1
+    assert summary["error_free_episode_fraction"] == 0.75
+    assert summary["latency_seconds"] == {"p50": 2.0, "p95": 4.0, "p99": 4.0}
+    assert summary["episodes_per_measured_second"] == 0.4
+    assert "not concurrent throughput" in summary["throughput_qualification"]
+    assert "not an SLA" in summary["availability_qualification"]
+
+
+def test_episode_operational_metrics_handle_missing_and_invalid_timings():
+    from paca.integrations.agentdojo_benchmark import _episode_operational_metrics
+
+    summary = _episode_operational_metrics(
+        [
+            {"duration_seconds": None, "error": "provider error"},
+            {"duration_seconds": "nan", "error": None},
+            {"duration_seconds": -1, "error": None},
+        ]
+    )
+
+    assert summary["attempted_episodes"] == 3
+    assert summary["timed_episodes"] == 0
+    assert summary["episodes_without_timing"] == 3
+    assert summary["error_count"] == 1
+    assert summary["error_free_episode_fraction"] == 2 / 3
+    assert summary["latency_seconds"] == {"p50": None, "p95": None, "p99": None}
+    assert summary["episodes_per_measured_second"] is None
