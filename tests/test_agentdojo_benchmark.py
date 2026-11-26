@@ -275,6 +275,6 @@ def test_episode_operational_metrics_handle_missing_and_invalid_timings():
     assert summary["timed_episodes"] == 0
     assert summary["episodes_without_timing"] == 3
     assert summary["error_count"] == 1
-    assert summary["error_free_episode_fraction"] == 2 / 3
+    assert summary["error_free_episode_fraction"] == pytest.approx(2 / 3)
     assert summary["latency_seconds"] == {"p50": None, "p95": None, "p99": None}
     assert summary["episodes_per_measured_second"] is None
