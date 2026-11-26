@@ -220,10 +220,119 @@
       ]
     },
     {
+      "id": "progent",
+      "provider": "Research comparator",
+      "product": "Progent",
+      "evidence_level": "D",
+      "live_test_status": "not_run",
+      "documented_capability_summary": [
+        "Symbolic constraints over tool names and typed arguments",
+        "Privilege-control checks and restrictions against permission expansion"
+      ],
+      "relevant_research_dimensions": [
+        "tool_selection",
+        "typed_arguments",
+        "privilege_attenuation",
+        "policy_update"
+      ],
+      "not_established_by_documentation_alone": [
+        "Equivalent semantic provenance handling across all memory and communication paths",
+        "Atomic remote resource commit"
+      ],
+      "official_sources": [
+        "https://arxiv.org/abs/2504.11703"
+      ]
+    },
+    {
+      "id": "camel-multicamel",
+      "provider": "Research comparator",
+      "product": "CaMeL and Multi-CaMeL",
+      "evidence_level": "D",
+      "live_test_status": "native_artifact_smoke_test_not_run_in_this_branch",
+      "documented_capability_summary": [
+        "Separation of trusted control flow from untrusted data",
+        "Capability and data-flow restrictions",
+        "Cross-agent provenance and trusted-instruction/data separation in Multi-CaMeL"
+      ],
+      "relevant_research_dimensions": [
+        "control_data_separation",
+        "information_provenance",
+        "cross_agent_communication",
+        "tool_execution"
+      ],
+      "not_established_by_documentation_alone": [
+        "A common fixed-proposal interface compatible with the PACA harness",
+        "Equivalent memory, plan, usage and sink semantics under the selected test policy"
+      ],
+      "official_sources": [
+        "https://github.com/google-research/camel-prompt-injection",
+        "https://arxiv.org/abs/2610.05640"
+      ]
+    },
+    {
+      "id": "sapien-forge-vigil-agentspec",
+      "provider": "Research comparator cohort",
+      "product": "Sapien, FORGE, VIGIL and AgentSpec",
+      "evidence_level": "D",
+      "live_test_status": "artefact_and_semantics_selection_required",
+      "documented_capability_summary": [
+        "Stateful tool-call policies",
+        "Causal event-graph and aspect-oriented enforcement",
+        "Temporal behavioural specifications and cross-call value-flow checks",
+        "Configurable runtime constraints"
+      ],
+      "relevant_research_dimensions": [
+        "event_history",
+        "temporal_policy",
+        "runtime_enforcement",
+        "cross_call_dataflow",
+        "behavioural_specification"
+      ],
+      "not_established_by_documentation_alone": [
+        "One common feature set or common trust model across this cohort",
+        "Equivalent policy-to-sink semantics under PACA's primary policy family"
+      ],
+      "official_sources": [
+        "https://arxiv.org/abs/2610.00797",
+        "https://arxiv.org/abs/2602.16708",
+        "https://arxiv.org/abs/2606.26524",
+        "https://doi.org/10.1145/3744916.3764546"
+      ]
+    },
+    {
+      "id": "caplease-aidguard",
+      "provider": "Research comparator cohort",
+      "product": "CapLease and AID-Guard",
+      "evidence_level": "D",
+      "live_test_status": "artefact_and_semantics_selection_required",
+      "documented_capability_summary": [
+        "Durable authorization state and usage budgets",
+        "Prepare/commit lifecycle and replay resistance",
+        "Reservations and authorization-to-effect binding",
+        "Provider-aware retry and recovery semantics"
+      ],
+      "relevant_research_dimensions": [
+        "cumulative_usage",
+        "delegation",
+        "revocation",
+        "commit_time_authorization",
+        "retry_recovery",
+        "uncertain_effect_outcomes"
+      ],
+      "not_established_by_documentation_alone": [
+        "Equivalent information-flow and memory semantics",
+        "Equivalent communication/planning coverage under the selected policy corpus"
+      ],
+      "official_sources": [
+        "https://arxiv.org/abs/2608.01710",
+        "https://arxiv.org/abs/2608.21159"
+      ]
+    },
+    {
       "id": "paca-plus-plus",
       "provider": "Project under evaluation",
       "product": "PACA++",
-      "evidence_level": "S",
+      "evidence_level": ["I", "R", "S", "F"],
       "live_test_status": "research_prototype",
       "documented_capability_summary": [
         "Typed authority and information provenance records",
