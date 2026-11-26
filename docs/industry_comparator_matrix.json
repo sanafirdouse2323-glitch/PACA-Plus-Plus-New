@@ -57,7 +57,8 @@
         "https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/policy-temporal.html",
         "https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/policy-session-based-temporal.html",
         "https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/bedrock-agentcore-limits.html"
-      ]
+      ],
+      "next_action": "Pin the product release, deployment configuration and protected test sink before native smoke testing."
     },
     {
       "id": "nvidia-openshell",
@@ -98,7 +99,8 @@
       "official_sources": [
         "https://github.com/ai-openshell/openshell",
         "https://build.nvidia.com/openshell"
-      ]
+      ],
+      "next_action": "Pin the product release, deployment configuration and protected test sink before native smoke testing."
     },
     {
       "id": "microsoft-entra-agent-id",
@@ -138,7 +140,8 @@
       "official_sources": [
         "https://learn.microsoft.com/en-us/entra/agent-id/",
         "https://learn.microsoft.com/en-us/entra/agent-id/agent-identities"
-      ]
+      ],
+      "next_action": "Pin the product release, deployment configuration and protected test sink before native smoke testing."
     },
     {
       "id": "google-cloud-agent-gateway",
@@ -177,14 +180,15 @@
       ],
       "official_sources": [
         "https://docs.cloud.google.com/gemini-enterprise-agent-platform/govern/gateways/agent-gateway-overview"
-      ]
+      ],
+      "next_action": "Pin the product release, deployment configuration and protected test sink before native smoke testing."
     },
     {
       "id": "mcp-runtime-policy-enforcement-pep-2026",
       "provider": "Research comparator",
       "product": "Runtime policy enforcement for MCP-based LLM agents",
       "evidence_level": "D",
-      "live_test_status": "source_audit_priority_candidate",
+      "live_test_status": "not_run",
       "documented_capability_summary": [
         "MCP tool-call boundary policy enforcement",
         "Cross-step source-integrity and data-sensitivity labels",
@@ -217,7 +221,8 @@
       "official_sources": [
         "https://doi.org/10.3390/electronics15132829",
         "https://github.com/wilesanGH/mcp-pep-agent-security"
-      ]
+      ],
+      "next_action": "Pin the paper-linked repository commit, reconcile README publication-status text, then perform source audit and native smoke test."
     },
     {
       "id": "progent",
@@ -241,7 +246,8 @@
       ],
       "official_sources": [
         "https://arxiv.org/abs/2504.11703"
-      ]
+      ],
+      "next_action": "Pin the paper and available implementation; determine whether a reproducible native artefact exists before comparison."
     },
     {
       "id": "camel",
@@ -277,7 +283,8 @@
       "official_sources": [
         "https://arxiv.org/abs/2503.18813",
         "https://github.com/google-research/camel-prompt-injection"
-      ]
+      ],
+      "next_action": "Pin the implementation and reproduce its native AgentDojo configuration and threat assumptions."
     },
     {
       "id": "multi-camel",
@@ -312,7 +319,8 @@
       ],
       "official_sources": [
         "https://arxiv.org/abs/2610.05640"
-      ]
+      ],
+      "next_action": "Pin the implementation and reproduce the multi-agent protocol on its published task setup."
     },
     {
       "id": "sapien",
@@ -347,7 +355,8 @@
       ],
       "official_sources": [
         "https://arxiv.org/abs/2610.00797"
-      ]
+      ],
+      "next_action": "Pin implementation, model and policy-generation configuration; reproduce selected AgentDojo and Toolathlon tasks."
     },
     {
       "id": "forge-formal-policy-enforcement",
@@ -382,7 +391,8 @@
       ],
       "official_sources": [
         "https://arxiv.org/abs/2602.16708"
-      ]
+      ],
+      "next_action": "Pin the current paper version and implementation; reproduce native Datalog policies and event-graph monitor placement."
     },
     {
       "id": "vigil",
@@ -418,7 +428,8 @@
       ],
       "official_sources": [
         "https://arxiv.org/abs/2606.26524"
-      ]
+      ],
+      "next_action": "Pin code, behavioural specifications and finite-trace semantics; reproduce attack and benign skill traces."
     },
     {
       "id": "agentspec",
@@ -454,7 +465,8 @@
       "official_sources": [
         "https://doi.org/10.1145/3744916.3764546",
         "https://cposkitt.github.io/files/publications/agentspec_llm_enforcement_icse26.pdf"
-      ]
+      ],
+      "next_action": "Pin implementation and select one native domain/adapter before running its documented tasks."
     },
     {
       "id": "caplease",
@@ -491,7 +503,8 @@
       ],
       "official_sources": [
         "https://arxiv.org/abs/2608.01710"
-      ]
+      ],
+      "next_action": "Pin artefact and reproduce Issue–Prepare–Commit, fresh-token semantic replay, concurrency and crash recovery."
     },
     {
       "id": "aid-guard",
@@ -529,7 +542,8 @@
       ],
       "official_sources": [
         "https://arxiv.org/abs/2608.21159"
-      ]
+      ],
+      "next_action": "Pin prototype and provider-contract versions; reproduce commit revalidation, reservations and ambiguous-delivery fencing."
     },
     {
       "id": "paca-plus-plus",
