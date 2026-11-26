@@ -58,6 +58,13 @@ def _duration(value: object) -> float | None:
     return number if math.isfinite(number) and number > 0 else None
 
 
+def _non_negative_seconds(value: object) -> float | None:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    number = float(value)
+    return number if math.isfinite(number) and number >= 0 else None
+
+
 def _nearest_rank(values: list[float], quantile: float) -> float | None:
     if not values:
         return None
@@ -170,7 +177,7 @@ def _aggregate_token_usage(worker_results: list[dict[str, Any]]) -> dict[str, An
 def _observed_peak_concurrency(workers: list[dict[str, Any]]) -> int:
     events: list[tuple[float, int]] = []
     for worker in workers:
-        start = _duration(worker.get("start_offset_seconds"))
+        start = _non_negative_seconds(worker.get("start_offset_seconds"))
         duration = _duration(worker.get("duration_seconds"))
         if start is None or duration is None:
             continue
