@@ -7,15 +7,16 @@ aggregated into that template before calling this module.
 
 from __future__ import annotations
 
-from math import ceil, floor, fsum
-from random import Random
-from typing import Sequence, TypedDict
+import collections
+import math
+import random
+import typing
 
 
 CONFIRMATORY_TEMPLATE_FLOOR = 30
 
 
-class TemplateOutcome(TypedDict):
+class TemplateOutcome(typing.TypedDict):
     """Aggregated paired outcomes for one independent scenario template."""
 
     template_id: str
@@ -37,8 +38,8 @@ def _percentile(sorted_values: list[float], probability: float) -> float:
     if not 0.0 <= probability <= 1.0:
         raise ValueError("probability must be between zero and one")
     position = (len(sorted_values) - 1) * probability
-    lower = floor(position)
-    upper = ceil(position)
+    lower = math.floor(position)
+    upper = math.ceil(position)
     if lower == upper:
         return sorted_values[lower]
     fraction = position - lower
@@ -48,7 +49,7 @@ def _percentile(sorted_values: list[float], probability: float) -> float:
 
 
 def paired_template_effect(
-    templates: Sequence[TemplateOutcome],
+    templates: collections.abc.Sequence[TemplateOutcome],
     *,
     bootstrap_replicates: int = 10_000,
     seed: int = 20261126,
@@ -67,7 +68,7 @@ def paired_template_effect(
     A result with 30 or more templates is merely eligible for a separately
     preregistered confirmatory design and power/coverage assessment.
     """
-    if not isinstance(templates, Sequence) or isinstance(templates, (str, bytes)):
+    if not isinstance(templates, collections.abc.Sequence) or isinstance(templates, (str, bytes)):
         raise TypeError("templates must be a non-empty sequence of template outcomes")
     if not templates:
         raise ValueError("at least one independent template is required")
@@ -133,12 +134,12 @@ def paired_template_effect(
         )
 
     template_count = len(template_differences)
-    estimate = fsum(template_differences) / template_count
-    rng = Random(seed)
+    estimate = math.fsum(template_differences) / template_count
+    rng = random.Random(seed)
     bootstrap_estimates: list[float] = []
     for _ in range(bootstrap_replicates):
         sample = rng.choices(template_differences, k=template_count)
-        bootstrap_estimates.append(fsum(sample) / template_count)
+        bootstrap_estimates.append(math.fsum(sample) / template_count)
     bootstrap_estimates.sort()
 
     lower = _percentile(bootstrap_estimates, 0.025)
