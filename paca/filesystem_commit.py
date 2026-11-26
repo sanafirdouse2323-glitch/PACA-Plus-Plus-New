@@ -592,7 +592,9 @@ class FilesystemFencedResourceExecutor(FencedResourceExecutor):
         record = self._parse_journal(journal_name)
         parent_fd, target_name = self._parent_and_name(record["relative_path"])
         try:
-            receipt = self.authority.registry.get_resource_commit_receipt(record["nonce"])
+            receipt = self.authority.registry.get_resource_commit_receipt(
+                record["nonce"]
+            )
             if receipt is not None:
                 if not self._receipt_matches(record, receipt):
                     raise ResourceCommitDenied(
@@ -672,7 +674,10 @@ class FilesystemFencedResourceExecutor(FencedResourceExecutor):
             # Fast replay rejection avoids mistaking an older receipt for the
             # result of a new journal with a reused one-use permit nonce. The
             # unique database receipt remains the authoritative concurrency gate.
-            if self.authority.registry.get_resource_commit_receipt(permit.nonce) is not None:
+            if (
+                self.authority.registry.get_resource_commit_receipt(permit.nonce)
+                is not None
+            ):
                 raise ResourceCommitDenied("resource commit permit replay was rejected")
             parent_fd, target_name = self._parent_and_name(relative)
             try:
