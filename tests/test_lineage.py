@@ -162,9 +162,7 @@ def test_model_generated_derivation_downgrades_trusted_sources():
     assert unrecorded.label.sensitivity == 2
     assert unrecorded.label.origins == source.label.origins
 
-    with pytest.raises(
-        ValueError, match="model-generated content must be untrusted"
-    ):
+    with pytest.raises(ValueError, match="model-generated content must be untrusted"):
         LineageNode(
             object_id="trusted-model-output",
             version_id="v1",
