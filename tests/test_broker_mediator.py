@@ -143,6 +143,7 @@ def _environment(tmp_path, *, provenance_release_check=None, max_calls=5):
         message_verifier,
         clock=lambda: 1_795_600_800.0,
     )
+
     def default_release_check(operation, record, result, repository):
         refs = result["provenance_metadata"].get("lineage_refs", ())
         return (
