@@ -1121,6 +1121,12 @@ def main(argv: list[str] | None = None) -> int:
             try:
                 partial = json.loads(args.output.read_text(encoding="utf-8"))
                 partial["status"] = "failed"
+                evidence = partial.get("evidence")
+                if isinstance(evidence, dict):
+                    evidence["execution_status"] = "failed_or_interrupted"
+                    # A partial run may fail before or after the first provider
+                    # request; do not infer that any live request completed.
+                    evidence["live_model_requests_completed"] = None
                 partial["finished_at"] = datetime.now(timezone.utc).isoformat()
                 # Do not copy arbitrary provider exception text into a result file:
                 # it may contain request details or credentials.
