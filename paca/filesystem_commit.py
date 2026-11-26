@@ -791,9 +791,9 @@ class FilesystemFencedResourceExecutor(FencedResourceExecutor):
                                     "durable commit receipt does not match the filesystem operation"
                                 )
                             if (
-                    receipt.get("version") is None
-                    and receipt.get("committed_version") is None
-                ):
+                                receipt.get("version") is None
+                                and receipt.get("committed_version") is None
+                            ):
                                 raise ResourceCommitDenied(
                                     "durable commit receipt has no current value or committed version"
                                 )
