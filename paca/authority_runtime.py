@@ -798,7 +798,12 @@ class Ed25519CapabilityAuthority(HMACCapabilityAuthority):
     def issue_resource_commit_permit(
         self,
         capability_token: str,
-        **kwargs: object,
+        *,
+        request_digest: str,
+        action: str,
+        resource: str,
+        payload_digest: str,
+        lifetime_seconds: int = 15,
     ) -> str:
         if self._ed25519_signing_key is None:
             raise CapabilityAuthenticationError(
@@ -806,8 +811,12 @@ class Ed25519CapabilityAuthority(HMACCapabilityAuthority):
             )
         return super().issue_resource_commit_permit(
             capability_token,
-            **kwargs,
-        )  # type: ignore[arg-type]
+            request_digest=request_digest,
+            action=action,
+            resource=resource,
+            payload_digest=payload_digest,
+            lifetime_seconds=lifetime_seconds,
+        )
 
 
 __all__ = [
