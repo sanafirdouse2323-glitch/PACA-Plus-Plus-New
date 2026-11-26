@@ -48,3 +48,16 @@ def test_benchmark_headline_properties():
 def test_audit_chain_valid_in_every_run():
     d = compute()
     assert all(s["results"]["paca"]["audit_ok"] for s in d["scenarios"])
+
+
+def test_simulator_results_are_explicitly_labelled_as_non_vendor_evidence():
+    data = compute()
+
+    assert data["schema_version"] == "1.0.0"
+    assert data["evidence"]["class"] == "S"
+    assert data["evidence"]["status"] == "internal_simulation"
+    assert data["evidence"]["baseline_type"] == "hand_authored_toy_models"
+    assert data["evidence"]["model_in_loop"] is False
+    assert data["evidence"]["live_vendor_execution"] is False
+    assert data["evidence"]["independent_scenario_templates_verified"] is False
+    assert data["evidence"]["n_scenarios"] == len(data["scenarios"])
