@@ -29,6 +29,7 @@ from typing import Any
 from ..provenance import Label
 from ..runtime import ACTIONS, Capability
 from .agentdojo import PacaToolsExecutor
+from .model_usage import OpenAIUsageRecorder
 from .agentdojo_workspace import (
     SUPPORTED_WORKSPACE_READ_TOOLS,
     WorkspaceTaskContext,
@@ -273,6 +274,7 @@ def _build_pipeline(
     max_iters: int,
     task_policy: TaskPolicy | None = None,
     defense: str | None = None,
+    model_usage_recorder: OpenAIUsageRecorder | None = None,
 ) -> tuple[Any, PacaToolsExecutor | None, Any | None]:
     config = api["PipelineConfig"](
         llm=model,
@@ -284,6 +286,13 @@ def _build_pipeline(
     )
     pipeline = api["AgentPipeline"].from_config(config)
     pipeline.name = pipeline_name
+    if model_usage_recorder is not None:
+        instrumented_clients = model_usage_recorder.instrument_pipeline(pipeline)
+        if instrumented_clients == 0:
+            raise RuntimeError(
+                "could not find an OpenAI-compatible chat-completions client "
+                "inside the AgentDojo pipeline; token usage would be incomplete"
+            )
 
     tools_loops = [
         element
@@ -763,6 +772,11 @@ def run_workspace_benchmark(
     }
     paca_benign_metrics: list[dict[str, int]] = []
     paca_attacked_metrics: list[dict[str, int]] = []
+    model_usage_recorders = {
+        "agentdojo_no_defense": OpenAIUsageRecorder("agentdojo_no_defense"),
+        "agentdojo_tool_filter": OpenAIUsageRecorder("agentdojo_tool_filter"),
+        "paca_plus_plus": OpenAIUsageRecorder("paca_plus_plus"),
+    }
 
     def save_checkpoint() -> None:
         serialized = json.dumps(results, indent=2, sort_keys=True, ensure_ascii=False)
@@ -794,6 +808,7 @@ def run_workspace_benchmark(
             model_id=model_id,
             pipeline_name=baseline_name,
             max_iters=max_iters,
+            model_usage_recorder=model_usage_recorders["agentdojo_no_defense"],
         )
         baseline_utility_value, _ = api["run_task_without_injection_tasks"](
             suite,
@@ -815,6 +830,7 @@ def run_workspace_benchmark(
             pipeline_name=filter_name,
             max_iters=max_iters,
             defense="tool_filter",
+            model_usage_recorder=model_usage_recorders["agentdojo_tool_filter"],
         )
         filter_utility_value, _ = api["run_task_without_injection_tasks"](
             suite,
@@ -837,6 +853,7 @@ def run_workspace_benchmark(
             pipeline_name=paca_name,
             max_iters=max_iters,
             task_policy=paca_policy,
+            model_usage_recorder=model_usage_recorders["paca_plus_plus"],
         )
         paca_utility_value, _ = api["run_task_without_injection_tasks"](
             suite,
@@ -973,6 +990,7 @@ def run_workspace_benchmark(
                     pipeline_name=paca_name,
                     max_iters=max_iters,
                     task_policy=paca_pair_policy,
+                    model_usage_recorder=model_usage_recorders["paca_plus_plus"],
                 )
             )
             paca_attack = api["load_attack"](attack_name, suite, paca_attack_pipeline)
@@ -1172,10 +1190,16 @@ def run_workspace_benchmark(
             time.perf_counter() - run_started_monotonic, 6
         ),
         "operational_metrics": operational_metrics,
+        "model_usage_by_condition": {
+            condition: recorder.snapshot()
+            for condition, recorder in model_usage_recorders.items()
+        },
         "provider_cost_usd": None,
         "provider_cost_status": (
-            "not_captured: this runner does not currently ingest provider billing "
-            "or token-cost telemetry; join a provider usage export before making cost claims"
+            "not_captured: model request token usage is instrumented where the provider "
+            "returns usage fields, but dollar cost still requires the exact provider, "
+            "model/version, dated rate schedule, cached/reasoning token treatment and "
+            "billing adjustments. Do not infer charges from token totals alone."
         ),
         "attack_pair_count": applicable_pair_count,
         "skipped_attack_pair_count": len(skipped_pairs),
