@@ -162,9 +162,10 @@
         "content_governance"
       ],
       "documented_scope_or_constraints": [
-        "Only traffic actually routed through the gateway is within its observed enforcement boundary",
-        "Gateway documentation does not establish control over arbitrary unmediated internal memory or model planning",
-        "Feature maturity and availability labels must be rechecked before selecting a live profile"
+        "Only traffic actually routed through the gateway is within its observed enforcement boundary.",
+        "Gateway documentation does not establish control over arbitrary unmediated internal memory or model planning.",
+        "The current Agent Gateway overview states that support for token-management policies and extension bindings is coming soon; the standalone token-management page also states that support is coming soon. Do not count either as available baseline features at this audit date.",
+        "Agent Gateway is listed for Gemini Enterprise Agent Platform and GKE; Cloud Run and cross-cloud Kubernetes are Limited Preview. Confirm the exact deployment model, region, and project eligibility before a live test."
       ],
       "not_established_by_documentation_alone": [
         "Internal memory read/write mediation",
@@ -175,11 +176,14 @@
         "Google Cloud project and supported Agent Gateway configuration",
         "Agent identity and registry setup",
         "Explicit routing of target MCP/A2A/tool paths through gateway",
-        "IAM, semantic/content policy and Model Armor configuration capture",
-        "Protected sink and gateway decision/effect correlation"
+        "Capture available IAM, semantic/content policy and Model Armor configuration; do not assume token management or extension bindings are enabled",
+        "Protected sink and gateway decision/effect correlation",
+        "Record the exact deployment model and preview/GA status for the selected project and region"
       ],
       "official_sources": [
-        "https://docs.cloud.google.com/gemini-enterprise-agent-platform/govern/gateways/agent-gateway-overview"
+        "https://docs.cloud.google.com/gemini-enterprise-agent-platform/govern/gateways/agent-gateway-overview",
+        "https://docs.cloud.google.com/gemini-enterprise-agent-platform/govern/policies/token-management-overview",
+        "https://docs.cloud.google.com/gemini-enterprise-agent-platform/govern/gateways/cloud-run-overview"
       ],
       "next_action": "Pin the product release, deployment configuration and protected test sink before native smoke testing."
     },
