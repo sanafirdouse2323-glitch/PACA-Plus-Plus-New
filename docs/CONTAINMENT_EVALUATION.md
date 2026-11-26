@@ -128,7 +128,7 @@ Existing `tests/test_secure_execution_primitives.py` covers Linux `openat2` path
 
 ## 4. Optional filesystem resource-commit reference adapter
 
-The branch adds `FilesystemFencedResourceExecutor` for one narrow path: a protected `write_file` request can replace a real local regular file. This is distinct from `FencedResourceExecutor`, which stores a logical value in `paca_resource_values`.
+The branch adds `FilesystemFencedResourceExecutor` for one narrow path: a protected `write_file` request can replace a real local regular file. This is distinct from `FencedResourceExecutor`, which stores a logical value in `paca_resource_values`. The filesystem adapter's registry receipts and recovery metadata are kept under a reserved internal key namespace in the same registry tables, rather than sharing or overwriting the logical resource row. Earlier unqualified rows are retained as legacy state because their originating backend cannot be reliably inferred.
 
 Example configuration inside the trusted resource-broker process:
 

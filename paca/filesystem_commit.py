@@ -616,9 +616,12 @@ class FilesystemFencedResourceExecutor(FencedResourceExecutor):
                     raise ResourceCommitDenied(
                         "filesystem journal does not match the durable authority commit receipt"
                     )
-                if receipt.get("version") is None:
+                if (
+                    receipt.get("version") is None
+                    and receipt.get("committed_version") is None
+                ):
                     raise ResourceCommitDenied(
-                        "filesystem recovery receipt no longer identifies the current resource value"
+                        "filesystem recovery receipt has no current value or committed version"
                     )
                 current = self._read_target(parent_fd, target_name)
                 if current is None or self._digest(current) != record["new_digest"]:
@@ -787,9 +790,12 @@ class FilesystemFencedResourceExecutor(FencedResourceExecutor):
                                 raise ResourceCommitDenied(
                                     "durable commit receipt does not match the filesystem operation"
                                 )
-                            if receipt.get("version") is None:
+                            if (
+                    receipt.get("version") is None
+                    and receipt.get("committed_version") is None
+                ):
                                 raise ResourceCommitDenied(
-                                    "durable commit receipt no longer identifies the current resource value"
+                                    "durable commit receipt has no current value or committed version"
                                 )
                             current = self._read_target(parent_fd, target_name)
                             if (
