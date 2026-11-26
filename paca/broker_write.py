@@ -51,8 +51,10 @@ class InProcessBrokerWriteMediator:
     the permit nonce in the same resource transaction, providing a durable
     one-use boundary for this restricted profile.
 
-    A trusted provenance callback must resolve and verify every immutable
-    provenance reference and return canonical metadata for persistence. A
+    A trusted provenance callback receives the exact SQLiteProvenanceRepository,
+    must resolve and verify every immutable reference against it, and returns
+    canonical metadata for persistence. The mediator holds the repository's
+    revocation guard from this check through the authority-registry commit. A
     trusted permit resolver must fetch a signed permit envelope by reference.
     Neither callback is an authentication mechanism by itself; both are part
     of the broker's trusted computing base.
