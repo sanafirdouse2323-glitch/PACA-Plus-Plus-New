@@ -5,11 +5,7 @@ from pathlib import Path
 
 
 def test_industry_comparator_matrix_keeps_vendor_documentation_separate_from_live_tests():
-    path = (
-        Path(__file__).resolve().parents[1]
-        / "docs"
-        / "industry_comparator_matrix.json"
-    )
+    path = Path(__file__).resolve().parents[1] / "docs" / "industry_comparator_matrix.json"
     matrix = json.loads(path.read_text(encoding="utf-8"))
 
     assert matrix["schema_version"] == "1.0.0"
@@ -17,7 +13,10 @@ def test_industry_comparator_matrix_keeps_vendor_documentation_separate_from_liv
 
     by_id = {item["id"]: item for item in matrix["comparators"]}
     assert len(by_id) == len(matrix["comparators"]) == 15
-    assert len([item for item in matrix["comparators"] if item["id"] != "paca-plus-plus"]) == 14
+    assert (
+        len([item for item in matrix["comparators"] if item["id"] != "paca-plus-plus"])
+        == 14
+    )
 
     vendor_ids = (
         "aws-bedrock-agentcore-temporal-policies",
@@ -71,5 +70,8 @@ def test_industry_comparator_matrix_keeps_vendor_documentation_separate_from_liv
     # collapsed into one synthetic "cohort" or ranked as interchangeable.
     assert by_id["caplease"]["relevant_research_dimensions"]
     assert by_id["aid-guard"]["relevant_research_dimensions"]
-    assert "authorization_to_effect_binding" in by_id["aid-guard"]["relevant_research_dimensions"]
+    assert (
+        "authorization_to_effect_binding"
+        in by_id["aid-guard"]["relevant_research_dimensions"]
+    )
     assert "semantic_replay" in by_id["caplease"]["relevant_research_dimensions"]
