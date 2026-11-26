@@ -635,7 +635,7 @@ class TrustedMemoryAdapter:
                 )
             )
         parent_ids = tuple(sorted(set().union(*(item.lineage_refs for item in inputs))))
-        label = Label.join(*(item.label for item in inputs))
+        label = Label.join(*(item.label for item in inputs)).as_model_output()
         encoded = canonical_value_bytes(value)
         node = LineageNode(
             object_id=object_id,
