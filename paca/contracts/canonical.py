@@ -13,10 +13,13 @@ import math
 import re
 from typing import Any
 
+rfc8785: Any
 try:
-    import rfc8785
+    import rfc8785 as _rfc8785
 except ImportError:  # pragma: no cover - exercised in environments without the extra
     rfc8785 = None
+else:
+    rfc8785 = _rfc8785
 
 
 _MAX_SAFE_INTEGER = (2**53) - 1

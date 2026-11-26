@@ -80,9 +80,19 @@ def _record_from_dict(data: Mapping[str, object]) -> AuthorityLineage:
             raise TypeError("grants must be an object")
         parent_id = data.get("parent_id")
         parent_digest = data.get("parent_digest")
+        policy_epoch = data.get("policy_epoch")
+        expires = data.get("expires")
         max_task_calls = data.get("max_task_calls")
         max_calls = data.get("max_calls")
         audience = data.get("audience")
+        if (
+            isinstance(policy_epoch, bool)
+            or not isinstance(policy_epoch, int)
+            or policy_epoch < 0
+        ):
+            raise ValueError("policy_epoch is missing or invalid")
+        if isinstance(expires, bool) or not isinstance(expires, int):
+            raise ValueError("expires is missing or invalid")
         if (
             isinstance(max_task_calls, bool)
             or not isinstance(max_task_calls, int)
@@ -104,8 +114,8 @@ def _record_from_dict(data: Mapping[str, object]) -> AuthorityLineage:
             tenant=str(data["tenant"]),
             task_id=str(data["task_id"]),
             purpose=str(data["purpose"]),
-            policy_epoch=int(data["policy_epoch"]),
-            expires=int(data["expires"]),
+            policy_epoch=policy_epoch,
+            expires=expires,
             grants={
                 str(action): tuple(patterns) for action, patterns in grants.items()
             },
@@ -837,14 +847,20 @@ class SQLiteAuthorityRegistry:
         ):
             if not isinstance(value, str) or not value:
                 raise ValueError(f"commit permit {name} must be a non-empty string")
-        for name, value in (
+        for int_name, int_value in (
             ("policy_epoch", permit.policy_epoch),
             ("issued_at", permit.issued_at),
             ("expires_at", permit.expires_at),
             ("max_calls", permit.max_calls),
         ):
-            if isinstance(value, bool) or not isinstance(value, int) or value < 0:
-                raise ValueError(f"commit permit {name} must be a non-negative integer")
+            if (
+                isinstance(int_value, bool)
+                or not isinstance(int_value, int)
+                or int_value < 0
+            ):
+                raise ValueError(
+                    f"commit permit {int_name} must be a non-negative integer"
+                )
         if permit.max_calls < 1:
             raise ValueError("commit permit max_calls must be positive")
         if permit.permit_id is not None and (
@@ -910,27 +926,38 @@ class SQLiteAuthorityRegistry:
                 or set(access_receipt) != required_receipt_fields
             ):
                 raise ValueError("broker access receipt has an invalid field set")
-            for name in ("session_id", "nonce_digest", "operation_id"):
-                value = access_receipt.get(name)
-                if not isinstance(value, str) or not value or len(value) > 256:
-                    raise ValueError(f"broker access receipt {name} is invalid")
-            for name in ("nonce_digest", "request_digest", "payload_digest"):
-                value = access_receipt.get(name)
+            for text_name in ("session_id", "nonce_digest", "operation_id"):
+                text_value = access_receipt.get(text_name)
                 if (
-                    not isinstance(value, str)
-                    or len(value) != 64
-                    or any(character not in "0123456789abcdef" for character in value)
+                    not isinstance(text_value, str)
+                    or not text_value
+                    or len(text_value) > 256
                 ):
-                    raise ValueError(f"broker access receipt {name} must be SHA-256")
-            if not hmac.compare_digest(
-                access_receipt["request_digest"], permit.request_digest
+                    raise ValueError(f"broker access receipt {text_name} is invalid")
+            for digest_name in ("nonce_digest", "request_digest", "payload_digest"):
+                digest_value = access_receipt.get(digest_name)
+                if (
+                    not isinstance(digest_value, str)
+                    or len(digest_value) != 64
+                    or any(
+                        character not in "0123456789abcdef"
+                        for character in digest_value
+                    )
+                ):
+                    raise ValueError(
+                        f"broker access receipt {digest_name} must be SHA-256"
+                    )
+            receipt_request_digest = access_receipt.get("request_digest")
+            receipt_payload_digest = access_receipt.get("payload_digest")
+            if not isinstance(receipt_request_digest, str) or not isinstance(
+                receipt_payload_digest, str
             ):
+                raise ValueError("broker access receipt digests are invalid")
+            if not hmac.compare_digest(receipt_request_digest, permit.request_digest):
                 raise AuthorityRegistryError(
                     "broker access receipt request binding mismatch"
                 )
-            if not hmac.compare_digest(
-                access_receipt["payload_digest"], permit.payload_digest
-            ):
+            if not hmac.compare_digest(receipt_payload_digest, permit.payload_digest):
                 raise AuthorityRegistryError(
                     "broker access receipt payload binding mismatch"
                 )
@@ -1348,18 +1375,24 @@ class SQLiteAuthorityRegistry:
             or set(access_receipt) != required_receipt_fields
         ):
             raise ValueError("broker access receipt has an invalid field set")
-        for name in ("session_id", "nonce_digest", "operation_id"):
-            value = access_receipt.get(name)
-            if not isinstance(value, str) or not value or len(value) > 256:
-                raise ValueError(f"broker access receipt {name} is invalid")
-        for name in ("nonce_digest", "request_digest"):
-            value = access_receipt.get(name)
+        for text_name in ("session_id", "nonce_digest", "operation_id"):
+            text_value = access_receipt.get(text_name)
             if (
-                not isinstance(value, str)
-                or len(value) != 64
-                or any(character not in "0123456789abcdef" for character in value)
+                not isinstance(text_value, str)
+                or not text_value
+                or len(text_value) > 256
             ):
-                raise ValueError(f"broker access receipt {name} must be SHA-256")
+                raise ValueError(f"broker access receipt {text_name} is invalid")
+        for digest_name in ("nonce_digest", "request_digest"):
+            digest_value = access_receipt.get(digest_name)
+            if (
+                not isinstance(digest_value, str)
+                or len(digest_value) != 64
+                or any(
+                    character not in "0123456789abcdef" for character in digest_value
+                )
+            ):
+                raise ValueError(f"broker access receipt {digest_name} must be SHA-256")
 
         now = int(self.clock())
         with closing(self._connect()) as connection:
