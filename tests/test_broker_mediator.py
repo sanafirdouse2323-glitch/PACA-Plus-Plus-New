@@ -41,9 +41,7 @@ def _environment(tmp_path, *, provenance_release_check=None, max_calls=5):
         return now[0]
 
     registry = SQLiteAuthorityRegistry(tmp_path / "authority.sqlite3", clock=clock)
-    provenance_repository = SQLiteProvenanceRepository(
-        tmp_path / "provenance.sqlite3"
-    )
+    provenance_repository = SQLiteProvenanceRepository(tmp_path / "provenance.sqlite3")
     provenance_node = LineageNode(
         object_id="report-source",
         version_id="source-v1",
@@ -54,7 +52,7 @@ def _environment(tmp_path, *, provenance_release_check=None, max_calls=5):
             integrity="untrusted",
             sensitivity=1,
             tenant=TENANT,
-            origins=frozenset({"mail:tenant-1"}),
+            origins=frozenset({"trusted-test-source"}),
         ),
         purpose=PURPOSE,
     )
