@@ -17,6 +17,7 @@ from typing import Any
 
 from .canonical import canonicalize
 
+
 def _load_ed25519_key_types() -> tuple[Any, Any]:
     """Load optional cryptography key classes without weakening static types."""
     try:
