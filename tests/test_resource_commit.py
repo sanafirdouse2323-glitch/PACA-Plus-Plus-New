@@ -674,6 +674,41 @@ def _filesystem_executor(env, tmp_path, *, initial_content=None):
 @pytest.mark.skipif(
     sys.platform != "linux", reason="filesystem commit fence requires Linux openat2"
 )
+def test_filesystem_executor_seals_helpers_and_configuration_after_initialization(
+    tmp_path,
+):
+    env = _environment(tmp_path)
+    root, _, executor = _filesystem_executor(env, tmp_path)
+    invoked = []
+
+    def untrusted_read_target(*args, **kwargs):
+        invoked.append(True)
+        return None
+
+    with pytest.raises(AttributeError, match="immutable after initialization"):
+        executor._read_target = untrusted_read_target
+    with pytest.raises(AttributeError, match="immutable after initialization"):
+        executor.max_file_bytes = 1
+    with pytest.raises(AttributeError, match="immutable after initialization"):
+        del executor.secure_root
+
+    decision, result = env["runtime"].execute_effect(
+        env["signed"].token,
+        env["request"],
+        executor,
+    )
+    target = _filesystem_relative_target(root, env["signed"].capability.task_id)
+    assert decision.verdict == "allow"
+    assert result["storage"] == "filesystem"
+    assert target.read_bytes() == b"approved report body"
+    assert invoked == []
+    executor.close()
+    assert executor._closed is True
+
+
+@pytest.mark.skipif(
+    sys.platform != "linux", reason="filesystem commit fence requires Linux openat2"
+)
 def test_filesystem_resource_commit_writes_real_file_under_authority_fence(tmp_path):
     env = _environment(tmp_path)
     root, state_dir, executor = _filesystem_executor(env, tmp_path)
