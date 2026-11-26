@@ -277,6 +277,8 @@ Before confirmatory testing:
 6. Keep security, legitimate utility and systems cost as separate outcomes. Do not call utility "preserved" merely because a difference is not statistically significant.
 7. Publish effect sizes, uncertainty intervals, per-family results and sensitivity bounds, including conservative treatment of uncertain sink outcomes.
 
+The repository now includes `paca/evaluation_statistics.py`, a paired whole-template bootstrap helper. It aggregates observations into one rate per declared template, calculates the unweighted mean of treatment-minus-control rate differences, resamples whole templates with replacement, and returns a 95% percentile interval. It refuses duplicate template IDs, invalid denominators/counts and Boolean values masquerading as integers. Fewer than 30 templates are labelled exploratory-only; 30 or more are merely eligible for a separate power/protocol review. The function cannot establish that the investigator's template IDs are truly independent, cannot replace preregistration or the proposal's simulation-based power/coverage analysis, and does not handle uncertain-outcome sensitivity bounds automatically.
+
 ## 9. Test and implementation gates
 
 | Gate | Required work | Exit condition | Stop condition |
@@ -296,6 +298,8 @@ G2 is the decision gate for any additional PACA mechanism. No generic "continuou
 | Existing path | Role in this programme | Work required |
 |---|---|---|
 | `paca/bench.py` | Current deterministic simulator | Result JSON now carries schema version and `S` (project-owned simulation) evidence metadata, including explicit toy-baseline and no-live-vendor/no-model flags. Preserve as regression simulation; not industry evidence. |
+| `docs/industry_comparator_matrix.json` | Machine-readable evidence register | Ten comparator entries and five baseline profiles; vendor entries are marked documentary/not run. A test guards the evidence labels and prevents documentation from being represented as live execution. |
+| `paca/evaluation_statistics.py` | Independent-template paired estimator | Whole-template paired bootstrap and confirmatory-floor labelling are implemented with unit tests. Independent-template authoring, pilot-derived power/coverage and confirmatory runs remain outstanding. |
 | `paca/baselines.py` | Hand-authored toy baselines | Keep explicitly labelled as simulations. Add adapters only for real/native product execution profiles; avoid pretending a hand-coded policy equals a vendor engine. |
 | `paca/scenarios.py` | Current authored attack/benign fixtures | Existing 30 attack and 11 benign examples remain author-defined fixtures, not independent confirmation templates. Build a versioned independent workflow-template corpus with lineage transformations, multi-agent steps and sink outcomes. |
 | `paca/integrations/agentdojo_benchmark.py` | Existing bounded AgentDojo adapter/runner | Runner now adds model-in-the-loop evidence status and per-condition episode latency/error/sequential-rate telemetry. It still requires a protected model credential, has selected workspace read-tool coverage only, and does not capture provider billing cost. |
@@ -323,7 +327,7 @@ Release only synthetic data and reviewed traces. Never publish live credentials,
 
 ## 12. Current status and immediate next actions
 
-At this branch revision, the documentary comparator protocol and evidence labels are in place; the deterministic simulator is explicitly labelled `S`; synthetic lineage-conformance tests have been added; the AgentDojo runner has model-run status and basic operational telemetry; and the existing local commit/revocation/idempotency test infrastructure has been mapped for reuse. The six-point evaluation is **not completed**. No live vendor-service test, residual-gap reproduction against a fully configured industry stack, model-generated benchmark result, external-provider commit test, or confirmatory independent-template analysis has been produced by this work.
+At this branch revision, the documentary comparator protocol and evidence labels are in place; the machine-readable comparator matrix is parsed and test-guarded; the deterministic simulator is explicitly labelled `S`; synthetic lineage-conformance tests have been added; the AgentDojo runner has model-run status and basic operational telemetry; a paired whole-template bootstrap helper and tests have been added; and the existing local commit/revocation/idempotency test infrastructure has been mapped for reuse. The six-point evaluation is **not completed**. No live vendor-service test, residual-gap reproduction against a fully configured industry stack, model-generated benchmark result, external-provider commit test, or confirmatory independent-template analysis has been produced by this work.
 
 The immediate implementation order is:
 
