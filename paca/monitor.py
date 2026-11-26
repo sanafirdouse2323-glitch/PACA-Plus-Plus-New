@@ -909,6 +909,11 @@ class Monitor:
                 "step": req.step,
                 "task": cap.task_id,
                 "action": req.action,
+                "target_digest": (
+                    hashlib.sha256(tval.encode("utf-8")).hexdigest()
+                    if tgt is not None
+                    else None
+                ),
                 "verdict": verdict,
                 "checks": d.checks,
                 "digest": request_digest[:16],
