@@ -44,7 +44,7 @@ class OpenAIUsageRecorder:
             raise ValueError("condition must be a non-empty string")
         self.condition = condition
         self._lock = threading.Lock()
-        self._instrumented_completion_ids: set[int] = set()
+        self._instrumented_completion_objects: dict[int, object] = {}
         self._instrumented_clients = 0
         self._request_attempts = 0
         self._successful_responses = 0
@@ -86,11 +86,14 @@ class OpenAIUsageRecorder:
             if not callable(create):
                 continue
             completion_id = id(completions)
-            if completion_id in self._instrumented_completion_ids:
-                continue
-            self._wrap_completion_create(completions, create)
-            self._instrumented_completion_ids.add(completion_id)
-            instrumented += 1
+            with self._lock:
+                if completion_id in self._instrumented_completion_objects:
+                    continue
+                self._wrap_completion_create(completions, create)
+                # Retain the resource object for this run so Python cannot reuse
+                # its ID and cause a later client to be skipped accidentally.
+                self._instrumented_completion_objects[completion_id] = completions
+                instrumented += 1
 
         with self._lock:
             self._instrumented_clients += instrumented
