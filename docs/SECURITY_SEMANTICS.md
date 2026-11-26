@@ -49,6 +49,7 @@ Integrity and sensitivity are independent dimensions.
 - Sensitivity ordering: public (0), internal (1), confidential (2), restricted (3). The join selects maximum sensitivity.
 - Tenant and origin dependencies are unioned. Unknown or mixed ownership is preserved, not collapsed into a single convenient tenant.
 - A derivation MUST NOT improve integrity or lower sensitivity without an explicit declassification operation.
+- A model-generated transformation MUST be marked untrusted even when every input was trusted; it preserves the maximum input sensitivity and the union of origins/tenants. A parent edge and content digest prove recorded origin and byte identity, not the semantic correctness of the model output. The current reference schema has no authenticated transform-validation receipt, so it has no model-output trust-promotion path.
 - Declassification MAY lower sensitivity only when an authorised, policy-bound transformation records exact input and output digests, principal, destination, purpose, and durable audit evidence.
 - Declassification MUST NOT change untrusted integrity to trusted, erase origins, erase parent edges or resolve unknown tenancy without independent authenticated evidence.
 - Redaction is a transformation; it does not by itself establish permission to disclose the result.
