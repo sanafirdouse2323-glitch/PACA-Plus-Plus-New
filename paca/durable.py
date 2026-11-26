@@ -12,7 +12,7 @@ import json
 import os
 import sqlite3
 import time
-from collections.abc import Iterable
+from collections.abc import Iterable, Iterator
 from contextlib import closing
 from pathlib import Path
 
@@ -408,6 +408,33 @@ class SQLiteProvenanceRepository:
                 ids,
             ).fetchall()
         return tuple(row["authority_id"] for row in rows)
+
+    @contextlib.contextmanager
+    def revocation_guard(self) -> Iterator[None]:
+        """Serialize a protected broker operation against lineage revocation.
+
+        The guard holds SQLite's reserved writer lock for this repository until
+        the caller finishes its provenance check and protected action. Since
+        revoke_lineage() uses BEGIN IMMEDIATE on the same database, a concurrent
+        revocation is ordered wholly before or after the guarded operation.
+
+        Callers must keep the guarded section local and bounded. Do not perform
+        network I/O or invoke callbacks that mutate this repository while the
+        guard is held. This is a single-host SQLite ordering primitive, not a
+        distributed transaction or multi-host revocation protocol.
+        """
+        with closing(self._connect()) as connection:
+            try:
+                connection.execute("BEGIN IMMEDIATE")
+            except sqlite3.Error as exc:
+                raise ProvenanceStoreError(
+                    "could not acquire the provenance revocation guard"
+                ) from exc
+            try:
+                yield
+            finally:
+                if connection.in_transaction:
+                    connection.rollback()
 
     def revoke_lineage(
         self, root_node_id: str, reason: str, *, revoked_at: int | None = None
