@@ -379,7 +379,7 @@ class PACAAgentRuntime:
         return executor
 
     def _require_fenced_executor(self, executor: Any) -> Any:
-        """Require the exact runtime-bound local resource commit adapter."""
+        """Require an allow-listed concrete adapter bound to runtime authority state."""
         if not self.require_resource_commit_fence:
             return None
         from .filesystem_commit import FilesystemFencedResourceExecutor
@@ -395,8 +395,8 @@ class PACAAgentRuntime:
             or executor.registry is not self.resource_commit_verifier.registry
         ):
             raise MemoryAccessDenied(
-                "resource commit fence mode requires an allow-listed concrete adapter "
-                "bound to the runtime's exact authority and registry client"
+                "resource commit fence mode requires the runtime-bound allow-listed "
+                "concrete adapter and exact registry client"
             )
         return executor
 
