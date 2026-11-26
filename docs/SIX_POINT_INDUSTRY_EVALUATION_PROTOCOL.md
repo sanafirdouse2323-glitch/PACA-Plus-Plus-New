@@ -190,6 +190,8 @@ Extend those fixtures only where the required schedules are genuinely missing. T
 
 Use the SQLite/PostgreSQL logical-resource stores as **project-owned transactional test sinks**. Keep the local filesystem and broker profiles separate. None proves a remote provider's atomic commit, host-level universal mediation, or multi-primary/distributed failover safety. A new network-facing sink fixture is justified only if it tests a real service boundary that the current adapters do not expose.
 
+The repository CI defines an ephemeral PostgreSQL 16 service, sets `PACA_TEST_POSTGRES_DSN`, and runs `tests/test_postgres_authority.py` in the `langgraph-postgres-checkpoint` job. A passing job therefore exercises the shared-primary authority/resource-reference tests against a real PostgreSQL service in CI, including separate registry clients and commit/revocation ordering. This is stronger than an SQLite-only unit test, but remains a single-primary test environment; it does not establish remote SaaS-provider semantics, high-availability failover safety, multi-primary consensus, or production load capacity.
+
 ### 6.2 Required schedules
 
 - Revocation before authorization.
