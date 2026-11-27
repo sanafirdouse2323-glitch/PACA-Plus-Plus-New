@@ -10,6 +10,7 @@ APIs safe by itself.
 
 from __future__ import annotations
 
+import contextlib
 import re
 import threading
 import time
@@ -283,10 +284,8 @@ class LifecycleSecurityController:
 
     def _reject(self, request: Request, reason: str) -> None:
         digest = None
-        try:
+        with contextlib.suppress(Exception):
             digest = request.digest
-        except Exception:
-            pass
         self._emit(
             LifecyclePhase.EFFECT,
             "authorize",
