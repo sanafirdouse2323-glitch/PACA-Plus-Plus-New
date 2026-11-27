@@ -498,6 +498,7 @@ def test_unprivileged_worker_uses_broker_without_direct_file_access():
     ready_signalled = False
     worker_reaped = False
 
+
     def broker_read(_message, session):
         with open(protected_path, "rb") as protected_file:
             content = protected_file.read().decode("ascii")
