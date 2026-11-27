@@ -18,6 +18,7 @@ from collections import deque
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from enum import Enum
+
 from .runtime import ACTIONS, Request
 
 _DIGEST = re.compile(r"^[0-9a-f]{64}$")
