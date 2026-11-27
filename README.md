@@ -41,6 +41,10 @@ The benchmark command writes `index.html` and `results.json` into the selected o
 | Process and network helpers | Optional digest-pinned Docker worker; `PACAAgentRuntime(require_docker_sandbox_for_effects=True)` requires the concrete Docker executor for `run_command` effects routed through `execute_effect`/`aexecute_effect` | Strict mode is opt-in and only governs calls through that runtime. It rejects other action types until brokered resource/provider paths exist, but does not stop direct host/framework/subprocess/provider bypasses. It still trusts the Docker CLI/daemon and host kernel and cannot yet be combined with resource-commit-fence mode. |
 | Formal models | Bounded TLA+ models for authorization, lifecycle, broker operations, grant attenuation and information flow/declassification | TLC checks only the finite configurations in the model files; it does not prove Python refinement, deployed database behavior or production security. |
 
+## Security profile conformance
+
+The `core`, `extended` and `research` installation extras are convenience dependency profiles, not separate authorization implementations. CI installs each profile into a clean environment and runs the same shared security-contract tests (`tests/test_profile_security_contract.py`) for capability authorization/revocation, provenance label and lineage preservation, and request-bound single-use local resource commits. This checks that adding optional dependencies does not change these Core contracts. It does **not** prove that every optional framework/provider adapter is secure or completely mediated; those integrations retain their own tests and documented boundaries.
+
 ## Install optional integrations
 
 Install only the extras needed by the application:
