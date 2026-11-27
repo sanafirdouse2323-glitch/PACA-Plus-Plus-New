@@ -3,9 +3,10 @@
 This module is the enforcement companion to PACA's authorization and provenance
 primitives.  It deliberately operates on metadata, not model text: tool output
 and retrieved content must be labelled by a trusted adapter before they can be
-used in a consequential request.  The controller covers the PACA runtime
-boundary; it does not make direct provider clients, raw stores or host process
-APIs safe by itself.
+used in a consequential request.  The controller makes four continuity checks
+explicit at the PACA runtime boundary: authority, information, usage and final
+effect identity.  It does not make direct provider clients, raw stores or host
+process APIs safe by itself.
 """
 
 from __future__ import annotations
@@ -64,6 +65,7 @@ class LifecycleSecurityPolicy:
     deny_untrusted_for: frozenset[str] = frozenset(
         {"egress", "write", "destructive", "exec", "setting", "delegate"}
     )
+    require_authority_lineage: bool = True
     require_tool_implementation_digest: bool = True
     max_audit_events: int = 4096
 
@@ -83,6 +85,8 @@ class LifecycleSecurityPolicy:
                 "unknown lifecycle effect classes: "
                 + ", ".join(sorted(unknown_classes - known_classes))
             )
+        if not isinstance(self.require_authority_lineage, bool):
+            raise TypeError("require_authority_lineage must be a boolean")
         if not isinstance(self.require_tool_implementation_digest, bool):
             raise TypeError("require_tool_implementation_digest must be a boolean")
         if (
@@ -100,6 +104,7 @@ class LifecycleSession:
     tenant: str
     task_id: str
     purpose: str
+    policy_epoch: int | None = None
 
 
 @dataclass(frozen=True)
@@ -210,18 +215,26 @@ class LifecycleSecurityController:
         tenant: str,
         task_id: str,
         purpose: str,
+        policy_epoch: int | None = None,
     ) -> LifecycleSession:
         with self._lock:
             if self._stopped_reason is not None:
                 raise LifecycleSecurityError("lifecycle controller is stopped")
             if self._session is not None:
                 raise LifecycleSecurityError("a lifecycle session is already active")
+            if policy_epoch is not None and (
+                isinstance(policy_epoch, bool)
+                or not isinstance(policy_epoch, int)
+                or policy_epoch < 0
+            ):
+                raise ValueError("policy_epoch must be a non-negative integer or None")
             session = LifecycleSession(
                 self._required_text("session_id", session_id),
                 self._required_text("principal", principal),
                 self._required_text("tenant", tenant),
                 self._required_text("task_id", task_id),
                 self._required_text("purpose", purpose),
+                policy_epoch,
             )
             self._session = session
             self._emit(
@@ -310,6 +323,23 @@ class LifecycleSecurityController:
             or request.cap.task_id != session.task_id
         ):
             self._reject(request, "request authority is outside the active session")
+        authority_lineage = request.cap.authority_lineage
+        if self.policy.require_authority_lineage and authority_lineage is None:
+            self._reject(
+                request,
+                "effect request requires immutable authority lineage",
+            )
+        if authority_lineage is not None:
+            if authority_lineage.purpose != session.purpose:
+                self._reject(request, "request purpose is outside the active session")
+            if (
+                session.policy_epoch is not None
+                and authority_lineage.policy_epoch != session.policy_epoch
+            ):
+                self._reject(
+                    request,
+                    "request authority is outside the active policy epoch",
+                )
         action = request.action
         spec = ACTIONS.get(action)
         if not isinstance(spec, Mapping):
@@ -403,3 +433,4 @@ __all__ = [
     "LifecycleSecurityPolicy",
     "LifecycleSession",
 ]
+
