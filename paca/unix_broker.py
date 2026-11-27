@@ -403,15 +403,21 @@ class UnixDomainBrokerServer:
             max_workers=max_workers,
         )
         try:
-            if socket_gid is not None:
-                os.chown(socket_path, -1, socket_gid)
-            os.chmod(socket_path, socket_mode)
             socket_stat = os.lstat(socket_path)
             if not stat.S_ISSOCK(socket_stat.st_mode):
                 raise BrokerTransportError("bound_path_is_not_socket")
             self._socket_identity = (socket_stat.st_dev, socket_stat.st_ino)
+            if socket_gid is not None:
+                os.chown(socket_path, -1, socket_gid)
+            os.chmod(socket_path, socket_mode)
         except Exception:
             server.server_close()
+            try:
+                current = os.lstat(socket_path)
+                if self._socket_identity == (current.st_dev, current.st_ino):
+                    os.unlink(socket_path)
+            except FileNotFoundError:
+                pass
             raise
         self._server = server
 
@@ -453,7 +459,13 @@ class UnixDomainBrokerServer:
 class UnixDomainBrokerClient:
     """One-shot client; sign receives the session issued on this connection."""
 
-    def __init__(self, socket_path: str, *, timeout: float = 5.0) -> None:
+    def __init__(
+        self,
+        socket_path: str,
+        *,
+        timeout: float = 5.0,
+        max_frame_bytes: int = _DEFAULT_FRAME_LIMIT,
+    ) -> None:
         if not isinstance(socket_path, str) or not os.path.isabs(socket_path):
             raise ValueError("socket_path must be an absolute path")
         if (
@@ -463,8 +475,15 @@ class UnixDomainBrokerClient:
             or not 0.1 <= timeout <= 30
         ):
             raise ValueError("timeout must be between 0.1 and 30 seconds")
+        if (
+            isinstance(max_frame_bytes, bool)
+            or not isinstance(max_frame_bytes, int)
+            or not 1_024 <= max_frame_bytes <= 16_777_216
+        ):
+            raise ValueError("max_frame_bytes must be between 1 KiB and 16 MiB")
         self.socket_path = socket_path
         self.timeout = float(timeout)
+        self.max_frame_bytes = max_frame_bytes
 
     def request(
         self,
@@ -478,8 +497,8 @@ class UnixDomainBrokerClient:
                 connection.settimeout(self.timeout)
                 connection.connect(self.socket_path)
                 reader = connection.makefile("rb")
-                hello = reader.readline(_DEFAULT_FRAME_LIMIT + 1)
-                if not hello or len(hello) > _DEFAULT_FRAME_LIMIT or not hello.endswith(b"\n"):
+                hello = reader.readline(self.max_frame_bytes + 1)
+                if not hello or len(hello) > self.max_frame_bytes or not hello.endswith(b"\n"):
                     raise BrokerTransportError("invalid_handshake")
                 hello_object = _decode_object(hello[:-1])
                 if hello_object.get("ok") is not True:
@@ -490,12 +509,12 @@ class UnixDomainBrokerClient:
                 message = sign(session)
                 if not isinstance(message, Mapping):
                     raise BrokerTransportError("signed_request_must_be_object")
-                frame = _encode_frame(message, _DEFAULT_FRAME_LIMIT)
+                frame = _encode_frame(message, self.max_frame_bytes)
                 connection.sendall(frame)
-                response = reader.readline(_DEFAULT_FRAME_LIMIT + 1)
+                response = reader.readline(self.max_frame_bytes + 1)
                 if (
                     not response
-                    or len(response) > _DEFAULT_FRAME_LIMIT
+                    or len(response) > self.max_frame_bytes
                     or not response.endswith(b"\n")
                 ):
                     raise BrokerTransportError("invalid_response")
