@@ -1,5 +1,6 @@
 import pytest
 
+from paca.authority import AuthorityLineage
 from paca.lifecycle import (
     LifecycleSecurityController,
     LifecycleSecurityError,
@@ -19,7 +20,14 @@ def _tool(name="mail"):
 
 
 def _request(
-    *, action="send_email", trusted=True, complete=True, tool=True, task="task-1"
+    *,
+    action="send_email",
+    trusted=True,
+    complete=True,
+    tool=True,
+    task="task-1",
+    purpose="test",
+    policy_epoch=7,
 ):
     label = Label(
         "trusted" if trusted else "untrusted",
@@ -45,6 +53,19 @@ def _request(
         expires=9999999999,
         tool_pins={manifest.name: manifest.hash} if manifest else {},
     )
+    capability.authority_lineage = AuthorityLineage.create(
+        authority_id="cap-1",
+        issuer="issuer-1",
+        principal="agent-1",
+        tenant="acme",
+        task_id=task,
+        purpose=purpose,
+        policy_epoch=policy_epoch,
+        expires=9999999999,
+        grants={action: ("*",)},
+        max_calls=40,
+        audience="paca-test",
+    )
     args = {"to": arg, "body": body} if action == "send_email" else {"folder": arg}
     return Request(action, args, capability, 1, tool=manifest)
 
@@ -57,6 +78,7 @@ def _controller():
         tenant="acme",
         task_id="task-1",
         purpose="test",
+        policy_epoch=7,
     )
     return controller
 
@@ -90,3 +112,20 @@ def test_session_binding_kill_switch_and_one_use_commit():
     with pytest.raises(LifecycleSecurityError, match="stopped"):
         controller.authorize_request(request)
     assert any(event.operation == "kill_switch" for event in controller.audit_events)
+
+
+def test_authority_purpose_and_policy_epoch_are_continuity_bindings():
+    controller = _controller()
+    with pytest.raises(LifecycleSecurityError, match="purpose"):
+        controller.authorize_request(_request(purpose="unrelated-purpose"))
+    with pytest.raises(LifecycleSecurityError, match="policy epoch"):
+        controller.authorize_request(_request(policy_epoch=8))
+
+
+def test_legacy_capability_without_lineage_is_rejected_by_default():
+    controller = _controller()
+    request = _request()
+    request.cap.authority_lineage = None
+    with pytest.raises(LifecycleSecurityError, match="immutable authority lineage"):
+        controller.authorize_request(request)
+
