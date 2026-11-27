@@ -90,10 +90,10 @@ the broker process.
 
 The test suite launches the broker in a distinct child process. A separate root-only
 CI job runs a broker under UID 0 and a worker under the `nobody` UID. It verifies that
-the worker can connect through the group-restricted socket while a broker-owned
-mode-0600 test file remains unreadable directly. This establishes one constrained
-cross-UID local access-control fixture, not a general host sandbox or complete
-mediation of all resources.
+the worker can retrieve the contents of a broker-read mode-0600 test file through
+the group-restricted socket while direct access to that same file is denied. This
+establishes one constrained cross-UID local access-control fixture, not a general
+host sandbox or complete mediation of all resources.
 
 Before deployment, run broker and worker under separate service identities, verify
 socket ownership and permissions, demonstrate that the worker cannot open protected
