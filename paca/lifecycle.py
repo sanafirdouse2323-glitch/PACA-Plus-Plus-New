@@ -17,7 +17,6 @@ from collections import deque
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any
 
 from .runtime import ACTIONS, Request
 
