@@ -360,7 +360,10 @@ class LifecycleSecurityController:
         ):
             self._reject(request, "action is outside the lifecycle allowlist")
         effect_class = spec.get("cls")
-        if action in self.policy.require_tool_for and request.tool is None:
+        require_tool_for = self.policy.require_tool_for
+        if require_tool_for is None:
+            self._reject(request, "lifecycle tool policy is not initialized")
+        if action in require_tool_for and request.tool is None:
             self._reject(request, "consequential action requires a typed tool manifest")
         if request.tool is not None:
             if (
@@ -369,7 +372,7 @@ class LifecycleSecurityController:
             ):
                 self._reject(request, "tool is outside the lifecycle allowlist")
             if (
-                action in self.policy.require_tool_for
+                action in require_tool_for
                 and self.policy.require_tool_implementation_digest
                 and request.tool.implementation_digest is None
             ):
