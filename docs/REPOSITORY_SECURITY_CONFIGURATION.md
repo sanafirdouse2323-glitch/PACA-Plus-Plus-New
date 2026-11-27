@@ -15,7 +15,7 @@ Enable these protections:
 1. Require a pull request before merging. Require at least one approval from a reviewer other than the PR author; dismiss stale approvals when new commits are pushed.
 2. Require all review conversations to be resolved.
 3. Require the branch to be up to date before merging, if the team can support that workflow.
-4. Require the stable CI checks for the default branch: the Python test matrix for 3.10, 3.11, 3.12 and 3.13; wheel smoke test; AgentDojo adapter integration; lint/type checks; PostgreSQL checkpoint integration; LangGraph integration; and Docker build.
+4. Require the stable CI checks for the default branch: the Python test matrix for 3.10, 3.11, 3.12 and 3.13; wheel smoke test; AgentDojo adapter integration; lint/type checks; PostgreSQL checkpoint integration; LangGraph integration; all three `Core security contract` profile checks; broker UID isolation; and Docker build.
 5. Require the release validation/build check for changes covered by `.github/workflows/release.yml`.
 6. Block force pushes and branch deletion. Apply the ruleset to administrators and avoid bypass actors. Any emergency bypass should be time-limited, documented and reviewed after use.
 
