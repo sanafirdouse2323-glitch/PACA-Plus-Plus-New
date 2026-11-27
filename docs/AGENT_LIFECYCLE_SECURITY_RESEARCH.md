@@ -32,7 +32,7 @@ The code on `main` is a substantial but partial research prototype. The table de
 | Memory | Separate `SQLiteMemoryValueStore` and `TrustedMemoryAdapter`; checks authority, tenant, purpose, lineage and digests before returning values | Raw database/store access bypasses the adapter. Provenance metadata and values are local SQLite stores, not one distributed transaction. |
 | Authority | `SQLiteAuthorityRegistry`, HMAC and Ed25519 capability envelopes, static Ed25519 verification-key rings for key overlap/retirement, policy epochs, revocation, delegation checks, per-capability counters, message receipts and tenant/task aggregate quotas | Identity and task callbacks are trusted host integrations. OIDC/workload identity, KMS/HSM custody, authenticated key distribution and coordinated production rollover remain open. |
 | Shared authority | Optional `PostgresAuthorityRegistry` shares authority, revocation, counters, aggregate quota, message receipts and local resource-commit state across clients on one primary | Not multi-primary, rollback-safe failover or replication of provenance, memory values and the Monitor operation ledger. |
-| Runtime and monitor | Selected action/target policies, strict consequential-monitor validation, effect tokens, protected runtime checks, an opt-in local resource-commit fence for `write_file`/`mem_write`, and the PR #48 `LifecycleSecurityController` for session, lineage, purpose, policy-epoch, tool and one-use commit checks | Only actions routed through the configured runtime are mediated. The local commit fence and lifecycle controller do not cover remote providers, raw handles or every executor. |
+| Runtime and monitor | Selected action/target policies, strict consequential-monitor validation, effect tokens, protected runtime checks, an opt-in local resource-commit fence for `write_file`/`mem_write`, and the PR #48 `LifecycleSecurityController` for session, lineage, purpose, policy-epoch, tool-manifest and one-use commit checks. Its one-use digest cache is process-local, bounded and fail-closed at capacity; it is not durable or shared across processes | Only actions routed through the configured runtime are mediated. The local commit fence and lifecycle controller do not cover remote providers, raw handles or every executor. |
 | Framework adapters | AgentDojo ToolsExecutor and limited workspace mapper; LangGraph BaseStore; LangChain middleware; PostgreSQL checkpoint wrapper | Adapters do not intercept direct calls to raw tools, stores, checkpointers, databases or alternate execution paths. |
 | Provider ingress | Read-only Gmail, Microsoft Graph mail, Slack history and Qdrant search adapters with bounded HTTP handling and provenance capture | CI uses mocked HTTP. Production identity binding, live account validation, provider writes, deletion sync and remote commit fencing remain open. |
 | Execution helpers | Optional Docker worker; Linux `openat2` filesystem and DNS/IP-pinned network primitives | Docker isolation is opt-in. Filesystem/network helpers are not wired into every connector or executor. |
@@ -297,7 +297,9 @@ Until then, describe it as a **research prototype for provenance-aware, capabili
 This is a selected, non-exhaustive reading list, not a systematic literature review. Novelty, completeness and comparative claims require further verification.
 
 
-## 11. Implementation status — merged main snapshot (26 November 2026)
+## 11. Historical implementation status — 26 November 2026
+
+**Historical snapshot:** this section records the implementation before PR #48. It is retained for research chronology and is not the current `main` status. The current 27 November baseline and PR #48 lifecycle controller are described in Sections 1–2 and the current implementation roadmap.
 
 The former `security/roadmap-phase-1` and `security/aggregate-task-quota` implementation work is now merged into `main`. `main` includes the following selected reference implementations:
 
