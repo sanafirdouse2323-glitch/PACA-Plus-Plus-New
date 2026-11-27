@@ -104,9 +104,7 @@ def test_provenance_contract_preserves_taint_sensitivity_and_lineage():
         version_id="v1",
         source="mail:message-1",
         source_class="external_content",
-        content_digest=hashlib.sha256(
-            b"untrusted external instruction"
-        ).hexdigest(),
+        content_digest=hashlib.sha256(b"untrusted external instruction").hexdigest(),
         label=Label(
             "untrusted",
             sensitivity=2,
