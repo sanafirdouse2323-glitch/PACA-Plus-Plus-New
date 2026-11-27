@@ -88,9 +88,12 @@ must place the session ID and channel-binding digest into the schema-valid signe
 broker operation. Do not hard-code the signing private key in source or pass it to
 the broker process.
 
-The test suite now also launches the broker in a distinct child process and verifies
-that the client receives a response from that process. That automated process test
-uses the same OS UID for both sides; it does not prove cross-UID isolation.
+The test suite launches the broker in a distinct child process. A separate root-only
+CI job runs a broker under UID 0 and a worker under the `nobody` UID. It verifies that
+the worker can connect through the group-restricted socket while a broker-owned
+mode-0600 test file remains unreadable directly. This establishes one constrained
+cross-UID local access-control fixture, not a general host sandbox or complete
+mediation of all resources.
 
 Before deployment, run broker and worker under separate service identities, verify
 socket ownership and permissions, demonstrate that the worker cannot open protected
