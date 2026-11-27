@@ -54,7 +54,7 @@ def _stop_server(server, thread) -> None:
 
 
 def test_one_shot_session_is_kernel_bound_and_unique_per_connection(tmp_path):
-    seen: list[tuple[MappingLike, BrokerSessionContext]] = []
+    seen: list[tuple[dict[str, object], BrokerSessionContext]] = []
 
     def dispatch(message, session):
         seen.append((dict(message), session))
