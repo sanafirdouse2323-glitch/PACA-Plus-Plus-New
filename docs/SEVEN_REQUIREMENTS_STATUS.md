@@ -3,7 +3,7 @@
 **Repository:** PACA-Plus-Plus-New  
 **Assessment date:** 27 November 2026  
 **Status:** Research implementation; not production-certified.  
-**Current baseline:** `main` at `b2e68277d2604c730fd5ae0c86a49ded20a72ef5` (PR #48 merged 27 November 2026)
+**Implementation baseline:** merge commit `b2e68277d2604c730fd5ae0c86a49ded20a72ef5` on `main` (PR #48 merged 27 November 2026)
 
 This current-baseline record supersedes the earlier PR #47 snapshot. Historical evidence remains labelled by its original commit and test configuration.
 
