@@ -88,6 +88,11 @@ must place the session ID and channel-binding digest into the schema-valid signe
 broker operation. Do not hard-code the signing private key in source or pass it to
 the broker process.
 
-Before deployment, verify the OS ownership and permissions, demonstrate that the
-worker cannot open protected storage or reach provider credentials directly, and
-run the adversarial bypass and concurrency suites under the actual service users.
+The test suite now also launches the broker in a distinct child process and verifies
+that the client receives a response from that process. That automated process test
+uses the same OS UID for both sides; it does not prove cross-UID isolation.
+
+Before deployment, run broker and worker under separate service identities, verify
+socket ownership and permissions, demonstrate that the worker cannot open protected
+storage or reach provider credentials directly, and run adversarial bypass and
+concurrency suites under those actual service users.
