@@ -61,7 +61,7 @@ def test_one_shot_session_is_kernel_bound_and_unique_per_connection(tmp_path):
         return {"operation_id": message["operation_id"]}
 
     path, server, thread = _start_server(tmp_path, dispatch)
-    client = UnixDomainBrokerClient(path)
+    client = UnixDomainBrokerClient(path, expected_server_uid=os.geteuid())
     try:
         first = client.request(
             lambda session: {
