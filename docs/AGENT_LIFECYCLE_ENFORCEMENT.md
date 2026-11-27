@@ -28,6 +28,11 @@ explicit and fail closed at the reference runtime's final effect boundary.
 | Effect commit | Consume a one-use request digest and audit the commit | `commit_authorization()` plus the existing monitor token and authority registry |
 | Shutdown/response | Stop all subsequent effects on operator action | `stop()`; create a new controller to resume after incident handling |
 
+The session can also bind an authority `policy_epoch`. When supplied, the
+request's immutable authority lineage must carry the same epoch. This makes a
+policy change or revocation epoch a visible continuity boundary rather than an
+implicit assumption.
+
 The controller records metadata only: action names, identities, digests,
 decisions and reasons. It never stores model text, credentials or effect
 payloads in its audit events.
@@ -46,6 +51,7 @@ lifecycle.start_session(
     tenant="acme",
     task_id="task-9",
     purpose="prepare_customer_report",
+    policy_epoch=authority.registry.current_epoch,
 )
 
 runtime = PACAAgentRuntime(
@@ -83,6 +89,12 @@ for production readiness. A production deployment must additionally remove the
 agent's direct access to raw stores, credentials, subprocesses and provider
 clients; enforce network and OS isolation; broker short-lived secrets; mediate
 destination-side commits; and test adaptive, multi-session attacks.
+
+The reproducible four-dimension evaluation protocol is documented in
+[`docs/POLICY_CONTINUITY_EVALUATION.md`](POLICY_CONTINUITY_EVALUATION.md). It
+requires separate evidence for authority, information, usage and effect
+continuity across transformations, delegation, retries, revocation races and
+external sink outcomes.
 
 ## Deployment rule
 
