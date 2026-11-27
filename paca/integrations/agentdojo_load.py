@@ -21,7 +21,6 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-
 CONDITIONS = (
     "agentdojo_no_defense",
     "agentdojo_tool_filter",
