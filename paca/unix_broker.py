@@ -389,11 +389,15 @@ class UnixDomainBrokerServer:
             raise ValueError("max_workers must be between 1 and 128")
 
         parent = os.path.dirname(socket_path)
+        if os.path.realpath(parent) != parent:
+            raise ValueError("socket parent path must not contain symlink components")
         parent_stat = os.lstat(parent)
         if not stat.S_ISDIR(parent_stat.st_mode) or stat.S_ISLNK(parent_stat.st_mode):
             raise ValueError("socket parent must be an existing real directory")
-        if parent_stat.st_mode & stat.S_IWOTH:
-            raise ValueError("socket parent directory must not be world-writable")
+        if parent_stat.st_uid != os.geteuid():
+            raise ValueError("socket parent directory must be owned by the broker UID")
+        if parent_stat.st_mode & (stat.S_IWGRP | stat.S_IWOTH):
+            raise ValueError("socket parent directory must not be group/world-writable")
         if os.path.lexists(socket_path):
             raise FileExistsError("refusing to replace an existing broker socket path")
 
