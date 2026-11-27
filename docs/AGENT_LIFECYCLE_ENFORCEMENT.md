@@ -21,7 +21,7 @@ explicit and fail closed at the reference runtime's final effect boundary.
 | Session start | Bind principal, tenant, task and purpose | `LifecycleSecurityController.start_session()` |
 | Input/retrieval | Record source and trust; never treat tool output as instructions | `observe(..., trusted=False)` plus trusted adapters that create labelled `Arg` values |
 | Planning | Constrain the action/tool set before invocation | `LifecycleSecurityPolicy.allowed_actions` and `allowed_tools` |
-| Tool invocation | Require a typed, digest-pinned implementation | `require_tool_for` and `require_tool_implementation_digest` |
+| Tool invocation | Require a typed, capability-pinned tool manifest with an implementation digest | `require_tool_for` and `require_tool_implementation_digest`; the host-supplied executor mapping remains trusted configuration |
 | Memory/context | Preserve complete lineage and tenant binding | `require_complete_lineage_for`, `Arg.lineage_refs`, and `Label` checks |
 | Inter-agent transfer | Keep the session binding and signed message path | existing PACA message codec plus runtime session checks |
 | Effect authorization | Re-check the frozen request immediately before the monitor | `authorize_request()` |
@@ -68,6 +68,10 @@ the active task and tenant. Consequential actions require complete lineage,
 reject untrusted arguments, require a digest-pinned tool manifest, and cannot
 reuse the same request digest. `lifecycle.stop("incident-123")` is a one-way
 kill switch for that controller instance.
+
+**Important implementation boundaries:** the manifest digest is included in the capability-pinned tool identity, but the generic Python executor callback is still supplied by trusted host code. The lifecycle controller does not independently hash arbitrary Python callables or prove that a callback's code matches the manifest digest. The deployment must maintain an explicit trusted tool-to-executor mapping and must not let the agent select or replace executor callbacks.
+
+The one-use digest set is process-local. It is bounded by `LifecycleSecurityPolicy.max_committed_effects` (default 100,000); reaching the limit denies further commits rather than evicting receipts. A process restart loses this controller-local set, and separate controller instances do not share it. Do not treat it as durable or distributed replay protection; retain the authority-registry, monitor-ledger and destination-side replay checks that apply to the deployment.
 
 ## Research evidence versus engineering requirements
 
