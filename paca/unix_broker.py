@@ -513,9 +513,25 @@ class UnixDomainBrokerClient:
             with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as connection:
                 connection.settimeout(self.timeout)
                 connection.connect(self.socket_path)
-                reader = connection.makefile("rb")
+                if not hasattr(socket, "SO_PEERCRED"):
+                    raise BrokerTransportError("peer_credentials_unsupported")
+                raw_peer = connection.getsockopt(
+                    socket.SOL_SOCKET,
+                    socket.SO_PEERCRED,
+                    struct.calcsize("3i"),
+                )
+                if len(raw_peer) != struct.calcsize("3i"):
+                    raise BrokerTransportError("server_credentials_unavailable")
+                _server_pid, server_uid, _server_gid = struct.unpack("3i", raw_peer)
+                if server_uid != self.expected_server_uid:
+                    raise BrokerTransportError("untrusted_broker_process")
+                with connection.makefile("rb") as reader
                 hello = reader.readline(self.max_frame_bytes + 1)
-                if not hello or len(hello) > self.max_frame_bytes or not hello.endswith(b"\n"):
+                if (
+                    not hello
+                    or len(hello) > self.max_frame_bytes
+                    or not hello.endswith(b"\n")
+                ):
                     raise BrokerTransportError("invalid_handshake")
                 hello_object = _decode_object(hello[:-1])
                 if hello_object.get("ok") is not True:
