@@ -41,6 +41,8 @@ The controller stores audit metadata only: phase, operation, identities,
 decision, reason and digests. It does not store model prompts, retrieved text,
 credentials or effect payloads.
 
+The lifecycle controller's one-use request-digest cache is bounded and process-local. It fails closed at its configured capacity but is not persisted or shared across replicas. The tool manifest digest is capability-pinned; the generic Python executor callable remains trusted host configuration and is not independently hashed by the controller. Evaluation must test executor substitution and must not treat these mechanisms as durable distributed replay protection or host isolation.
+
 ## Transformation and stateful test protocol
 
 The deterministic test suite should keep the following attack families as
@@ -52,7 +54,8 @@ separate rows, with the same task identity and sink observed for every row:
 4. delegation, policy-epoch change, revocation and purpose/tenant mismatch;
 5. concurrent requests, retries, timeouts, duplicate delivery and uncertain
    external outcomes; and
-6. malicious or substituted tools, inter-agent transfer and destination drift.
+6. malicious or substituted tools, inter-agent transfer and destination drift; and
+7. executor substitution, stale tool manifests, controller restart, receipt-capacity exhaustion and duplicate requests routed through separate controller instances.
 
 For each row, record at least:
 
