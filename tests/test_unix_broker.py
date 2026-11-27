@@ -499,9 +499,7 @@ def test_unprivileged_worker_uses_broker_without_direct_file_access():
         server = UnixDomainBrokerServer(
             socket_path,
             peer_bindings={worker_uid: _binding(uid=worker_uid, gid=worker_gid)},
-            dispatcher=lambda _message, session: {
-                "principal_id": session.principal_id
-            },
+            dispatcher=lambda _message, session: {"principal_id": session.principal_id},
             socket_mode=0o660,
             socket_gid=worker_gid,
         )
