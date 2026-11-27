@@ -16,6 +16,7 @@ from collections.abc import Callable, Iterable, Mapping
 from typing import Any
 
 from .authority_runtime import HMACCapabilityAuthority
+from .lifecycle import LifecycleSecurityController, LifecycleSecurityError
 from .memory import (
     HMACAgentMessageCodec,
     MemoryAccessDenied,
@@ -46,6 +47,7 @@ class PACAAgentRuntime:
         require_resource_commit_fence: bool = False,
         require_docker_sandbox_for_effects: bool = False,
         resource_commit_verifier: HMACCapabilityAuthority | None = None,
+        lifecycle_security: LifecycleSecurityController | None = None,
     ) -> None:
         if (
             memory.authority is not authority
@@ -66,6 +68,12 @@ class PACAAgentRuntime:
             raise TypeError("require_resource_commit_fence must be a boolean")
         if not isinstance(require_docker_sandbox_for_effects, bool):
             raise TypeError("require_docker_sandbox_for_effects must be a boolean")
+        if lifecycle_security is not None and not isinstance(
+            lifecycle_security, LifecycleSecurityController
+        ):
+            raise TypeError(
+                "lifecycle_security must be a LifecycleSecurityController or None"
+            )
         if require_resource_commit_fence and require_docker_sandbox_for_effects:
             raise ValueError(
                 "Docker-sandbox enforcement cannot yet be combined with resource commit fencing; "
@@ -124,6 +132,7 @@ class PACAAgentRuntime:
         self.messages = messages
         self.require_resource_commit_fence = require_resource_commit_fence
         self.require_docker_sandbox_for_effects = require_docker_sandbox_for_effects
+        self.lifecycle_security = lifecycle_security
 
     @staticmethod
     def _assert_tool_binding(
@@ -243,6 +252,13 @@ class PACAAgentRuntime:
             ) from exc
         if snapshot_digest != original_digest:
             raise MemoryAccessDenied("effect request changed while being snapshotted")
+        if self.lifecycle_security is not None:
+            try:
+                self.lifecycle_security.authorize_request(snapshot)
+            except LifecycleSecurityError as exc:
+                raise MemoryAccessDenied(
+                    "lifecycle security rejected the effect request: " + str(exc)
+                ) from exc
 
         supplied = snapshot.cap
         try:
@@ -338,6 +354,13 @@ class PACAAgentRuntime:
             )
         if not self.monitor.verify(snapshot, decision):
             return Decision("deny", digest=request_digest), None, issued, accesses
+        if self.lifecycle_security is not None:
+            try:
+                self.lifecycle_security.commit_authorization(snapshot)
+            except LifecycleSecurityError as exc:
+                raise MemoryAccessDenied(
+                    "lifecycle security rejected the final effect commit: " + str(exc)
+                ) from exc
 
         if self.require_resource_commit_fence:
             # The resource database transaction performs the effect-budget
