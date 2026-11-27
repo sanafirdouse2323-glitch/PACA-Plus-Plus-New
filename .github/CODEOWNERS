@@ -1,0 +1,12 @@
+# Repository owner review is requested for changes to project files.
+* @sanafirdouse2323-glitch
+
+# Keep security-sensitive configuration and enforcement paths explicit.
+/.github/workflows/ @sanafirdouse2323-glitch
+/paca/authority* @sanafirdouse2323-glitch
+/paca/broker* @sanafirdouse2323-glitch
+/paca/contracts/ @sanafirdouse2323-glitch
+/paca/filesystem_commit.py @sanafirdouse2323-glitch
+/paca/lifecycle.py @sanafirdouse2323-glitch
+/paca/memory.py @sanafirdouse2323-glitch
+/paca/resource_commit.py @sanafirdouse2323-glitch
