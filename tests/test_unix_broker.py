@@ -438,7 +438,7 @@ def test_broker_runs_in_a_separate_process(tmp_path):
     or not hasattr(socket, "SO_PEERCRED"),
     reason="requires root and Linux SO_PEERCRED for a cross-UID broker test",
 )
-def test_unprivileged_worker_uses_broker_without_direct_file_access(tmp_path):
+def test_unprivileged_worker_uses_broker_without_direct_file_access():
     import pwd
 
     try:
@@ -495,8 +495,9 @@ def test_unprivileged_worker_uses_broker_without_direct_file_access(tmp_path):
     os.close(result_write)
     worker_pid = None
     try:
-        assert os.read(ready_read, 1) == b"1", "broker process failed to start"
+        broker_ready = os.read(ready_read, 1)
         os.close(ready_read)
+        assert broker_ready == b"1", "broker process failed to start"
         worker_pid = os.fork()
         if worker_pid == 0:
             os.close(stop_write)
@@ -532,13 +533,15 @@ def test_unprivileged_worker_uses_broker_without_direct_file_access(tmp_path):
         assert os.WEXITSTATUS(worker_status) == 0
         assert payload == b"blocked:agent-17"
     finally:
-        os.write(stop_write, b"x")
+        try:
+            os.write(stop_write, b"x")
+        except BrokenPipeError:
+            pass
         os.close(stop_write)
         _finished_broker, broker_status = os.waitpid(broker_pid, 0)
         assert os.WIFEXITED(broker_status)
         assert os.WEXITSTATUS(broker_status) == 0
         os.close(result_read)
-        os.close(result_write)
         if os.path.lexists(socket_path):
             os.unlink(socket_path)
         os.unlink(protected_path)
