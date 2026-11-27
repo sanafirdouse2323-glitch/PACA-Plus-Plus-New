@@ -2,7 +2,7 @@
 
 **Status:** execution protocol and baseline evidence register; not a completed comparative experiment.  
 **Repository:** `PACA-Plus-Plus-New` only.  
-**Baseline commit:** `ef449fb9813f4070de07143981a2d5ca22cf7ded` on `main`, inspected 26 November 2026.  
+**Current baseline:** `b2e68277d2604c730fd5ae0c86a49ded20a72ef5` on `main`, verified 27 November 2026 after PR #48 was merged.  
 **Purpose:** turn the six proposed research priorities into a falsifiable, reproducible engineering and evaluation programme.  
 **Claim boundary:** no vendor product is represented as tested until its real service/runtime is configured, version-pinned, exercised, and its raw outputs are retained.
 
@@ -23,8 +23,8 @@ The project must remain a research prototype until host-level mediation, trusted
 
 At the time of this protocol:
 
-- `main` points to `ef449fb9813f4070de07143981a2d5ca22cf7ded`.
-- The main-branch CI run `45791461955` completed successfully. The Python matrix (3.10–3.13), lint, wheel smoke test, AgentDojo adapter integration, LangGraph integration, PostgreSQL checkpoint integration, and Docker build passed.
+- `main` points to `b2e68277d2604c730fd5ae0c86a49ded20a72ef5`. PR #48 added the lifecycle-security controller and policy-continuity evaluation contract.
+- PR #48 CI run `913` and release-validation run `746` completed successfully for head `80cdb4c2cf33bee25c981cf5343120fb6719da4d` before the squash merge. The merge commit is `b2e68277d2604c730fd5ae0c86a49ded20a72ef5`.
 - The separate `agentdojo-real-benchmark` job was **skipped**, not passed, because the required model credential was not available to that run.
 - The repository still reports `main` as unprotected. A repository administrator must apply and verify the ruleset described in [REPOSITORY_SECURITY_CONFIGURATION.md](REPOSITORY_SECURITY_CONFIGURATION.md).
 - The deterministic benchmark currently compares PACA against hand-authored toy models: no guard, a prompt filter, a role allow-list, and a simplified sandbox-style policy. These models are useful regression baselines, but they are not AWS, NVIDIA, Microsoft, Google, or research artefact implementations.
