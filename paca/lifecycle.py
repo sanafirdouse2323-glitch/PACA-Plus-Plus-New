@@ -19,6 +19,7 @@ from collections import deque
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from enum import Enum
+from typing import NoReturn
 
 from .runtime import ACTIONS, Request
 
@@ -306,7 +307,7 @@ class LifecycleSecurityController:
                 digest=digest,
             )
 
-    def _reject(self, request: Request, reason: str) -> None:
+    def _reject(self, request: Request, reason: str) -> NoReturn:
         digest = None
         with contextlib.suppress(Exception):
             digest = request.digest
