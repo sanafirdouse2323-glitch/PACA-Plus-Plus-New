@@ -469,9 +469,7 @@ def test_unprivileged_worker_uses_broker_without_direct_file_access():
         try:
             server = UnixDomainBrokerServer(
                 socket_path,
-                peer_bindings={
-                    worker_uid: _binding(uid=worker_uid, gid=worker_gid)
-                },
+                peer_bindings={worker_uid: _binding(uid=worker_uid, gid=worker_gid)},
                 dispatcher=lambda _message, session: {
                     "principal_id": session.principal_id
                 },
@@ -515,11 +513,7 @@ def test_unprivileged_worker_uses_broker_without_direct_file_access():
                     socket_path,
                     expected_server_uid=0,
                 ).request(lambda session: {"operation": "read"})
-                marker = (
-                    "blocked"
-                    if direct_access_blocked
-                    else "direct-access-allowed"
-                )
+                marker = "blocked" if direct_access_blocked else "direct-access-allowed"
                 payload = f"{marker}:{response['principal_id']}".encode("ascii")
                 os.write(result_write, payload)
                 os._exit(0)
