@@ -48,6 +48,26 @@ jobs:
           name: paca-benchmark-regenerated
           path: /tmp/paca-generated/
 
+  broker-uid-isolation:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install PAC++ New test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Verify broker and worker isolation across operating-system UIDs
+        run: |
+          sudo -E "$(command -v python)" -m pytest -q tests/test_unix_broker.py -k unprivileged_worker_uses_broker_without_direct_file_access
+
   wheel-smoke-test:
     runs-on: ubuntu-latest
     steps:
