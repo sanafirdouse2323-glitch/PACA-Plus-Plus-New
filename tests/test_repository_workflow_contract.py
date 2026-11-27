@@ -1,8 +1,8 @@
+import pathlib
 import re
-from pathlib import Path
 
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = pathlib.Path(__file__).resolve().parents[1]
 
 
 def _job_block(workflow: str, job_name: str) -> str:
