@@ -41,7 +41,7 @@ The controller stores audit metadata only: phase, operation, identities,
 decision, reason and digests. It does not store model prompts, retrieved text,
 credentials or effect payloads.
 
-The lifecycle controller's one-use request-digest cache is bounded and process-local. It fails closed at its configured capacity but is not persisted or shared across replicas. The tool manifest digest is capability-pinned; the generic Python executor callable remains trusted host configuration and is not independently hashed by the controller. Evaluation must test executor substitution and must not treat these mechanisms as durable distributed replay protection or host isolation.
+The lifecycle controller's one-use request-digest cache is bounded and process-local. It fails closed at its configured capacity but is not persisted or shared across replicas. The tool manifest digest is capability-pinned; the generic Python executor callable remains trusted host configuration and is not independently hashed by the controller. Evaluation must test executor substitution and must not treat these mechanisms as durable distributed replay protection or host isolation. The controller's `session_id` is local audit context and is not carried in the authenticated request/transport; test the host-side mapping from authenticated workload identity to session context.
 
 ## Transformation and stateful test protocol
 
