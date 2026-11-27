@@ -4,9 +4,17 @@ import os
 from concurrent.futures import ThreadPoolExecutor
 import socket
 import threading
+from datetime import datetime, timezone
 
 import pytest
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
+from paca.contracts import (
+    BrokerOperationVerifier,
+    MessageSigner,
+    MessageVerifier,
+    TrustedMessageKey,
+)
 from paca.contracts.broker import BrokerSessionContext
 from paca.unix_broker import (
     BrokerMediatorDispatcher,
@@ -305,3 +313,75 @@ def test_group_writable_parent_directory_is_rejected(tmp_path):
             )
     finally:
         parent.chmod(0o700)
+
+
+def test_signed_operation_is_verified_against_the_kernel_bound_session(tmp_path):
+    private_key = Ed25519PrivateKey.generate()
+    signer = MessageSigner(
+        key_id="worker-key",
+        issuer="worker-issuer",
+        audiences=frozenset({"local-broker"}),
+        private_key=private_key,
+    )
+    message_verifier = MessageVerifier(
+        {
+            "worker-key": TrustedMessageKey(
+                public_key=private_key.public_key(),
+                issuer="worker-issuer",
+                audiences=frozenset({"local-broker"}),
+                message_types=frozenset({"paca.broker-operation.v1"}),
+            )
+        }
+    )
+    operation_verifier = BrokerOperationVerifier(message_verifier)
+
+    def dispatch(message, session):
+        verified = operation_verifier.verify(
+            message,
+            session=session,
+            expected_grant_ref="grant-transport-test",
+        )
+        return {
+            "operation_id": verified.operation_id,
+            "principal_id": verified.principal_id,
+            "tenant_id": verified.tenant_id,
+        }
+
+    path, server, thread = _start_server(tmp_path, dispatch)
+    try:
+        def sign(session):
+            unsigned = {
+                "message_id": "uds-test-message",
+                "message_type": "paca.broker-operation.v1",
+                "contract_version": "1.0.0",
+                "created_at": datetime.now(timezone.utc).isoformat(),
+                "issuer": session.issuer,
+                "audience": session.audience,
+                "operation_id": "uds-test-operation",
+                "session_id": session.session_id,
+                "channel_binding_digest": {
+                    "algorithm": "sha-256",
+                    "value": session.channel_binding_digest,
+                },
+                "request_nonce": "uds-test-nonce-0123456789",
+                "operation": "read",
+                "resource": {
+                    "resource_type": "file",
+                    "resource_id": "reports/allowed.txt",
+                },
+                "read_constraints": {"max_bytes": 4096},
+                "authorization_grant_ref": "grant-transport-test",
+            }
+            return signer.sign(unsigned)
+
+        result = UnixDomainBrokerClient(
+            path, expected_server_uid=os.geteuid()
+        ).request(sign)
+    finally:
+        _stop_server(server, thread)
+
+    assert result == {
+        "operation_id": "uds-test-operation",
+        "principal_id": "agent-17",
+        "tenant_id": "tenant-a",
+    }
