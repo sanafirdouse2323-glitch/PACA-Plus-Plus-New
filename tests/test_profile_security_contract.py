@@ -10,10 +10,9 @@ from paca.authority_runtime import (
     SQLiteAuthorityRegistry,
 )
 from paca.memory import canonical_value_bytes
-from paca.provenance import Label, ProvenanceGraph, derive
+from paca.provenance import Arg, Label, ProvenanceGraph, derive
 from paca.resource_commit import FencedResourceExecutor, ResourceCommitDenied
 from paca.runtime import Request, Tool
-from paca.provenance import Arg
 
 
 def _write_case(tmp_path, *, task_id: str = "profile-contract-task"):
@@ -129,7 +128,7 @@ def test_provenance_contract_preserves_taint_sensitivity_and_lineage():
     assert derived.label.integrity == "untrusted"
     assert derived.label.sensitivity == 2
     assert derived.label.tenants == frozenset({"acme"})
-    assert derived.lineage_refs == source.lineage_refs
+    assert len(derived.lineage_refs) == 1
     node = graph.get_node(next(iter(derived.lineage_refs)))
     assert node is not None
     assert node.parent_ids == tuple(source.lineage_refs)
