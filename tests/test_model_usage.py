@@ -34,12 +34,12 @@ def test_openai_usage_recorder_collects_usage_and_does_not_store_content():
             prompt_tokens_details=SimpleNamespace(cached_tokens=20),
             completion_tokens_details=SimpleNamespace(reasoning_tokens=8),
         ),
-        choices=[SimpleNamespace(message=SimpleNamespace(content="sensitive response"))],
+        choices=[
+            SimpleNamespace(message=SimpleNamespace(content="sensitive response"))
+        ],
     )
     completions = _Completions(lambda **_kwargs: response)
-    pipeline = _Element(
-        elements=[_Element(client=_Client(completions))]
-    )
+    pipeline = _Element(elements=[_Element(client=_Client(completions))])
     recorder = OpenAIUsageRecorder("paca_plus_plus")
 
     assert recorder.instrument_pipeline(pipeline) == 1
@@ -79,7 +79,9 @@ def test_openai_usage_recorder_counts_missing_usage_without_inventing_tokens():
     assert snapshot["input_tokens"] == 0
     assert snapshot["output_tokens"] == 0
     assert snapshot["total_tokens"] == 0
-    assert snapshot["usage_capture_status"] == "partial_or_provider_did_not_return_usage"
+    assert (
+        snapshot["usage_capture_status"] == "partial_or_provider_did_not_return_usage"
+    )
 
 
 def test_openai_usage_recorder_propagates_provider_failure_and_counts_it():
