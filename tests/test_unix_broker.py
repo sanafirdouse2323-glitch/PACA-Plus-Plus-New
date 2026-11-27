@@ -401,8 +401,11 @@ def test_signed_operation_is_verified_against_the_kernel_bound_session(tmp_path)
     }
 
 
+@pytest.mark.skipif(
+    not hasattr(socket, "SO_PEERCRED"), reason="Linux SO_PEERCRED is required"
+)
 def test_broker_runs_in_a_separate_process(tmp_path):
-    context = multiprocessing.get_context("spawn")
+    context = multiprocessing.get_context("fork")
     ready = context.Event()
     stop = context.Event()
     socket_path = str(tmp_path / "child-broker.sock")
