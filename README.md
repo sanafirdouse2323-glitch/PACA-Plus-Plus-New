@@ -8,6 +8,10 @@ It does **not** provide complete lifecycle mediation or a universal security bou
 
 **Repository boundary:** this repository is separate from the [PACA-Plus-Plus enterprise authorization gateway](https://github.com/sanafirdouse2323-glitch/PACA-Plus-Plus). Do not combine their code, deployment claims or research evidence.
 
+## Installation profiles
+
+Three additive dependency profiles are available: **Core** (`.[core]`) for the lightweight authorization/policy/provenance and local-resource reference components; **Extended** (`.[extended]`) for optional PostgreSQL, API, provider-client and framework Python integrations; and **Research** (`.[research]`) for Extended plus AgentDojo and pytest. Docker, PostgreSQL servers, TLA+/TLC, model credentials and secure deployment configuration are **not** installed by pip. The original fine-grained extras remain supported. See [installation profiles and verification gates](docs/INSTALLATION_PROFILES.md).
+
 ## Quick start
 
 Requires Python 3.10 or later.
@@ -102,6 +106,7 @@ Do not deploy PAC++ New as the sole security control protecting company data, ac
 - [Repository protection configuration](docs/REPOSITORY_SECURITY_CONFIGURATION.md)
 - [Linux separate-process broker transport and deployment boundary](docs/UNIX_BROKER_DEPLOYMENT.md)
 - [Seven security requirements: implementation and evidence status](docs/SEVEN_REQUIREMENTS_STATUS.md)
+- [Core, Extended and Research installation profiles](docs/INSTALLATION_PROFILES.md)
 
 ## Licence
 
