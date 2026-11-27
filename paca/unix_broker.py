@@ -112,9 +112,7 @@ class PeerBinding:
         )
 
 
-Dispatcher = Callable[
-    [Mapping[str, Any], BrokerSessionContext], Mapping[str, object]
-]
+Dispatcher = Callable[[Mapping[str, Any], BrokerSessionContext], Mapping[str, object]]
 
 
 class BrokerMediatorDispatcher:
@@ -453,10 +451,10 @@ class UnixDomainBrokerServer:
         self._server.server_close()
         try:
             current = os.lstat(self.socket_path)
-            if (
-                self._socket_identity == (current.st_dev, current.st_ino)
-                and stat.S_ISSOCK(current.st_mode)
-            ):
+            if self._socket_identity == (
+                current.st_dev,
+                current.st_ino,
+            ) and stat.S_ISSOCK(current.st_mode):
                 os.unlink(self.socket_path)
         except FileNotFoundError:
             pass
