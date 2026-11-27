@@ -525,41 +525,41 @@ class UnixDomainBrokerClient:
                 _server_pid, server_uid, _server_gid = struct.unpack("3i", raw_peer)
                 if server_uid != self.expected_server_uid:
                     raise BrokerTransportError("untrusted_broker_process")
-                with connection.makefile("rb") as reader
-                hello = reader.readline(self.max_frame_bytes + 1)
-                if (
-                    not hello
-                    or len(hello) > self.max_frame_bytes
-                    or not hello.endswith(b"\n")
-                ):
-                    raise BrokerTransportError("invalid_handshake")
-                hello_object = _decode_object(hello[:-1])
-                if hello_object.get("ok") is not True:
-                    raise BrokerTransportError(
-                        str(hello_object.get("error", "handshake_denied"))
-                    )
-                session = _session_from_wire(hello_object.get("session"))
-                message = sign(session)
-                if not isinstance(message, Mapping):
-                    raise BrokerTransportError("signed_request_must_be_object")
-                frame = _encode_frame(message, self.max_frame_bytes)
-                connection.sendall(frame)
-                response = reader.readline(self.max_frame_bytes + 1)
-                if (
-                    not response
-                    or len(response) > self.max_frame_bytes
-                    or not response.endswith(b"\n")
-                ):
-                    raise BrokerTransportError("invalid_response")
-                response_object = _decode_object(response[:-1])
-                if response_object.get("ok") is not True:
-                    raise BrokerTransportError(
-                        str(response_object.get("error", "broker_denied"))
-                    )
-                result = response_object.get("result")
-                if not isinstance(result, Mapping):
-                    raise BrokerTransportError("invalid_result")
-                return dict(result)
+                with connection.makefile("rb") as reader:
+                    hello = reader.readline(self.max_frame_bytes + 1)
+                    if (
+                        not hello
+                        or len(hello) > self.max_frame_bytes
+                        or not hello.endswith(b"\n")
+                    ):
+                        raise BrokerTransportError("invalid_handshake")
+                    hello_object = _decode_object(hello[:-1])
+                    if hello_object.get("ok") is not True:
+                        raise BrokerTransportError(
+                            str(hello_object.get("error", "handshake_denied"))
+                        )
+                    session = _session_from_wire(hello_object.get("session"))
+                    message = sign(session)
+                    if not isinstance(message, Mapping):
+                        raise BrokerTransportError("signed_request_must_be_object")
+                    frame = _encode_frame(message, self.max_frame_bytes)
+                    connection.sendall(frame)
+                    response = reader.readline(self.max_frame_bytes + 1)
+                    if (
+                        not response
+                        or len(response) > self.max_frame_bytes
+                        or not response.endswith(b"\n")
+                    ):
+                        raise BrokerTransportError("invalid_response")
+                    response_object = _decode_object(response[:-1])
+                    if response_object.get("ok") is not True:
+                        raise BrokerTransportError(
+                            str(response_object.get("error", "broker_denied"))
+                        )
+                    result = response_object.get("result")
+                    if not isinstance(result, Mapping):
+                        raise BrokerTransportError("invalid_result")
+                    return dict(result)
         except BrokerTransportError:
             raise
         except (OSError, ValueError, TypeError) as exc:
