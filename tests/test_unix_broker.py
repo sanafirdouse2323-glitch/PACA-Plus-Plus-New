@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+from concurrent.futures import ThreadPoolExecutor
 import socket
 import threading
 
@@ -228,3 +229,55 @@ def test_transport_fails_closed_when_dispatch_result_exceeds_limit(tmp_path):
             UnixDomainBrokerClient(path).request(lambda session: {"operation": "read"})
     finally:
         _stop_server(server, thread)
+
+
+def test_concurrent_connections_receive_distinct_sessions_and_one_result_each(tmp_path):
+    sessions: list[str] = []
+    lock = threading.Lock()
+
+    def dispatch(message, session):
+        with lock:
+            sessions.append(session.session_id)
+        return {"operation_id": message["operation_id"]}
+
+    path, server, thread = _start_server(tmp_path, dispatch)
+    client = UnixDomainBrokerClient(path, expected_server_uid=os.geteuid())
+    try:
+        def send(index: int):
+            return client.request(
+                lambda session: {
+                    "operation": "read",
+                    "operation_id": f"concurrent-{index}",
+                    "session_id": session.session_id,
+                    "channel_binding_digest": {
+                        "algorithm": "sha-256",
+                        "value": session.channel_binding_digest,
+                    },
+                }
+            )
+
+        with ThreadPoolExecutor(max_workers=12) as pool:
+            results = list(pool.map(send, range(24)))
+    finally:
+        _stop_server(server, thread)
+
+    assert {item["operation_id"] for item in results} == {
+        f"concurrent-{index}" for index in range(24)
+    }
+    assert len(sessions) == 24
+    assert len(set(sessions)) == 24
+
+
+def test_client_rejects_a_different_broker_uid_before_receiving_session(tmp_path):
+    calls = []
+    path, server, thread = _start_server(
+        tmp_path, lambda message, session: calls.append(message) or {"ok": True}
+    )
+    try:
+        with pytest.raises(BrokerTransportError, match="untrusted_broker_process"):
+            UnixDomainBrokerClient(
+                path, expected_server_uid=os.geteuid() + 1
+            ).request(lambda session: {"operation": "read"})
+    finally:
+        _stop_server(server, thread)
+    assert calls == []
