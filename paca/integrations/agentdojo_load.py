@@ -85,7 +85,11 @@ def _condition_episode_metrics(
                 attempted += 1
                 duration_map = benign.get("duration_seconds", {})
                 error_map = benign.get("error", {})
-                value = _duration(duration_map.get(condition)) if isinstance(duration_map, dict) else None
+                value = (
+                    _duration(duration_map.get(condition))
+                    if isinstance(duration_map, dict)
+                    else None
+                )
                 if value is not None:
                     durations.append(value)
                 errors += int(
@@ -126,8 +130,7 @@ def _condition_episode_metrics(
 
 def _aggregate_token_usage(worker_results: list[dict[str, Any]]) -> dict[str, Any]:
     aggregates = {
-        condition: {field: 0 for field in TOKEN_FIELDS}
-        for condition in CONDITIONS
+        condition: {field: 0 for field in TOKEN_FIELDS} for condition in CONDITIONS
     }
     models: dict[str, set[str]] = {condition: set() for condition in CONDITIONS}
     workers_with_usage = {condition: 0 for condition in CONDITIONS}
@@ -143,7 +146,11 @@ def _aggregate_token_usage(worker_results: list[dict[str, Any]]) -> dict[str, An
                 continue
             for field in TOKEN_FIELDS:
                 value = usage.get(field, 0)
-                if isinstance(value, int) and not isinstance(value, bool) and value >= 0:
+                if (
+                    isinstance(value, int)
+                    and not isinstance(value, bool)
+                    and value >= 0
+                ):
                     aggregates[condition][field] += value
             seen_models = usage.get("models_observed", [])
             if isinstance(seen_models, list):
@@ -280,7 +287,10 @@ def run_concurrent_agentdojo_load(
         raise ValueError("max_iters must be between 1 and 100")
     if len(set(user_task_ids)) != len(user_task_ids) or not user_task_ids:
         raise ValueError("user task IDs must be non-empty and unique")
-    if len(set(injection_task_ids)) != len(injection_task_ids) or not injection_task_ids:
+    if (
+        len(set(injection_task_ids)) != len(injection_task_ids)
+        or not injection_task_ids
+    ):
         raise ValueError("injection task IDs must be non-empty and unique")
 
     root = output_root.expanduser().resolve()
@@ -316,8 +326,13 @@ def run_concurrent_agentdojo_load(
         raise RuntimeError(
             "AgentDojo dry-run did not return valid JSON; no live workers were started"
         ) from exc
-    if not isinstance(preflight_data, dict) or preflight_data.get("status") != "dry_run":
-        raise RuntimeError("AgentDojo dry-run response was invalid; no live workers were started")
+    if (
+        not isinstance(preflight_data, dict)
+        or preflight_data.get("status") != "dry_run"
+    ):
+        raise RuntimeError(
+            "AgentDojo dry-run response was invalid; no live workers were started"
+        )
     applicable_by_task = preflight_data.get(
         "applicable_injection_task_ids_by_user_task", {}
     )
@@ -377,11 +392,14 @@ def run_concurrent_agentdojo_load(
                     record["failure_type"] = payload.get("failure_type")
                     record["status"] = (
                         "completed"
-                        if completed.returncode == 0 and payload.get("status") == "completed"
+                        if completed.returncode == 0
+                        and payload.get("status") == "completed"
                         else "failed"
                     )
             if record["status"] == "running":
-                record["status"] = "completed" if completed.returncode == 0 else "failed"
+                record["status"] = (
+                    "completed" if completed.returncode == 0 else "failed"
+                )
             # Intentionally discard stdout/stderr. Provider exception text and
             # logs may contain user content or sensitive request metadata.
         except subprocess.TimeoutExpired:
@@ -395,7 +413,9 @@ def run_concurrent_agentdojo_load(
         return record
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=concurrency) as pool:
-        futures = [pool.submit(execute_worker, index) for index in range(1, repetitions + 1)]
+        futures = [
+            pool.submit(execute_worker, index) for index in range(1, repetitions + 1)
+        ]
         for future in concurrent.futures.as_completed(futures):
             worker_results.append(future.result())
     worker_results.sort(key=lambda item: item["worker_id"])
@@ -437,7 +457,9 @@ def run_concurrent_agentdojo_load(
             "model_in_loop": True,
             "live_vendor_security_products_tested": False,
             "execution_status": (
-                "completed" if successful_workers == repetitions else "partial_or_failed"
+                "completed"
+                if successful_workers == repetitions
+                else "partial_or_failed"
             ),
             "preflight_completed": True,
         },
@@ -468,9 +490,7 @@ def run_concurrent_agentdojo_load(
             "successful_workers": successful_workers,
             "failed_workers": failed_workers,
             "timed_out_workers": timed_out_workers,
-            "worker_completion_fraction": round(
-                successful_workers / repetitions, 6
-            ),
+            "worker_completion_fraction": round(successful_workers / repetitions, 6),
             "observed_peak_concurrent_workers": _observed_peak_concurrency(
                 worker_results
             ),
