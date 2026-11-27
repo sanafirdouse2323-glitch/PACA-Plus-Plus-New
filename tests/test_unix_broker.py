@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import multiprocessing
 import os
 import socket
@@ -458,83 +459,76 @@ def test_unprivileged_worker_uses_broker_without_direct_file_access():
     os.chmod(protected_path, 0o600)
 
     ready_read, ready_write = os.pipe()
-    stop_read, stop_write = os.pipe()
     result_read, result_write = os.pipe()
-    broker_pid = os.fork()
-    if broker_pid == 0:
-        os.close(ready_read)
-        os.close(stop_write)
+    worker_pid = os.fork()
+    if worker_pid == 0:
+        os.close(ready_write)
         os.close(result_read)
-        os.close(result_write)
         try:
-            server = UnixDomainBrokerServer(
+            os.chdir("/tmp")
+            os.setgroups([])
+            os.setgid(worker_gid)
+            os.setuid(worker_uid)
+            if os.read(ready_read, 1) != b"1":
+                os._exit(3)
+            try:
+                with open(protected_path, "rb"):
+                    direct_access_blocked = False
+            except PermissionError:
+                direct_access_blocked = True
+            response = UnixDomainBrokerClient(
                 socket_path,
-                peer_bindings={worker_uid: _binding(uid=worker_uid, gid=worker_gid)},
-                dispatcher=lambda _message, session: {
-                    "principal_id": session.principal_id
-                },
-                socket_mode=0o660,
-                socket_gid=worker_gid,
-            )
-            thread = threading.Thread(target=server.serve_forever, daemon=True)
-            thread.start()
-            os.write(ready_write, b"1")
-            os.read(stop_read, 1)
-            server.shutdown()
-            thread.join(timeout=3)
-            server.server_close()
+                expected_server_uid=0,
+            ).request(lambda session: {"operation": "read"})
+            marker = "blocked" if direct_access_blocked else "direct-access-allowed"
+            payload = f"{marker}:{response['principal_id']}".encode("ascii")
+            os.write(result_write, payload)
             os._exit(0)
         except BaseException:
-            os.write(ready_write, b"0")
-            os._exit(1)
-
-    os.close(ready_write)
-    os.close(stop_read)
-    os.close(result_write)
-    worker_pid = None
-    try:
-        broker_ready = os.read(ready_read, 1)
-        os.close(ready_read)
-        assert broker_ready == b"1", "broker process failed to start"
-        worker_pid = os.fork()
-        if worker_pid == 0:
-            os.close(stop_write)
-            os.close(result_read)
-            try:
-                os.setgroups([])
-                os.setgid(worker_gid)
-                os.setuid(worker_uid)
-                try:
-                    with open(protected_path, "rb"):
-                        direct_access_blocked = False
-                except PermissionError:
-                    direct_access_blocked = True
-                response = UnixDomainBrokerClient(
-                    socket_path,
-                    expected_server_uid=0,
-                ).request(lambda session: {"operation": "read"})
-                marker = "blocked" if direct_access_blocked else "direct-access-allowed"
-                payload = f"{marker}:{response['principal_id']}".encode("ascii")
-                os.write(result_write, payload)
-                os._exit(0)
-            except BaseException:
+            with contextlib.suppress(OSError):
                 os.write(result_write, b"worker-error")
-                os._exit(2)
+            os._exit(2)
+
+    os.close(ready_read)
+    os.close(result_write)
+    server = None
+    thread = None
+    ready_signalled = False
+    worker_reaped = False
+    try:
+        server = UnixDomainBrokerServer(
+            socket_path,
+            peer_bindings={worker_uid: _binding(uid=worker_uid, gid=worker_gid)},
+            dispatcher=lambda _message, session: {
+                "principal_id": session.principal_id
+            },
+            socket_mode=0o660,
+            socket_gid=worker_gid,
+        )
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        os.write(ready_write, b"1")
+        os.close(ready_write)
+        ready_signalled = True
 
         payload = os.read(result_read, 256)
         _finished_pid, worker_status = os.waitpid(worker_pid, 0)
+        worker_reaped = True
         assert os.WIFEXITED(worker_status)
-        assert os.WEXITSTATUS(worker_status) == 0
+        assert os.WEXITSTATUS(worker_status) == 0, payload
         assert payload == b"blocked:agent-17"
     finally:
-        try:
-            os.write(stop_write, b"x")
-        except BrokenPipeError:
-            pass
-        os.close(stop_write)
-        _finished_broker, broker_status = os.waitpid(broker_pid, 0)
-        assert os.WIFEXITED(broker_status)
-        assert os.WEXITSTATUS(broker_status) == 0
+        if not ready_signalled:
+            with contextlib.suppress(OSError):
+                os.write(ready_write, b"0")
+            os.close(ready_write)
+        if thread is not None and server is not None:
+            _stop_server(server, thread)
+        if not worker_reaped:
+            with contextlib.suppress(ProcessLookupError):
+                os.kill(worker_pid, 15)
+            with contextlib.suppress(ChildProcessError):
+                os.waitpid(worker_pid, 0)
         os.close(result_read)
         if os.path.lexists(socket_path):
             os.unlink(socket_path)
