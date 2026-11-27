@@ -89,7 +89,4 @@ def test_session_binding_kill_switch_and_one_use_commit():
     controller.stop("incident-42")
     with pytest.raises(LifecycleSecurityError, match="stopped"):
         controller.authorize_request(request)
-    assert any(
-        event.operation == "kill_switch" for event in controller.audit_events
-    )
-
+    assert any(event.operation == "kill_switch" for event in controller.audit_events)
