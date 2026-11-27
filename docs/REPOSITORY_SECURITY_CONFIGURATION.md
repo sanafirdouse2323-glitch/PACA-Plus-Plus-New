@@ -4,7 +4,7 @@
 
 ## Observed repository setting
 
-On 26 November 2026, the GitHub API recheck reported that the default `main` branch was not protected (`protected: false`) and the repository rulesets endpoint returned an empty list. The available GitHub connection for this work can inspect these settings but does not expose repository-administration write permission or an action to create/enforce rulesets. Therefore, this document is an administrator action plan; it is not evidence that branch protection has been enabled.
+On 27 November 2026, the GitHub API recheck reported that the default `main` branch was not protected (`protected: false`) and the repository rulesets endpoint returned an empty list. The available GitHub connection for this work can inspect these settings but does not expose repository-administration write permission or an action to create/enforce rulesets. Therefore, this document is an administrator action plan; it is not evidence that branch protection has been enabled.
 
 ## Required `main` ruleset
 
@@ -29,6 +29,7 @@ GitHub displays the exact required-check names after the workflows have run on p
 - Protect version tags matching `v*` with a separate tag ruleset. Restrict who may create or move release tags.
 - Keep package/image publication credentials unavailable to arbitrary pull-request code. Review workflow permission changes as security-sensitive code.
 - Preserve the release workflow's version/tag validation and clean package-install checks. Do not bypass failing release validation to publish artifacts.
+- The release workflow now rejects a version tag unless its target commit is reachable from `origin/main`. This is a workflow safeguard, not a replacement for a protected `v*` tag ruleset; administrators must still restrict tag creation, update and deletion.
 
 ## Validation after the administrator applies the ruleset
 
