@@ -32,6 +32,7 @@ The benchmark command writes `index.html` and `results.json` into the selected o
 |---|---|---|
 | Policy enforcement | `paca/monitor.py`, `paca/runtime.py`, packaged PACA policy | Covers selected, explicitly mapped actions; it is not a universal framework hook. |
 | Lifecycle security | `paca/lifecycle.py` and optional `PACAAgentRuntime(lifecycle_security=...)` | Session/task binding, fail-closed provenance/tool checks, one-use lifecycle commits and a kill switch for calls through the reference runtime; direct clients and external resources remain outside this boundary. |
+| Policy continuity | `docs/POLICY_CONTINUITY_EVALUATION.md` | Defines measurable authority, information, usage and effect continuity invariants across transformation, delegation, retry, revocation and external-sink tests; it is an evaluation contract, not proof of complete mediation. |
 | Agent orchestration | `paca/agent_runtime.py` | The reference runtime mediates calls routed through its methods; direct clients and alternate execution paths can bypass it. |
 | Provenance and memory | `paca/provenance.py`, `paca/durable.py`, `paca/memory.py` | Memory, connector and message adapters depend on trusted host integrations; not every hidden model-context dependency is tracked automatically. |
 | Authority and revocation | `paca/authority_registry.py`, `paca/authority_runtime.py`, `paca/postgres_authority.py` | Registry state and credential issuance are separate modules; PostgreSQL shares authority state across clients on one primary, not every other store. |
