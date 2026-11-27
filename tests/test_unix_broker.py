@@ -101,10 +101,7 @@ def test_one_shot_session_is_kernel_bound_and_unique_per_connection(tmp_path):
     assert second == {"operation_id": "request-2"}
     assert len(seen) == 2
     assert seen[0][1].session_id != seen[1][1].session_id
-    assert (
-        seen[0][1].channel_binding_digest
-        != seen[1][1].channel_binding_digest
-    )
+    assert seen[0][1].channel_binding_digest != seen[1][1].channel_binding_digest
     assert seen[0][1].principal_id == "agent-17"
     assert seen[0][1].tenant_id == "tenant-a"
 
@@ -119,9 +116,7 @@ def test_unmapped_or_wrong_gid_peer_is_denied_before_dispatch(tmp_path):
     )
     try:
         with pytest.raises(BrokerTransportError, match="unauthorized_peer"):
-            client = UnixDomainBrokerClient(
-                path, expected_server_uid=os.geteuid()
-            )
+            client = UnixDomainBrokerClient(path, expected_server_uid=os.geteuid())
             client.request(lambda session: {"operation": "read"})
     finally:
         _stop_server(server, thread)
@@ -135,9 +130,7 @@ def test_dispatcher_errors_are_redacted(tmp_path):
     path, server, thread = _start_server(tmp_path, dispatch)
     try:
         with pytest.raises(BrokerTransportError, match="denied"):
-            client = UnixDomainBrokerClient(
-                path, expected_server_uid=os.geteuid()
-            )
+            client = UnixDomainBrokerClient(path, expected_server_uid=os.geteuid())
             client.request(lambda session: {"operation": "read"})
     finally:
         _stop_server(server, thread)
@@ -170,9 +163,7 @@ def test_duplicate_json_keys_are_rejected_before_dispatch(tmp_path):
             reader = connection.makefile("rb")
             hello = reader.readline()
             assert b'"ok":true' in hello
-            connection.sendall(
-                b'{"operation":"read","operation":"write"}\n'
-            )
+            connection.sendall(b'{"operation":"read","operation":"write"}\n')
             response = reader.readline()
             assert b'"ok":false' in response
     finally:
@@ -240,9 +231,7 @@ def test_transport_fails_closed_when_dispatch_result_exceeds_limit(tmp_path):
     )
     try:
         with pytest.raises(BrokerTransportError, match="broker_failure"):
-            client = UnixDomainBrokerClient(
-                path, expected_server_uid=os.geteuid()
-            )
+            client = UnixDomainBrokerClient(path, expected_server_uid=os.geteuid())
             client.request(lambda session: {"operation": "read"})
     finally:
         _stop_server(server, thread)
@@ -259,6 +248,7 @@ def test_concurrent_connections_receive_distinct_sessions_and_one_result_each(tm
 
     path, server, thread = _start_server(tmp_path, dispatch)
     try:
+
         def send(index: int):
             client = UnixDomainBrokerClient(
                 path, expected_server_uid=os.geteuid(), timeout=10.0
@@ -294,9 +284,9 @@ def test_client_rejects_a_different_broker_uid_before_receiving_session(tmp_path
     )
     try:
         with pytest.raises(BrokerTransportError, match="untrusted_broker_process"):
-            UnixDomainBrokerClient(
-                path, expected_server_uid=os.geteuid() + 1
-            ).request(lambda session: {"operation": "read"})
+            UnixDomainBrokerClient(path, expected_server_uid=os.geteuid() + 1).request(
+                lambda session: {"operation": "read"}
+            )
     finally:
         _stop_server(server, thread)
     assert calls == []
@@ -376,9 +366,9 @@ def test_signed_operation_is_verified_against_the_kernel_bound_session(tmp_path)
             }
             return signer.sign(unsigned)
 
-        result = UnixDomainBrokerClient(
-            path, expected_server_uid=os.geteuid()
-        ).request(sign)
+        result = UnixDomainBrokerClient(path, expected_server_uid=os.geteuid()).request(
+            sign
+        )
     finally:
         _stop_server(server, thread)
 
