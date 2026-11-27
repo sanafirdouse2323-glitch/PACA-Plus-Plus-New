@@ -10,7 +10,6 @@ APIs safe by itself.
 
 from __future__ import annotations
 
-import contextlib
 import re
 import threading
 import time
@@ -18,6 +17,7 @@ from collections import deque
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from enum import Enum
+from typing import Any
 
 from .runtime import ACTIONS, Request
 
@@ -284,8 +284,10 @@ class LifecycleSecurityController:
 
     def _reject(self, request: Request, reason: str) -> None:
         digest = None
-        with contextlib.suppress(Exception):
+        try:
             digest = request.digest
+        except Exception:
+            pass
         self._emit(
             LifecyclePhase.EFFECT,
             "authorize",
@@ -314,13 +316,19 @@ class LifecycleSecurityController:
         spec = ACTIONS.get(action)
         if not isinstance(spec, Mapping):
             self._reject(request, "unknown action is not lifecycle-authorized")
-        if self.policy.allowed_actions is not None and action not in self.policy.allowed_actions:
+        if (
+            self.policy.allowed_actions is not None
+            and action not in self.policy.allowed_actions
+        ):
             self._reject(request, "action is outside the lifecycle allowlist")
         effect_class = spec.get("cls")
         if action in self.policy.require_tool_for and request.tool is None:
             self._reject(request, "consequential action requires a typed tool manifest")
         if request.tool is not None:
-            if self.policy.allowed_tools and request.tool.name not in self.policy.allowed_tools:
+            if (
+                self.policy.allowed_tools
+                and request.tool.name not in self.policy.allowed_tools
+            ):
                 self._reject(request, "tool is outside the lifecycle allowlist")
             if (
                 action in self.policy.require_tool_for
@@ -337,7 +345,10 @@ class LifecycleSecurityController:
                     )
         for name, argument in request.args.items():
             label = argument.label
-            if effect_class in self.policy.deny_untrusted_for and label.integrity == "untrusted":
+            if (
+                effect_class in self.policy.deny_untrusted_for
+                and label.integrity == "untrusted"
+            ):
                 self._reject(
                     request,
                     f"{action} argument {name!r} contains untrusted content",
@@ -372,7 +383,9 @@ class LifecycleSecurityController:
         with self._lock:
             digest = self._assert_request(request)
             if digest in self._used_effects:
-                self._reject(request, "effect request digest has already been committed")
+                self._reject(
+                    request, "effect request digest has already been committed"
+                )
             self._used_effects.add(digest)
             self._emit(
                 LifecyclePhase.COMMIT,
