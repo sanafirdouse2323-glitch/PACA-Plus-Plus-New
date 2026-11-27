@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import os
-from concurrent.futures import ThreadPoolExecutor
 import socket
 import threading
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 
 import pytest
