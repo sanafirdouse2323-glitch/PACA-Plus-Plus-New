@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import multiprocessing
 import os
 import socket
 import threading
@@ -61,6 +62,26 @@ def _stop_server(server, thread) -> None:
     server.server_close()
     assert not thread.is_alive()
 
+
+
+def _serve_child_broker(socket_path: str, ready, stop) -> None:
+    server = UnixDomainBrokerServer(
+        socket_path,
+        peer_bindings={os.geteuid(): _binding(gid=os.getegid())},
+        dispatcher=lambda _message, session: {
+            "broker_pid": os.getpid(),
+            "session_id": session.session_id,
+        },
+    )
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    ready.set()
+    try:
+        stop.wait(timeout=15)
+    finally:
+        server.shutdown()
+        thread.join(timeout=3)
+        server.server_close()
 
 def test_one_shot_session_is_kernel_bound_and_unique_per_connection(tmp_path):
     seen: list[tuple[dict[str, object], BrokerSessionContext]] = []
@@ -378,3 +399,30 @@ def test_signed_operation_is_verified_against_the_kernel_bound_session(tmp_path)
         "principal_id": "agent-17",
         "tenant_id": "tenant-a",
     }
+
+
+def test_broker_runs_in_a_separate_process(tmp_path):
+    context = multiprocessing.get_context("spawn")
+    ready = context.Event()
+    stop = context.Event()
+    socket_path = str(tmp_path / "child-broker.sock")
+    process = context.Process(
+        target=_serve_child_broker,
+        args=(socket_path, ready, stop),
+    )
+    process.start()
+    try:
+        assert ready.wait(timeout=10), "child broker did not become ready"
+        result = UnixDomainBrokerClient(
+            socket_path, expected_server_uid=os.geteuid()
+        ).request(lambda session: {"operation": "read"})
+        assert result["broker_pid"] == process.pid
+        assert result["broker_pid"] != os.getpid()
+        assert isinstance(result["session_id"], str)
+    finally:
+        stop.set()
+        process.join(timeout=5)
+        if process.is_alive():
+            process.terminate()
+            process.join(timeout=3)
+    assert process.exitcode == 0
