@@ -111,7 +111,10 @@ def test_unmapped_or_wrong_gid_peer_is_denied_before_dispatch(tmp_path):
     )
     try:
         with pytest.raises(BrokerTransportError, match="unauthorized_peer"):
-            UnixDomainBrokerClient(path, expected_server_uid=os.geteuid()).request(lambda session: {"operation": "read"})
+            client = UnixDomainBrokerClient(
+                path, expected_server_uid=os.geteuid()
+            )
+            client.request(lambda session: {"operation": "read"})
     finally:
         _stop_server(server, thread)
     assert calls == []
@@ -124,7 +127,10 @@ def test_dispatcher_errors_are_redacted(tmp_path):
     path, server, thread = _start_server(tmp_path, dispatch)
     try:
         with pytest.raises(BrokerTransportError, match="denied"):
-            UnixDomainBrokerClient(path, expected_server_uid=os.geteuid()).request(lambda session: {"operation": "read"})
+            client = UnixDomainBrokerClient(
+                path, expected_server_uid=os.geteuid()
+            )
+            client.request(lambda session: {"operation": "read"})
     finally:
         _stop_server(server, thread)
 
@@ -226,7 +232,10 @@ def test_transport_fails_closed_when_dispatch_result_exceeds_limit(tmp_path):
     )
     try:
         with pytest.raises(BrokerTransportError, match="broker_failure"):
-            UnixDomainBrokerClient(path, expected_server_uid=os.geteuid()).request(lambda session: {"operation": "read"})
+            client = UnixDomainBrokerClient(
+                path, expected_server_uid=os.geteuid()
+            )
+            client.request(lambda session: {"operation": "read"})
     finally:
         _stop_server(server, thread)
 
