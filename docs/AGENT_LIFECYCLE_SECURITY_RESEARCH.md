@@ -2,8 +2,8 @@
 
 **Research scope:** security of LLM-based agents across their lifecycle.  
 **Repository boundary:** this document applies only to `PACA-Plus-Plus-New`. It does not define or implement the enterprise gateway project in the separate `PACA-Plus-Plus` repository.  
-**Research status:** proposed research architecture and work programme, not a completed implementation or validated security guarantee.  
-**Implementation snapshot:** 26 November 2026, `main` commit `2296151482dff4246e21cec54a89786e22aa0aff`. Research claims and hypotheses below remain unvalidated until independently evaluated.
+**Research status:** research architecture and work programme with a partially implemented reference lifecycle control; not a completed implementation or validated security guarantee.  
+**Implementation snapshot:** 27 November 2026, `main` commit `b2e68277d2604c730fd5ae0c86a49ded20a72ef5` after PR #48. Research claims and hypotheses below remain unvalidated until independently evaluated.
 
 ## 1. Research objective
 
@@ -32,7 +32,7 @@ The code on `main` is a substantial but partial research prototype. The table de
 | Memory | Separate `SQLiteMemoryValueStore` and `TrustedMemoryAdapter`; checks authority, tenant, purpose, lineage and digests before returning values | Raw database/store access bypasses the adapter. Provenance metadata and values are local SQLite stores, not one distributed transaction. |
 | Authority | `SQLiteAuthorityRegistry`, HMAC and Ed25519 capability envelopes, static Ed25519 verification-key rings for key overlap/retirement, policy epochs, revocation, delegation checks, per-capability counters, message receipts and tenant/task aggregate quotas | Identity and task callbacks are trusted host integrations. OIDC/workload identity, KMS/HSM custody, authenticated key distribution and coordinated production rollover remain open. |
 | Shared authority | Optional `PostgresAuthorityRegistry` shares authority, revocation, counters, aggregate quota, message receipts and local resource-commit state across clients on one primary | Not multi-primary, rollback-safe failover or replication of provenance, memory values and the Monitor operation ledger. |
-| Runtime and monitor | Selected action/target policies, strict consequential-monitor validation, effect tokens, protected runtime checks and an opt-in local resource-commit fence for `write_file`/`mem_write` | Only actions routed through the configured runtime are mediated. The local commit fence does not cover remote providers or every executor. |
+| Runtime and monitor | Selected action/target policies, strict consequential-monitor validation, effect tokens, protected runtime checks, an opt-in local resource-commit fence for `write_file`/`mem_write`, and the PR #48 `LifecycleSecurityController` for session, lineage, purpose, policy-epoch, tool and one-use commit checks | Only actions routed through the configured runtime are mediated. The local commit fence and lifecycle controller do not cover remote providers, raw handles or every executor. |
 | Framework adapters | AgentDojo ToolsExecutor and limited workspace mapper; LangGraph BaseStore; LangChain middleware; PostgreSQL checkpoint wrapper | Adapters do not intercept direct calls to raw tools, stores, checkpointers, databases or alternate execution paths. |
 | Provider ingress | Read-only Gmail, Microsoft Graph mail, Slack history and Qdrant search adapters with bounded HTTP handling and provenance capture | CI uses mocked HTTP. Production identity binding, live account validation, provider writes, deletion sync and remote commit fencing remain open. |
 | Execution helpers | Optional Docker worker; Linux `openat2` filesystem and DNS/IP-pinned network primitives | Docker isolation is opt-in. Filesystem/network helpers are not wired into every connector or executor. |
