@@ -210,8 +210,10 @@ def test_broker_mediator_dispatcher_exposes_only_configured_local_read_write():
         read_mediator=ReadMediator(),
         write_mediator=WriteMediator(),
     )
-    assert dispatcher({"operation": "read", "operation_id": "r"}, session)["read"] == "r"
-    assert dispatcher({"operation": "write", "operation_id": "w"}, session)["write"] == "w"
+    read_result = dispatcher({"operation": "read", "operation_id": "r"}, session)
+    write_result = dispatcher({"operation": "write", "operation_id": "w"}, session)
+    assert read_result["read"] == "r"
+    assert write_result["write"] == "w"
     with pytest.raises(PermissionError):
         dispatcher({"operation": "send"}, session)
 
