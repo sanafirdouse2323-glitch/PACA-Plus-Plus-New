@@ -68,6 +68,9 @@ class LifecycleSecurityPolicy:
     require_authority_lineage: bool = True
     require_tool_implementation_digest: bool = True
     max_audit_events: int = 4096
+    # Bound process-local replay memory. Exhaustion fails closed; receipts are
+    # deliberately not evicted because eviction would re-enable duplicate commits.
+    max_committed_effects: int = 100_000
 
     def __post_init__(self) -> None:
         if self.allowed_actions is not None:
@@ -95,6 +98,14 @@ class LifecycleSecurityPolicy:
             or not 128 <= self.max_audit_events <= 100_000
         ):
             raise ValueError("max_audit_events must be between 128 and 100000")
+        if (
+            isinstance(self.max_committed_effects, bool)
+            or not isinstance(self.max_committed_effects, int)
+            or not 128 <= self.max_committed_effects <= 1_000_000
+        ):
+            raise ValueError(
+                "max_committed_effects must be between 128 and 1000000"
+            )
 
 
 @dataclass(frozen=True)
@@ -413,6 +424,11 @@ class LifecycleSecurityController:
             if digest in self._used_effects:
                 self._reject(
                     request, "effect request digest has already been committed"
+                )
+            if len(self._used_effects) >= self.policy.max_committed_effects:
+                self._reject(
+                    request,
+                    "in-memory committed-effect receipt capacity is exhausted; refusing further effects",
                 )
             self._used_effects.add(digest)
             self._emit(
