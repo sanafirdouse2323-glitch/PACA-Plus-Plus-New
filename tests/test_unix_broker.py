@@ -341,6 +341,7 @@ def test_signed_operation_is_verified_against_the_kernel_bound_session(tmp_path)
 
     path, server, thread = _start_server(tmp_path, dispatch)
     try:
+
         def sign(session):
             unsigned = {
                 "message_id": "uds-test-message",
