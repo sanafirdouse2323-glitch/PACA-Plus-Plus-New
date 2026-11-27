@@ -274,7 +274,7 @@ jobs:
           python -m pip install --upgrade pip
           pip install -e ".[dev,api,crypto,providers]"
       - name: Lint all Python source and tests (ruff)
-        run: ruff check . --diff
+        run: ruff check .
       - name: Verify repository-wide Python formatting (ruff)
         run: ruff format --check .
 
