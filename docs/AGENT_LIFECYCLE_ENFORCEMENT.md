@@ -33,6 +33,8 @@ request's immutable authority lineage must carry the same epoch. This makes a
 policy change or revocation epoch a visible continuity boundary rather than an
 implicit assumption.
 
+The `session_id` is a controller-local audit/context identifier. It is not carried in `Request` or independently authenticated by the transport. The host must derive principal, tenant, task and purpose from an authenticated workload/session source, and must not allow an agent to choose those values. A controller supports one active session at a time; use separately managed controller/runtime instances for concurrent sessions. The session ID alone is not proof of identity.
+
 The controller records metadata only: action names, identities, digests,
 decisions and reasons. It never stores model text, credentials or effect
 payloads in its audit events.
