@@ -91,10 +91,38 @@ jobs:
       - name: Run complete test suite
         run: python -m pytest -q
 
-      - name: Run lint and type checks
+      - name: Run repository-wide lint, formatting and security-critical type checks
         run: |
-          python -m ruff check paca_executor.py
-          python -m mypy --follow-imports=silent paca_executor.py
+          python -m ruff check .
+          python -m ruff format --check .
+          python -m mypy --follow-imports=silent --check-untyped-defs \
+            paca_executor.py \
+            paca/agent_runtime.py \
+            paca/lifecycle.py \
+            paca/resource_commit.py \
+            paca/filesystem_commit.py \
+            paca/authority_runtime.py \
+            paca/authority_registry.py \
+            paca/durable.py \
+            paca/broker.py \
+            paca/broker_write.py \
+            paca/contracts/canonical.py \
+            paca/contracts/signatures.py \
+            paca/contracts/broker.py \
+            paca/contracts/permits.py
+
+      - name: Verify all installation-profile security contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          for profile in core extended research; do
+            echo "Checking profile: $profile"
+            PACA_SECURITY_PROFILE="$profile" python -m pytest -q tests/test_profile_security_contract.py
+          done
+
+      - name: Verify broker isolation across operating-system UIDs
+        run: |
+          sudo -E "$(command -v python)" -m pytest -q tests/test_unix_broker.py -k unprivileged_worker_uses_broker_without_direct_file_access
 
       - name: Build wheel and source distribution
         run: |
@@ -209,6 +237,15 @@ jobs:
           tagged_sha="$(git rev-parse "refs/tags/$EXPECTED_TAG^{commit}")"
           if [ "$tagged_sha" != "$TARGET_SHA" ]; then
             echo "Refusing release: tag $EXPECTED_TAG resolves to $tagged_sha, not $TARGET_SHA." >&2
+            exit 1
+          fi
+
+          # A matching version string and tag target are not enough: a release
+          # must come from the reviewed main-line history. Fetch main explicitly
+          # because a tag-triggered checkout may not create origin/main by default.
+          git fetch origin main:refs/remotes/origin/main --force
+          if ! git merge-base --is-ancestor "$tagged_sha" refs/remotes/origin/main; then
+            echo "Refusing release: tag $EXPECTED_TAG does not point to a commit reachable from origin/main." >&2
             exit 1
           fi
 

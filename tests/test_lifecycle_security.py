@@ -4,6 +4,7 @@ from paca.authority import AuthorityLineage
 from paca.lifecycle import (
     LifecycleSecurityController,
     LifecycleSecurityError,
+    LifecycleSecurityPolicy,
 )
 from paca.provenance import Arg, Label
 from paca.runtime import Capability, Request, Tool
@@ -128,3 +129,46 @@ def test_legacy_capability_without_lineage_is_rejected_by_default():
     request.cap.authority_lineage = None
     with pytest.raises(LifecycleSecurityError, match="immutable authority lineage"):
         controller.authorize_request(request)
+
+
+def test_committed_effect_receipt_capacity_is_bounded_and_fails_closed():
+    policy = LifecycleSecurityPolicy(max_committed_effects=128)
+    controller = LifecycleSecurityController(policy)
+    controller.start_session(
+        session_id="session-capacity",
+        principal="agent-1",
+        tenant="acme",
+        task_id="task-1",
+        purpose="test",
+        policy_epoch=7,
+    )
+
+    for step in range(1, 129):
+        request = _request()
+        request.step = step
+        controller.commit_authorization(request)
+
+    assert len(controller._used_effects) == 128
+    overflow = _request()
+    overflow.step = 129
+    with pytest.raises(LifecycleSecurityError, match="capacity is exhausted"):
+        controller.commit_authorization(overflow)
+    assert len(controller._used_effects) == 128
+
+
+def test_one_use_receipts_survive_session_close_and_reopen_in_same_process():
+    controller = _controller()
+    request = _request()
+    controller.commit_authorization(request)
+
+    controller.close_session()
+    controller.start_session(
+        session_id="session-2",
+        principal="agent-1",
+        tenant="acme",
+        task_id="task-1",
+        purpose="test",
+        policy_epoch=7,
+    )
+    with pytest.raises(LifecycleSecurityError, match="already been committed"):
+        controller.commit_authorization(request)

@@ -19,6 +19,7 @@ from collections import deque
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from enum import Enum
+from typing import NoReturn
 
 from .runtime import ACTIONS, Request
 
@@ -68,6 +69,9 @@ class LifecycleSecurityPolicy:
     require_authority_lineage: bool = True
     require_tool_implementation_digest: bool = True
     max_audit_events: int = 4096
+    # Bound process-local replay memory. Exhaustion fails closed; receipts are
+    # deliberately not evicted because eviction would re-enable duplicate commits.
+    max_committed_effects: int = 100_000
 
     def __post_init__(self) -> None:
         if self.allowed_actions is not None:
@@ -95,6 +99,12 @@ class LifecycleSecurityPolicy:
             or not 128 <= self.max_audit_events <= 100_000
         ):
             raise ValueError("max_audit_events must be between 128 and 100000")
+        if (
+            isinstance(self.max_committed_effects, bool)
+            or not isinstance(self.max_committed_effects, int)
+            or not 128 <= self.max_committed_effects <= 1_000_000
+        ):
+            raise ValueError("max_committed_effects must be between 128 and 1000000")
 
 
 @dataclass(frozen=True)
@@ -295,7 +305,7 @@ class LifecycleSecurityController:
                 digest=digest,
             )
 
-    def _reject(self, request: Request, reason: str) -> None:
+    def _reject(self, request: Request, reason: str) -> NoReturn:
         digest = None
         with contextlib.suppress(Exception):
             digest = request.digest
@@ -350,7 +360,10 @@ class LifecycleSecurityController:
         ):
             self._reject(request, "action is outside the lifecycle allowlist")
         effect_class = spec.get("cls")
-        if action in self.policy.require_tool_for and request.tool is None:
+        require_tool_for = self.policy.require_tool_for
+        if require_tool_for is None:
+            self._reject(request, "lifecycle tool policy is not initialized")
+        if action in require_tool_for and request.tool is None:
             self._reject(request, "consequential action requires a typed tool manifest")
         if request.tool is not None:
             if (
@@ -359,7 +372,7 @@ class LifecycleSecurityController:
             ):
                 self._reject(request, "tool is outside the lifecycle allowlist")
             if (
-                action in self.policy.require_tool_for
+                action in require_tool_for
                 and self.policy.require_tool_implementation_digest
                 and request.tool.implementation_digest is None
             ):
@@ -413,6 +426,11 @@ class LifecycleSecurityController:
             if digest in self._used_effects:
                 self._reject(
                     request, "effect request digest has already been committed"
+                )
+            if len(self._used_effects) >= self.policy.max_committed_effects:
+                self._reject(
+                    request,
+                    "in-memory committed-effect receipt capacity is exhausted; refusing further effects",
                 )
             self._used_effects.add(digest)
             self._emit(

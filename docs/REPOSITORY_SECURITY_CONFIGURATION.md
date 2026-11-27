@@ -4,7 +4,7 @@
 
 ## Observed repository setting
 
-On 26 November 2026, the GitHub API recheck reported that the default `main` branch was not protected (`protected: false`) and the repository rulesets endpoint returned an empty list. The available GitHub connection for this work can inspect these settings but does not expose repository-administration write permission or an action to create/enforce rulesets. Therefore, this document is an administrator action plan; it is not evidence that branch protection has been enabled.
+On 27 November 2026, the GitHub API recheck reported that the default `main` branch was not protected (`protected: false`) and the repository rulesets endpoint returned an empty list. The available GitHub connection for this work can inspect these settings but does not expose repository-administration write permission or an action to create/enforce rulesets. Therefore, this document is an administrator action plan; it is not evidence that branch protection has been enabled.
 
 ## Required `main` ruleset
 
@@ -15,7 +15,7 @@ Enable these protections:
 1. Require a pull request before merging. Require at least one approval from a reviewer other than the PR author; dismiss stale approvals when new commits are pushed.
 2. Require all review conversations to be resolved.
 3. Require the branch to be up to date before merging, if the team can support that workflow.
-4. Require the stable CI checks for the default branch: the Python test matrix for 3.10, 3.11, 3.12 and 3.13; wheel smoke test; AgentDojo adapter integration; lint/type checks; PostgreSQL checkpoint integration; LangGraph integration; and Docker build.
+4. Require the stable CI checks for the default branch: the Python test matrix for 3.10, 3.11, 3.12 and 3.13; wheel smoke test; AgentDojo adapter integration; lint/type checks; PostgreSQL checkpoint integration; LangGraph integration; all three `Core security contract` profile checks; broker UID isolation; and Docker build.
 5. Require the release validation/build check for changes covered by `.github/workflows/release.yml`.
 6. Block force pushes and branch deletion. Apply the ruleset to administrators and avoid bypass actors. Any emergency bypass should be time-limited, documented and reviewed after use.
 
@@ -29,6 +29,7 @@ GitHub displays the exact required-check names after the workflows have run on p
 - Protect version tags matching `v*` with a separate tag ruleset. Restrict who may create or move release tags.
 - Keep package/image publication credentials unavailable to arbitrary pull-request code. Review workflow permission changes as security-sensitive code.
 - Preserve the release workflow's version/tag validation and clean package-install checks. Do not bypass failing release validation to publish artifacts.
+- The release workflow now rejects a version tag unless its target commit is reachable from `origin/main`. This is a workflow safeguard, not a replacement for a protected `v*` tag ruleset; administrators must still restrict tag creation, update and deletion.
 
 ## Validation after the administrator applies the ruleset
 
