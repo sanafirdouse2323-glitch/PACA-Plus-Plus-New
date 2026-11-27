@@ -31,6 +31,8 @@ The benchmark command writes `index.html` and `results.json` into the selected o
 | Area | Implemented reference components | Important boundary |
 |---|---|---|
 | Policy enforcement | `paca/monitor.py`, `paca/runtime.py`, packaged PACA policy | Covers selected, explicitly mapped actions; it is not a universal framework hook. |
+| Lifecycle security | `paca/lifecycle.py` and optional `PACAAgentRuntime(lifecycle_security=...)` | Session/task binding, fail-closed provenance/tool checks, one-use lifecycle commits and a kill switch for calls through the reference runtime; direct clients and external resources remain outside this boundary. |
+| Policy continuity | `docs/POLICY_CONTINUITY_EVALUATION.md` | Defines measurable authority, information, usage and effect continuity invariants across transformation, delegation, retry, revocation and external-sink tests; it is an evaluation contract, not proof of complete mediation. |
 | Agent orchestration | `paca/agent_runtime.py` | The reference runtime mediates calls routed through its methods; direct clients and alternate execution paths can bypass it. |
 | Provenance and memory | `paca/provenance.py`, `paca/durable.py`, `paca/memory.py` | Memory, connector and message adapters depend on trusted host integrations; not every hidden model-context dependency is tracked automatically. |
 | Authority and revocation | `paca/authority_registry.py`, `paca/authority_runtime.py`, `paca/postgres_authority.py` | Registry state and credential issuance are separate modules; PostgreSQL shares authority state across clients on one primary, not every other store. |
@@ -83,6 +85,7 @@ The current simulated PACA++ failures include E02 (agent-message propagation, wi
 
 ## Production gaps — read before integrating
 
+- **Lifecycle enforcement:** `LifecycleSecurityController` binds PACA-managed effect requests to one session/task, rejects untrusted or incomplete-lineage consequential inputs, requires digest-pinned tool manifests and provides a one-way stop switch. It is only enforced by calls routed through `PACAAgentRuntime`; it does not mediate direct framework/provider clients, raw stores, subprocesses or network paths.
 - **Mediation and bypass:** the optional Linux AF_UNIX broker transport in `paca/unix_broker.py` provides a separate-process path for selected local read/write mediators. It is not universal complete mediation or an OS sandbox. Raw filesystem, database, network, subprocess, framework and provider calls remain possible unless deployment policy removes workers' direct access to protected resources and credentials.
 - **Identity and task binding:** identity and task-context callbacks are trusted host integrations. There is no built-in production OIDC/workload-identity service.
 - **Key management:** Ed25519 separates issuer signing from public-key verification, but KMS/HSM custody, key rotation, authenticated key distribution and emergency key revocation are not implemented.
@@ -100,6 +103,7 @@ Do not deploy PAC++ New as the sole security control protecting company data, ac
 - [Protocol SDK and conformance tests](paca/contracts/) — canonical JSON, domain-separated digests and structural validation helpers.
 - [Versioned protocol contracts v1.0.0](contracts/v1.0.0/README.md) — JSON Schemas and message-security semantics.
 - [Security semantics](docs/SECURITY_SEMANTICS.md) — delegation, provenance, revocation and commit state rules.
+- [Agent-lifecycle enforcement](docs/AGENT_LIFECYCLE_ENFORCEMENT.md) — fail-closed session, provenance, tool and commit checks for the PACA-owned runtime boundary.
 - [Current implementation status and next gates](docs/security-roadmap.md)
 - [Research question, related work and evaluation plan](docs/AGENT_LIFECYCLE_SECURITY_RESEARCH.md)
 - [Durable lifecycle implementation and trust boundaries](docs/DURABLE_LIFECYCLE_SECURITY.md)
