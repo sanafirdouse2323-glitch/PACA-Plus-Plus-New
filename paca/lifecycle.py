@@ -104,9 +104,7 @@ class LifecycleSecurityPolicy:
             or not isinstance(self.max_committed_effects, int)
             or not 128 <= self.max_committed_effects <= 1_000_000
         ):
-            raise ValueError(
-                "max_committed_effects must be between 128 and 1000000"
-            )
+            raise ValueError("max_committed_effects must be between 128 and 1000000")
 
 
 @dataclass(frozen=True)
