@@ -330,6 +330,7 @@ jobs:
           mypy --follow-imports=silent --check-untyped-defs
           paca_executor.py
           paca/agent_runtime.py
+          paca/lifecycle.py
           paca/resource_commit.py
           paca/filesystem_commit.py
           paca/authority_runtime.py
