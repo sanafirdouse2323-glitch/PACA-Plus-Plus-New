@@ -354,6 +354,8 @@ jobs:
       - lint
       - langgraph-postgres-checkpoint
       - langgraph-integration
+      - security-profile-contracts
+      - broker-uid-isolation
     steps:
       - uses: actions/checkout@v4
       - name: Set up Docker Buildx
