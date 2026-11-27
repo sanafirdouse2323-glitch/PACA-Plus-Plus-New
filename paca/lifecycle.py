@@ -10,6 +10,7 @@ APIs safe by itself.
 
 from __future__ import annotations
 
+import contextlib
 import re
 import threading
 import time
@@ -17,8 +18,6 @@ from collections import deque
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any
-
 from .runtime import ACTIONS, Request
 
 _DIGEST = re.compile(r"^[0-9a-f]{64}$")
@@ -284,10 +283,8 @@ class LifecycleSecurityController:
 
     def _reject(self, request: Request, reason: str) -> None:
         digest = None
-        try:
+        with contextlib.suppress(Exception):
             digest = request.digest
-        except Exception:
-            pass
         self._emit(
             LifecyclePhase.EFFECT,
             "authorize",
