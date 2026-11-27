@@ -1,0 +1,754 @@
+{
+  "schema_version": "1.0.0",
+  "as_of": "2026-11-26",
+  "repository": {
+    "name": "PACA-Plus-Plus-New",
+    "baseline_branch": "main",
+    "baseline_commit": "ef449fb9813f4070de07143981a2d5ca22cf7ded",
+    "evaluation_branch": "research/six-point-evaluation-2026-11-26",
+    "evaluation_status": "protocol_and_initial_conformance_tests_only",
+    "no_live_vendor_comparison_claim": true
+  },
+  "evidence_legend": {
+    "D": "Official documentation or published research describes the capability; no runtime behaviour has been tested by this project.",
+    "I": "Pinned source or artefact has been inspected; runtime behaviour has not necessarily been reproduced.",
+    "R": "Pinned artefact has passed a documented reproduction or conformance run for the exact test/configuration.",
+    "V": "Vendor service/runtime has been exercised in a configured account, tenant or supported environment, with raw evidence retained.",
+    "S": "Project-owned simulator/test double; not a vendor product.",
+    "F": "Formal result within an explicitly defined model and explored bounds."
+  },
+  "comparators": [
+    {
+      "id": "aws-bedrock-agentcore-temporal-policies",
+      "provider": "Amazon Web Services",
+      "product": "Amazon Bedrock AgentCore Policy - Temporal Policies",
+      "evidence_level": "D",
+      "live_test_status": "not_run",
+      "documented_capability_summary": [
+        "Gateway request enforcement using session-scoped prior action history",
+        "Temporal requirements involving previous approvals and action sequences",
+        "Count/sum-style usage conditions over a policy session",
+        "Official regional table currently marks Asia Pacific (Hyderabad) unsupported and Asia Pacific (Mumbai) supported for Temporal Policies"
+      ],
+      "relevant_research_dimensions": [
+        "tool_use",
+        "session_history",
+        "approval_before_action",
+        "action_sequence",
+        "cumulative_usage"
+      ],
+      "documented_scope_or_constraints": [
+        "Temporal history is scoped to an application-supplied policy session identifier",
+        "Native propagation across AgentCore Gateway/Runtime is within the same AWS account and Region; cross-account and cross-Region propagation is not supported",
+        "A non-AgentCore hop in the request chain must explicitly forward the Workload Access Token or temporal policy enforcement will not follow the chain",
+        "The Gateway role requires bedrock-agentcore:GetWorkloadAccessToken",
+        "Published temporal policy limits include 20 temporal policies per policy engine, at most 3 temporal operators per policy and a maximum 24-hour lookback; revalidate quotas before testing",
+        "The current published regional table lists Mumbai as supported and Hyderabad as unsupported; record the actual target Region instead of assuming India-wide availability"
+      ],
+      "not_established_by_documentation_alone": [
+        "Memory provenance continuity across arbitrary internal transformations",
+        "Unmediated model planning or hidden context dependencies",
+        "Commit-time atomic revocation at an arbitrary external provider"
+      ],
+      "live_test_requirements": [
+        "AWS account in a Region listed as supported for Temporal Policies; Mumbai is listed as supported and Hyderabad is not in the current table",
+        "Bedrock AgentCore Gateway and policy engine configured in the same account and Region",
+        "Authenticated identity/session propagation with WAT through every hop; instrument any non-AgentCore hop to prove forwarding",
+        "IAM permission bedrock-agentcore:GetWorkloadAccessToken on the Gateway role",
+        "Protected test tool and sink with observable effect receipts",
+        "Pinned policy definitions, quotas, SDK, region and service configuration",
+        "Native and layered runs must preserve the documented session boundaries and include any required non-AgentCore WAT forwarding"
+      ],
+      "official_sources": [
+        "https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/policy-temporal.html",
+        "https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/policy-session-based-temporal.html",
+        "https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/bedrock-agentcore-limits.html"
+      ],
+      "next_action": "Provision the native Gateway and protected sink in a currently supported Region (Mumbai is listed; Hyderabad is not), instrument WAT propagation and run the policy conformance/temporal-window schedules before baseline comparison."
+    },
+    {
+      "id": "nvidia-openshell",
+      "provider": "NVIDIA",
+      "product": "NVIDIA OpenShell",
+      "evidence_level": "D",
+      "live_test_status": "not_run",
+      "documented_capability_summary": [
+        "Separate agent sandbox and supervisor/gateway architecture, with a protected control channel",
+        "Kernel-level enforcement of filesystem access, system calls/process controls and network egress; requests are mediated outside the agent process",
+        "Network policy can constrain the requesting binary, destination, method and path; approved credentials are supplied to approved destinations",
+        "Policy prover evaluates the risk of policy changes before they are applied",
+        "Documented compute drivers include Docker, Podman, MicroVM and Kubernetes; exact runtime boundary depends on the selected driver"
+      ],
+      "relevant_research_dimensions": [
+        "runtime_containment",
+        "filesystem_bypass",
+        "process_execution",
+        "network_egress",
+        "credential_exposure"
+      ],
+      "documented_scope_or_constraints": [
+        "Runtime containment is a distinct enforcement layer from workflow-level information provenance, purpose/usage policy and semantic lineage",
+        "All relevant egress must traverse the supervisor/gateway boundary; direct bypass paths, host privileges, kernel and driver assumptions must be measured",
+        "The exact compute driver changes the isolation boundary and restart/persistence semantics; pin the driver and host profile",
+        "BlueField/Sentry/DPU hardware-specific assertions require the actual supported hardware profile; software-only tests cannot establish hardware-backed guarantees"
+      ],
+      "not_established_by_documentation_alone": [
+        "PACA policy semantics or provenance continuity",
+        "Atomic external business-effect commit under provider revocation",
+        "Hardware-backed Sentry guarantees on a software-only host"
+      ],
+      "live_test_requirements": [
+        "Supported Linux host and pinned OpenShell release/commit",
+        "Isolated test agent and immutable worker image",
+        "Filesystem/process/network bypass scenarios",
+        "Protected test resources and credential broker configuration",
+        "For DPU-specific claims, supported BlueField hardware and its documented deployment"
+      ],
+      "official_sources": [
+        "https://docs.nvidia.com/openshell/about/architecture",
+        "https://docs.nvidia.com/openshell/dev/how-it-works/sandboxes/runtimes",
+        "https://www.nvidia.com/en-us/ai/openshell/",
+        "https://github.com/ai-openshell/openshell"
+      ],
+      "next_action": "Pin OpenShell release/commit, supervisor and selected compute driver; prove no direct network/filesystem bypass, verify credential mediation and capture policy-prover outputs before running semantic and effect scenarios."
+    },
+    {
+      "id": "microsoft-entra-agent-id",
+      "provider": "Microsoft",
+      "product": "Microsoft Entra Agent ID",
+      "evidence_level": "D",
+      "live_test_status": "not_run",
+      "documented_capability_summary": [
+        "Dedicated agent identities, authentication and resource permission governance",
+        "Agent lifecycle and accountability controls, including sponsor, reconfirmation and inactivity rules in the Agent ID lifecycle-policy preview",
+        "Conditional Access and least-privilege identity controls for agent access"
+      ],
+      "relevant_research_dimensions": [
+        "agent_identity",
+        "principal_authentication",
+        "delegated_permissions",
+        "lifecycle_governance",
+        "protected_api_access"
+      ],
+      "documented_scope_or_constraints": [
+        "Identity and permission governance do not by themselves demonstrate information-flow continuity through memory, model transformations or cross-agent payloads",
+        "Agent ID lifecycle policies are currently documented as Preview, without an SLA and not recommended for production workloads",
+        "The lifecycle policy documentation lists license prerequisites (Microsoft 365 E7, or Agent 365 with at least Entra P1 or Microsoft 365 E3); record actual tenant licensing",
+        "A live result depends on the tenant, enabled capabilities, service plan, resource API and policy configuration actually tested"
+      ],
+      "not_established_by_documentation_alone": [
+        "Semantic provenance tracking",
+        "Memory retrieval policy enforcement",
+        "Atomic effect commitment at an unrelated downstream provider"
+      ],
+      "live_test_requirements": [
+        "Microsoft Entra tenant with Agent ID capability enabled",
+        "Test agent identity and least-privilege permissions",
+        "Protected resource API and test data",
+        "Conditional Access and token configuration captured",
+        "Independent inspection of tokens, claims, authorization and resource-side effects"
+      ],
+      "official_sources": [
+        "https://learn.microsoft.com/en-us/entra/agent-id/",
+        "https://learn.microsoft.com/en-us/entra/agent-id/agent-identities",
+        "https://learn.microsoft.com/entra/id-governance/agent-lifecycle-policies",
+        "https://learn.microsoft.com/entra/agent-id/best-practices-agent-id"
+      ],
+      "next_action": "Use a licensed test tenant, pin the preview/GA state and test an agent identity against the same protected API and effect oracle used for the other baselines; keep lifecycle preview capabilities separate from GA identity/authorization results."
+    },
+    {
+      "id": "google-cloud-agent-gateway",
+      "provider": "Google Cloud",
+      "product": "Gemini Enterprise Agent Platform - Agent Gateway",
+      "evidence_level": "D",
+      "live_test_status": "not_run",
+      "documented_capability_summary": [
+        "Governed entry and exit paths for user-agent, agent-tool and agent-agent communication",
+        "Agent identity and registry integration",
+        "IAM, semantic/content governance and gateway policy components"
+      ],
+      "relevant_research_dimensions": [
+        "tool_egress",
+        "agent_to_agent_communication",
+        "destination_restrictions",
+        "gateway_identity",
+        "content_governance"
+      ],
+      "documented_scope_or_constraints": [
+        "Only traffic actually routed through the gateway is within its observed enforcement boundary",
+        "Gateway documentation does not establish control over arbitrary unmediated internal memory or model planning",
+        "The current Agent Gateway overview states that support for token-management policies and extension bindings is coming soon; the standalone token-management page also states that support is coming soon. Do not count either as available baseline features",
+        "Agent Gateway is listed for Gemini Enterprise Agent Platform and GKE; Cloud Run and cross-cloud Kubernetes are Limited Preview. Confirm the exact deployment model, region and project eligibility before a live test",
+        "A configured semantic/content policy may protect routed payloads, but it must be recorded separately from identity, destination and protocol routing controls"
+      ],
+      "not_established_by_documentation_alone": [
+        "Internal memory read/write mediation",
+        "Complete semantic provenance through hidden transformations",
+        "Atomic downstream resource commit and revocation"
+      ],
+      "live_test_requirements": [
+        "Google Cloud project and supported Agent Gateway configuration",
+        "Agent identity and registry setup",
+        "Explicit routing of target MCP/A2A/tool paths through gateway",
+        "Capture available IAM, semantic/content policy and Model Armor configuration; do not assume token management or extension bindings are enabled",
+        "Protected sink and gateway decision/effect correlation",
+        "Record the exact deployment model and preview/GA status for the selected project and region"
+      ],
+      "official_sources": [
+        "https://docs.cloud.google.com/gemini-enterprise-agent-platform/govern/gateways/agent-gateway-overview",
+        "https://docs.cloud.google.com/gemini-enterprise-agent-platform/govern/policies/token-management-overview",
+        "https://docs.cloud.google.com/gemini-enterprise-agent-platform/govern/gateways/cloud-run-overview"
+      ],
+      "next_action": "Pin the current Agent Gateway release/deployment and selected routing path; smoke-test routed MCP/A2A/tool traffic and record the presently supported IAM/content/Model Armor functions, while excluding coming-soon token-management/extension-binding features."
+    },
+    {
+      "id": "mcp-runtime-policy-enforcement-pep-2026",
+      "provider": "Research comparator",
+      "product": "Runtime policy enforcement for MCP-based LLM agents",
+      "evidence_level": "D",
+      "live_test_status": "not_run",
+      "documented_capability_summary": [
+        "MCP tool-call boundary policy enforcement",
+        "Cross-step source-integrity and data-sensitivity labels",
+        "Hash-chained decision logging"
+      ],
+      "relevant_research_dimensions": [
+        "tool_call_enforcement",
+        "cross_step_information_flow",
+        "trace_integrity",
+        "attack_success",
+        "false_negative_rate"
+      ],
+      "documented_scope_or_constraints": [
+        "Published evaluation conditions and prototype boundaries are not directly comparable to PACA until the artefact passes a common scripted-input smoke test",
+        "Reported results are limited to the paper's evaluated attacks, tasks, implementation and tool configuration",
+        "Model reconstruction and check-to-execution race limitations require specific reproduction tests"
+      ],
+      "not_established_by_documentation_alone": [
+        "Equivalent coverage of every Memory, Communication and Planning subtransition",
+        "Production network and multi-server deployment behaviour",
+        "Universal semantic reconstruction detection"
+      ],
+      "live_test_requirements": [
+        "Pinned paper version and repository commit",
+        "Native artefact dependency and dataset verification",
+        "Unmodified policy semantics and mediation path",
+        "Common-input smoke test without bypassing native controls",
+        "Reproducible outcome oracle and sink-side evidence"
+      ],
+      "official_sources": [
+        "https://doi.org/10.3390/electronics15132829",
+        "https://github.com/wilesanGH/mcp-pep-agent-security"
+      ],
+      "next_action": "Pin the paper-linked repository commit, reconcile README publication-status text, then perform source audit and native smoke test."
+    },
+    {
+      "id": "progent",
+      "provider": "Research comparator",
+      "product": "Progent",
+      "evidence_level": "D",
+      "live_test_status": "not_run",
+      "documented_capability_summary": [
+        "Symbolic constraints over tool names and typed arguments",
+        "Privilege-control checks and restrictions against permission expansion"
+      ],
+      "relevant_research_dimensions": [
+        "tool_selection",
+        "typed_arguments",
+        "privilege_attenuation",
+        "policy_update"
+      ],
+      "not_established_by_documentation_alone": [
+        "Equivalent semantic provenance handling across all memory and communication paths",
+        "Atomic remote resource commit"
+      ],
+      "official_sources": [
+        "https://arxiv.org/abs/2504.11703"
+      ],
+      "next_action": "Pin the paper and available implementation; determine whether a reproducible native artefact exists before comparison.",
+      "documented_scope_or_constraints": [
+        "Progent's published mechanism constrains tool names and typed arguments and includes mechanisms to restrict privilege expansion; the scope and guarantees must be read from the pinned paper and exact implementation version.",
+        "The original paper is the primary source for the mechanism description. Results should not be generalized to memory provenance, cross-agent data lineage, runtime isolation, or remote-resource commit fencing without a matching native artifact and test path."
+      ],
+      "live_test_requirements": [
+        "Pin the paper version and any author-released implementation commit; record whether a runnable public artefact is actually available.",
+        "Reproduce the native task and policy semantics instead of wrapping a PACA-specific policy around the artefact.",
+        "Test tool-name and typed-argument enforcement, privilege-expansion attempts, benign task completion, and any policy-update path the artefact supports.",
+        "If no reproducible implementation can be identified, retain documentary status and exclude Progent from the matched execution comparison rather than substituting a toy implementation."
+      ]
+    },
+    {
+      "id": "camel",
+      "provider": "Research comparator",
+      "product": "CaMeL — Capabilities for Machine Learning",
+      "evidence_level": "D",
+      "live_test_status": "not_run",
+      "documented_capability_summary": [
+        "Separates trusted control flow from untrusted environment data",
+        "Uses a custom interpreter and value-level capabilities to constrain tool operations and unauthorized information flows"
+      ],
+      "relevant_research_dimensions": [
+        "control_data_separation",
+        "value_provenance",
+        "capability_based_tool_authorization",
+        "data_exfiltration"
+      ],
+      "documented_scope_or_constraints": [
+        "The paper assumes a trusted user query and states boundaries around threats that do not change control flow or data flow",
+        "A native reproduction must preserve the paper's trusted/untrusted input model and custom interpreter; translating only its policy idea into a PACA wrapper is not a CaMeL test"
+      ],
+      "not_established_by_documentation_alone": [
+        "Universal protection against semantic misrepresentation or all forms of prompt injection",
+        "Provider-side atomic commits, usage reservation or effect recovery",
+        "Composition of the single-agent guarantee across independently implemented agents"
+      ],
+      "live_test_requirements": [
+        "Pin the released implementation commit and dependencies",
+        "Reproduce the published AgentDojo configuration and task exclusions",
+        "Keep the trusted-query and untrusted-environment assumptions explicit",
+        "Retain tool traces and the provenance/capability decisions"
+      ],
+      "official_sources": [
+        "https://arxiv.org/abs/2503.18813",
+        "https://github.com/google-research/camel-prompt-injection"
+      ],
+      "next_action": "Pin the implementation and reproduce its native AgentDojo configuration and threat assumptions."
+    },
+    {
+      "id": "multi-camel",
+      "provider": "Research comparator",
+      "product": "Multi-CaMeL — multi-agent provenance protocol",
+      "evidence_level": "D",
+      "live_test_status": "not_run",
+      "documented_capability_summary": [
+        "Separates trusted natural-language instructions from untrusted data in distinct agent-to-agent channels",
+        "Carries provenance across hierarchical agent boundaries to prevent downstream reinterpretation of untrusted data as trusted instruction"
+      ],
+      "relevant_research_dimensions": [
+        "multi_agent_communication",
+        "cross_agent_provenance",
+        "trusted_instruction_data_separation",
+        "prompt_injection"
+      ],
+      "documented_scope_or_constraints": [
+        "The paper identifies non-composition of individual-agent CaMeL guarantees as a concrete multi-agent failure mode",
+        "Its protocol and reported results are specific to the evaluated MultiAgentDojo and AssetOpsBench setups; they are not a general guarantee for arbitrary agent frameworks"
+      ],
+      "not_established_by_documentation_alone": [
+        "Tool/provider commit atomicity and retry recovery",
+        "Full control of arbitrary internal memory or third-party agent runtimes not routed through the protocol",
+        "Perfect detection of latent semantic reconstruction where no provenance is carried"
+      ],
+      "live_test_requirements": [
+        "Pin the exact paper and implementation artefact",
+        "Reproduce the multi-agent communication protocol rather than a one-agent proxy",
+        "Run matched single-agent CaMeL and no-defence controls where the original test permits",
+        "Record utility and attack outcomes at the multi-agent task level"
+      ],
+      "official_sources": [
+        "https://arxiv.org/abs/2610.05640"
+      ],
+      "next_action": "Pin the implementation and reproduce the multi-agent protocol on its published task setup."
+    },
+    {
+      "id": "sapien",
+      "provider": "Research comparator",
+      "product": "Sapien — A Stateful Policy Engine for Autonomous AI Agents",
+      "evidence_level": "D",
+      "live_test_status": "not_run",
+      "documented_capability_summary": [
+        "Expresses permitted tool-call sequences using regular expressions extended with stateful predicates",
+        "Supports deferred policy generation and scoped semantic checks for contextual, multi-step tool-use constraints"
+      ],
+      "relevant_research_dimensions": [
+        "tool_call_sequences",
+        "stateful_authorization",
+        "contextual_policy",
+        "long_horizon_tool_use"
+      ],
+      "documented_scope_or_constraints": [
+        "The mechanism is centred on contextual tool-call policies and the paper's evaluated benchmarks",
+        "Published attack-reduction figures are paper-reported results and are not PACA reproductions"
+      ],
+      "not_established_by_documentation_alone": [
+        "General memory provenance across arbitrary transformations",
+        "Provider-side commit fencing, retry idempotency or exactly-once effects",
+        "Universal host/network isolation outside its enforcement interface"
+      ],
+      "live_test_requirements": [
+        "Pin the exact released code and model/prompt configuration",
+        "Reproduce reported AgentDojo and Toolathlon task mappings without changing policy semantics",
+        "Record policy-generation and policy-enforcement separately",
+        "Measure legitimate utility alongside attack outcomes"
+      ],
+      "official_sources": [
+        "https://arxiv.org/abs/2610.00797"
+      ],
+      "next_action": "Pin implementation, model and policy-generation configuration; reproduce selected AgentDojo and Toolathlon tasks."
+    },
+    {
+      "id": "forge-formal-policy-enforcement",
+      "provider": "Research comparator",
+      "product": "FORGE — Formal Policy Enforcement for Agentic Systems",
+      "evidence_level": "D",
+      "live_test_status": "not_run",
+      "documented_capability_summary": [
+        "Uses Datalog policies and event graphs to evaluate a proposed action against current state and prior events",
+        "Intervenes at the action decision point to permit or block the action based on history-aware policy evaluation"
+      ],
+      "relevant_research_dimensions": [
+        "event_graphs",
+        "datalog_policy",
+        "stateful_tool_authorization",
+        "history_dependent_policy"
+      ],
+      "documented_scope_or_constraints": [
+        "Use the current paper title/version; earlier versions may appear under a different project name",
+        "Formal guarantees are relative to the declared event model, monitor placement and implementation assumptions"
+      ],
+      "not_established_by_documentation_alone": [
+        "Arbitrary latent semantic dataflow that is absent from its event graph",
+        "Provider-side atomicity unless the provider effect is part of the enforced transition",
+        "Control over actions that bypass its monitored execution path"
+      ],
+      "live_test_requirements": [
+        "Pin the paper version and exact repository commit",
+        "Reproduce the event schema, Datalog policy and monitor placement from the native implementation",
+        "Test incomplete event history and bypass paths",
+        "Keep model and provider effects observable at the enforcement boundary"
+      ],
+      "official_sources": [
+        "https://arxiv.org/abs/2602.16708"
+      ],
+      "next_action": "Pin the current paper version and implementation; reproduce native Datalog policies and event-graph monitor placement."
+    },
+    {
+      "id": "vigil",
+      "provider": "Research comparator",
+      "product": "VIGIL — Runtime Enforcement of Behavioral Specifications in AI Agent Skills",
+      "evidence_level": "D",
+      "live_test_status": "not_run",
+      "documented_capability_summary": [
+        "Converts skill specifications, operator constraints and global rules into behavioural policies over agent-tool traces",
+        "Checks temporal dependencies, argument constraints and cross-call value-flow conditions using symbolic evaluation over finite traces"
+      ],
+      "relevant_research_dimensions": [
+        "behavioral_specification",
+        "temporal_policy",
+        "argument_constraints",
+        "cross_call_value_flow",
+        "skill_runtime_enforcement"
+      ],
+      "documented_scope_or_constraints": [
+        "The paper evaluates a particular event model, skill interface and finite-trace monitor",
+        "Paper-reported recall and false-positive results are not comparable to PACA without matched tasks, policy semantics and independent replication"
+      ],
+      "not_established_by_documentation_alone": [
+        "General provider-side effect closure and remote exactly-once guarantees",
+        "Unmediated agent actions or data flows outside the monitored trace",
+        "Unbounded-state guarantees beyond the finite trace model"
+      ],
+      "live_test_requirements": [
+        "Pin code, skill specifications and benchmark tasks",
+        "Verify all relevant tool events are captured before enforcement",
+        "Reproduce finite-trace semantics, including truncation and missing events",
+        "Measure false positives on legitimate skill workflows"
+      ],
+      "official_sources": [
+        "https://arxiv.org/abs/2606.26524"
+      ],
+      "next_action": "Pin code, behavioural specifications and finite-trace semantics; reproduce attack and benign skill traces."
+    },
+    {
+      "id": "agentspec",
+      "provider": "Research comparator",
+      "product": "AgentSpec — Customizable Runtime Enforcement for Safe and Reliable LLM Agents",
+      "evidence_level": "D",
+      "live_test_status": "not_run",
+      "documented_capability_summary": [
+        "Provides a domain-specific language for runtime constraints using triggers, predicates and enforcement mechanisms",
+        "Targets adaptable, inspectable constraints across software, embodied-agent and autonomous-driving domains"
+      ],
+      "relevant_research_dimensions": [
+        "runtime_constraints",
+        "domain_specific_policy",
+        "trigger_predicate_enforcement",
+        "cross_domain_agent_safety"
+      ],
+      "documented_scope_or_constraints": [
+        "The original work spans distinct domains with different environment and action semantics",
+        "A fair comparison must select the domain and native enforcement adapter; broad cross-domain performance claims cannot be transferred to a PACA tool-use test"
+      ],
+      "not_established_by_documentation_alone": [
+        "A common information-provenance lattice equivalent to PACA's labels",
+        "Remote provider commit semantics or durable usage reservations",
+        "Complete mediation of memory, planning and communication in arbitrary LLM stacks"
+      ],
+      "live_test_requirements": [
+        "Pin the ICSE 2026 paper and released implementation",
+        "Select one domain and retain its native triggers/predicates/enforcement contract",
+        "Reproduce the authors' task set and exclusions before cross-system pairing",
+        "Report policy authoring and generation errors separately from monitor errors"
+      ],
+      "official_sources": [
+        "https://doi.org/10.1145/3744916.3764546",
+        "https://cposkitt.github.io/files/publications/agentspec_llm_enforcement_icse26.pdf"
+      ],
+      "next_action": "Pin implementation and select one native domain/adapter before running its documented tasks."
+    },
+    {
+      "id": "caplease",
+      "provider": "Research comparator",
+      "product": "CapLease — Durable Authorization State for Replay-Resistant LLM Agent Actions",
+      "evidence_level": "D",
+      "live_test_status": "not_run",
+      "documented_capability_summary": [
+        "Tracks durable authorization state across Issue–Prepare–Commit transitions",
+        "Addresses semantic replay in which fresh token identifiers are reissued for the same authority/action and exceed the intended execution budget"
+      ],
+      "relevant_research_dimensions": [
+        "durable_authorization_state",
+        "semantic_replay",
+        "authorization_consumption",
+        "concurrency",
+        "crash_recovery",
+        "idempotent_effects"
+      ],
+      "documented_scope_or_constraints": [
+        "The paper distinguishes token replay from semantic replay across freshly issued token identifiers",
+        "Avoiding duplicate external effects additionally depends on an idempotent sink/effect identity; token-side state alone is not an arbitrary provider transaction guarantee"
+      ],
+      "not_established_by_documentation_alone": [
+        "Complete semantic information-flow tracking through memory and communication",
+        "A general host/runtime isolation layer",
+        "Provider guarantees beyond the declared idempotent sink contract"
+      ],
+      "live_test_requirements": [
+        "Pin the paper and implementation if available",
+        "Reproduce fresh-token reissuance, concurrent prepare/commit, retry and crash recovery schedules",
+        "Use a real effect identity and sink-side durable result evidence",
+        "Test whether the sink idempotency contract holds under ambiguous response loss"
+      ],
+      "official_sources": [
+        "https://arxiv.org/abs/2608.01710"
+      ],
+      "next_action": "Pin artefact and reproduce Issue–Prepare–Commit, fresh-token semantic replay, concurrency and crash recovery."
+    },
+    {
+      "id": "aid-guard",
+      "provider": "Research comparator",
+      "product": "AID-Guard — Stateful Authorization for Delegated Agent Effects",
+      "evidence_level": "D",
+      "live_test_status": "not_run",
+      "documented_capability_summary": [
+        "Revalidates the exact approved request and provider state at commit",
+        "Retains one authorization reservation while delivery outcome is ambiguous",
+        "Allows release or a successor only after terminal effect evidence or certified no-effect plus a delivery fence"
+      ],
+      "relevant_research_dimensions": [
+        "authorization_to_effect_binding",
+        "commit_time_revalidation",
+        "ambiguous_delivery",
+        "reservation",
+        "provider_retry_recovery",
+        "external_effects"
+      ],
+      "documented_scope_or_constraints": [
+        "The protocol's at-most-one-effect property is conditional on supported provider contracts and delivery-fence evidence",
+        "The paper's Python/SQLite prototype and declared Stripe/Resend/loopback MCP contracts must be evaluated as bounded evidence, not general production provider guarantees"
+      ],
+      "not_established_by_documentation_alone": [
+        "Universal memory/semantic provenance tracking",
+        "Arbitrary third-party providers without idempotency, terminal-status or delivery-fence contracts",
+        "General host-level isolation beyond its protected effect path"
+      ],
+      "live_test_requirements": [
+        "Pin the paper, source commit, provider adapters and contract versions",
+        "Reproduce the declared effect-path inventory and all  retry, overlap, crash and ambiguous-outcome schedules",
+        "Independently inspect provider-side evidence, not only local ledger state",
+        "Compare strict and less restrictive policy profiles for utility costs"
+      ],
+      "official_sources": [
+        "https://arxiv.org/abs/2608.21159"
+      ],
+      "next_action": "Pin prototype and provider-contract versions; reproduce commit revalidation, reservations and ambiguous-delivery fencing."
+    },
+    {
+      "id": "delegateguard-purpose-bound-capabilities",
+      "provider": "Research comparator",
+      "product": "DelegateGuard — Purpose-Bound Capabilities for Delegated LLM Agent Workflows",
+      "evidence_level": "D",
+      "live_test_status": "not_run",
+      "documented_capability_summary": [
+        "External reference monitor attenuates initiating-user authority across purpose, information labels, operations, sinks and delegation depth; data-moving actions are mediated outside the LLM and revocation cascades through the delegation graph",
+        "The abstract reports four baselines, an adaptive within-authority adversary, deterministic trace conformance/scale checks and studies over 517,401 Enron emails",
+        "Author-reported model-action results: two open models proposed attacker-goal actions on 42/45 and 44/45 injected traces, with all proposed actions blocked at execution",
+        "Author-reported 90-run multi-turn study reports leakage falling from 0.844 to 0.20 with full task completion and microsecond-scale per-decision overhead"
+      ],
+      "relevant_research_dimensions": [
+        "delegation_attenuation",
+        "purpose_binding",
+        "information_label_propagation",
+        "sink_authorization",
+        "delegation_depth",
+        "revocation_cascade",
+        "model_in_loop_evaluation",
+        "multi_agent_workflows"
+      ],
+      "documented_scope_or_constraints": [
+        "All quantitative results are author-reported for the paper's exact implementation, two open models, prompts, tasks, observed sinks, baselines and threat assumptions; none has been reproduced in this repository",
+        "The paper's own abstract bounds its claim to declared reference-monitor placement and externally observable sinks; do not infer arbitrary SaaS provider transaction atomicity or uninstrumented internal state coverage",
+        "This is a direct novelty comparator for authority attenuation, purpose binding, information labels, model-independent mediation, revocation cascades and model-in-loop multi-agent evaluation"
+      ],
+      "not_established_by_documentation_alone": [
+        "Independent reproduction of the paper's four-baseline comparison, 42/45 and 44/45 model-action traces or 90-run leakage/utility results",
+        "Atomic commit, delivery fencing or ambiguous-outcome reconciliation at arbitrary third-party providers",
+        "Complete semantic dependency discovery for hidden model context and uninstrumented memory outside the declared monitor boundary"
+      ],
+      "live_test_requirements": [
+        "Retrieve and pin the full paper version, implementation and all released task/configuration artefacts",
+        "Reproduce the native four-baseline comparison and declared adaptive attacker before mapping any scenario to PACA",
+        "Retain per-model traces, capability decisions, sink-side outcomes and benign utility",
+        "Compare only common observable-sink workflows without weakening the native monitor or changing its threat model"
+      ],
+      "official_sources": [
+        "https://arxiv.org/abs/2610.16005"
+      ],
+      "next_action": "Pin the paper, implementation and its baseline artefacts; reproduce the native adaptive-adversary, model-action and multi-turn experiments before making any distinct contribution claim."
+    },
+    {
+      "id": "delegation-without-trust",
+      "provider": "Research comparator",
+      "product": "Delegation Without Trust — An Empirical Gap Analysis of Identity, Authorization, and Runtime Governance in Multi-Agent LLM Systems",
+      "evidence_level": "D",
+      "live_test_status": "not_run",
+      "documented_capability_summary": [
+        "Authorization broker is designed for an untrusted-model threat model covering confused deputy, token theft/replay, prompt-injection privilege escalation and compromised sub-agents",
+        "Paper-reported broker tests resist 11 direct design attacks and accept 0 of 200,000 forged tokens",
+        "In 2,000 randomized synthetic scenarios, the paper reports mean reachable actions of 1.5 under broker-constrained delegation versus all 8,100 actions under bearer delegation; reported decision cost is about 2.6 microseconds"
+      ],
+      "relevant_research_dimensions": [
+        "untrusted_model_assumption",
+        "authorization_broker",
+        "delegated_authority",
+        "sub_agent_confinement",
+        "token_replay",
+        "prompt_injection_privilege_escalation",
+        "cross_framework_comparison"
+      ],
+      "documented_scope_or_constraints": [
+        "The figures are author-reported for a separate minimal Python reference implementation and an abstract tool/resource-action model; they are not independently reproduced here",
+        "The paper says its broker was not integrated end-to-end with the evaluated frameworks and was not run with a live model; its framework comparisons do not prove that every version, plugin or deployment has identical coverage",
+        "The broker design and untrusted-model threat model directly challenge generic PACA claims about delegated authorization and model-independent enforcement"
+      ],
+      "not_established_by_documentation_alone": [
+        "Independent replication of the 11 attack, 200,000 token, 2,000-scenario and latency results",
+        "End-to-end framework/provider integration, live-model effectiveness or arbitrary provider-side commit atomicity",
+        "Semantic lineage inference across arbitrary paraphrase, reconstruction or hidden memory context"
+      ],
+      "live_test_requirements": [
+        "Pin the paper version and any public broker implementation, dependencies and configuration",
+        "Reproduce the four named threat classes and the paper's exact authorization-broker baseline",
+        "Verify the identity, token, delegation and sink boundaries with independent traces",
+        "Run matched benign workflows and disclose unsupported framework/provider paths"
+      ],
+      "official_sources": [
+        "https://arxiv.org/abs/2609.00267"
+      ],
+      "next_action": "Pin the paper and broker artefact and reproduce its broker security tests, framework coverage assumptions and model-in-loop limitations before making a novelty comparison."
+    },
+    {
+      "id": "paca-plus-plus",
+      "provider": "Project under evaluation",
+      "product": "PACA++",
+      "evidence_level": [
+        "I",
+        "R",
+        "S",
+        "F"
+      ],
+      "live_test_status": "research_prototype",
+      "documented_capability_summary": [
+        "Typed authority and information provenance records",
+        "Agent runtime policy evaluation and lifecycle adapters",
+        "SQLite and PostgreSQL-backed local/reference authority state",
+        "Opt-in logical-resource, filesystem and in-process broker commit paths",
+        "Bounded formal models and conformance tests"
+      ],
+      "relevant_research_dimensions": [
+        "authority_lineage",
+        "information_provenance",
+        "memory",
+        "tool_use",
+        "communication",
+        "planning",
+        "local_resource_commit"
+      ],
+      "documented_scope_or_constraints": [
+        "Current benchmark baselines are hand-authored toy models",
+        "AgentDojo runner covers a selected workspace read-tool subset, not the entire suite",
+        "Local logical/filesystem and in-process broker commits are not arbitrary remote-provider transactions",
+        "PostgreSQL authority mode is shared-primary, not a demonstrated distributed-consensus/failover service",
+        "Caller-supplied callbacks, trusted adapters, host, identity sources and protected sink remain part of the trusted computing base",
+        "No independent security certification or complete production deployment validation is claimed"
+      ],
+      "required_next_evidence": [
+        "Independent workflow-template corpus",
+        "Residual gap under strongest feasible layered baselines",
+        "Model-generated transformation and adversarial agent runs",
+        "External provider commit/fencing contract and receipts",
+        "Concurrent load, failure, cost and availability evaluation",
+        "Independent security review"
+      ],
+      "official_sources": [
+        "https://github.com/sanafirdouse2323-glitch/PACA-Plus-Plus-New"
+      ]
+    }
+  ],
+  "baseline_profiles": [
+    {
+      "id": "B0",
+      "name": "No enforcement",
+      "type": "negative_control",
+      "evidence_level": "S",
+      "purpose": "Verify that the selected scenario can trigger the prohibited effect in the project harness."
+    },
+    {
+      "id": "B1",
+      "name": "Existing hand-authored PACA simulator baselines",
+      "type": "simulation_only",
+      "evidence_level": "S",
+      "purpose": "Internal regression and sanity check only; never substitute for AWS, NVIDIA, Microsoft, Google or research artefacts."
+    },
+    {
+      "id": "B2-native",
+      "name": "Each eligible native product or research artefact",
+      "type": "native_profile",
+      "evidence_level": "D_or_R_or_V_according_to_actual_run",
+      "purpose": "Run each eligible external product and research artefact separately in its strongest supported native configuration, without changing semantics. DelegateGuard and Delegation Without Trust are close prior-art baselines and require their own pinned native reproductions where artefacts and dependencies permit."
+    },
+    {
+      "id": "B3-layered",
+      "name": "Strongest compatible layered controls",
+      "type": "integrated_native_profile",
+      "evidence_level": "not_run",
+      "purpose": "Test only an actually interoperable strongest combination of identity, gateway/temporal enforcement, runtime isolation and provenance/authorization controls. Include a research capability/broker PEP such as DelegateGuard or Delegation Without Trust only after a real integration smoke test; record token/session/identity translation and routing boundaries."
+    },
+    {
+      "id": "P",
+      "name": "PACA candidate treatment",
+      "type": "candidate_treatment",
+      "evidence_level": "S_or_R_or_F_according_to_actual_run",
+      "purpose": "Evaluate against the strongest applicable baseline; no superiority assumed."
+    }
+  ],
+  "comparison_rules": [
+    "Do not treat vendor products as interchangeable layers or rank them on a generic security score.",
+    "Never treat a hand-authored imitation as the vendor product.",
+    "Keep documentation, code inspection, reproduction, vendor execution, simulation and formal results in separate evidence classes.",
+    "Compare identical policy intent and observable opportunities only where the native interfaces support them without semantic changes.",
+    "If a native system cannot accept a common scripted input without bypassing it, report its native result separately and do not pool it with paired results.",
+    "A missing documented capability is not a reproduced product failure.",
+    "If all strongest applicable baselines pass, do not build a new extension for that requirement."
+  ]
+}

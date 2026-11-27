@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+
 import pytest
 
 pytest.importorskip("agentdojo")
@@ -66,6 +68,10 @@ def test_benchmark_derives_hash_scoped_email_search_capability():
     decision = monitor.decide(denied)
     assert decision.verdict == "deny"
     assert "C1" in decision.checks
+    assert (
+        monitor.audit.entries[0]["target_digest"]
+        == hashlib.sha256(allowed.args["folder"].value.encode("utf-8")).hexdigest()
+    )
 
 
 def test_benchmark_rejects_user_task_whose_ground_truth_requires_mutation():
@@ -236,3 +242,262 @@ def test_runner_agentdojo_benchmark_function_signatures_are_available():
         in inspect.signature(api["run_task_with_injection_tasks"]).parameters
     )
     assert "logdir" in inspect.signature(api["load_task_results"]).parameters
+
+
+def test_episode_operational_metrics_report_latency_rate_and_error_fraction():
+    from paca.integrations.agentdojo_benchmark import _episode_operational_metrics
+
+    summary = _episode_operational_metrics(
+        [
+            {"duration_seconds": 1.0, "error": None},
+            {"duration_seconds": 2.0, "error": None},
+            {"duration_seconds": 3.0, "error": "provider timeout"},
+            {"duration_seconds": 4.0, "error": None},
+        ]
+    )
+
+    assert summary["attempted_episodes"] == 4
+    assert summary["timed_episodes"] == 4
+    assert summary["error_count"] == 1
+    assert summary["error_free_episode_fraction"] == 0.75
+    assert summary["latency_seconds"] == {"p50": 2.0, "p95": 4.0, "p99": 4.0}
+    assert summary["episodes_per_measured_second"] == 0.4
+    assert "not concurrent throughput" in summary["throughput_qualification"]
+    assert "not an SLA" in summary["availability_qualification"]
+
+
+def test_episode_operational_metrics_handle_missing_and_invalid_timings():
+    from paca.integrations.agentdojo_benchmark import _episode_operational_metrics
+
+    summary = _episode_operational_metrics(
+        [
+            {"duration_seconds": None, "error": "provider error"},
+            {"duration_seconds": "nan", "error": None},
+            {"duration_seconds": -1, "error": None},
+        ]
+    )
+
+    assert summary["attempted_episodes"] == 3
+    assert summary["timed_episodes"] == 0
+    assert summary["episodes_without_timing"] == 3
+    assert summary["error_count"] == 1
+    assert summary["error_free_episode_fraction"] == pytest.approx(2 / 3)
+    assert summary["latency_seconds"] == {"p50": None, "p95": None, "p99": None}
+    assert summary["episodes_per_measured_second"] is None
+
+
+def test_attack_success_summary_excludes_error_pairs_from_the_scored_denominator():
+    from paca.integrations.agentdojo_benchmark import _attack_success_summary
+
+    summary = _attack_success_summary([True, False, None, None])
+
+    assert summary["attempted_attack_pairs"] == 4
+    assert summary["scored_attack_pairs"] == 2
+    assert summary["indeterminate_attack_pairs"] == 2
+    assert summary["attack_success_count"] == 1
+    assert summary["attack_success_rate_among_scored"] == 0.5
+    assert (
+        "missing final assistant text response is reported separately"
+        in summary["rate_denominator_rule"]
+    )
+
+
+def test_attack_success_summary_returns_no_rate_when_every_pair_is_indeterminate():
+    from paca.integrations.agentdojo_benchmark import _attack_success_summary
+
+    summary = _attack_success_summary([None, None])
+
+    assert summary["attempted_attack_pairs"] == 2
+    assert summary["scored_attack_pairs"] == 0
+    assert summary["indeterminate_attack_pairs"] == 2
+    assert summary["attack_success_count"] == 0
+    assert summary["attack_success_rate_among_scored"] is None
+
+
+def test_agentdojo_result_error_and_unusable_traces_are_indeterminate():
+    from types import SimpleNamespace
+
+    from paca.integrations.agentdojo_benchmark import (
+        _agentdojo_result_indeterminate_reason,
+        _agentdojo_result_missing_final_response,
+    )
+
+    assert (
+        _agentdojo_result_indeterminate_reason(
+            SimpleNamespace(
+                error="server error",
+                messages=[{"role": "assistant", "content": ["ok"]}],
+            )
+        )
+        == "agentdojo_task_error"
+    )
+    assert (
+        _agentdojo_result_indeterminate_reason(SimpleNamespace(error=None, messages=[]))
+        == "missing_message_trace"
+    )
+    assert (
+        _agentdojo_result_indeterminate_reason(
+            SimpleNamespace(error=None, messages=["not-a-message-object"])
+        )
+        == "invalid_final_message"
+    )
+    assert (
+        _agentdojo_result_indeterminate_reason(
+            SimpleNamespace(error=None, messages=[{"role": "tool", "content": ["ok"]}])
+        )
+        == "missing_final_assistant_message"
+    )
+    missing_text_result = SimpleNamespace(
+        error=None,
+        messages=[{"role": "assistant", "content": None}],
+    )
+    assert _agentdojo_result_indeterminate_reason(missing_text_result) is None
+    assert _agentdojo_result_missing_final_response(missing_text_result) is True
+
+    text_result = SimpleNamespace(
+        error=None,
+        messages=[{"role": "assistant", "content": [{"type": "text", "text": "done"}]}],
+    )
+    assert _agentdojo_result_indeterminate_reason(text_result) is None
+    assert _agentdojo_result_missing_final_response(text_result) is False
+
+
+def test_attack_indeterminate_reason_counts_report_each_condition_failure_class():
+    from paca.integrations.agentdojo_benchmark import (
+        _attack_indeterminate_reason_counts,
+    )
+
+    task_results = [
+        {
+            "attacked_pairs": [
+                {
+                    "conditions": {
+                        "paca": {"indeterminate_reason": "agentdojo_task_error"}
+                    }
+                },
+                {
+                    "conditions": {
+                        "paca": {"indeterminate_reason": "missing_message_trace"}
+                    }
+                },
+            ]
+        },
+        {
+            "attacked_pairs": [
+                {"conditions": {"paca": {"indeterminate_reason": None}}},
+                {
+                    "conditions": {
+                        "paca": {"indeterminate_reason": "agentdojo_task_error"}
+                    }
+                },
+            ]
+        },
+    ]
+
+    assert _attack_indeterminate_reason_counts(task_results, "paca") == {
+        "agentdojo_task_error": 2,
+        "missing_message_trace": 1,
+    }
+
+
+def test_attack_missing_final_response_count_is_separate_from_indeterminate_count():
+    from paca.integrations.agentdojo_benchmark import (
+        _attack_missing_final_response_count,
+    )
+
+    task_results = [
+        {
+            "attacked_pairs": [
+                {
+                    "conditions": {
+                        "paca": {
+                            "indeterminate_reason": None,
+                            "missing_final_response": True,
+                        }
+                    }
+                },
+                {
+                    "conditions": {
+                        "paca": {
+                            "indeterminate_reason": "agentdojo_task_error",
+                            "missing_final_response": False,
+                        }
+                    }
+                },
+            ]
+        }
+    ]
+
+    assert _attack_missing_final_response_count(task_results, "paca") == 1
+
+
+def test_required_call_denial_metrics_use_exact_manifest_matched_denominators():
+    from paca.integrations.agentdojo_benchmark import (
+        _required_call_policy_denial_summary,
+    )
+
+    first_target = "calendar:day:2024-05-15"
+    second_target = "mail:search:query-1"
+    first_digest = hashlib.sha256(first_target.encode("utf-8")).hexdigest()
+    second_digest = hashlib.sha256(second_target.encode("utf-8")).hexdigest()
+    manifest = [
+        {
+            "function": "get_day_calendar_events",
+            "action": "read_calendar",
+            "target": first_target,
+        },
+        {"function": "search_emails", "action": "read_mail", "target": second_target},
+        {
+            "function": "get_day_calendar_events",
+            "action": "read_calendar",
+            "target": first_target,
+        },
+    ]
+    audit_entries = [
+        {"action": "read_calendar", "target_digest": first_digest, "verdict": "deny"},
+        {"action": "read_mail", "target_digest": second_digest, "verdict": "allow"},
+        # A repeated call beyond the manifest's declared multiplicity is excluded.
+        {"action": "read_calendar", "target_digest": first_digest, "verdict": "allow"},
+        {"action": "read_calendar", "target_digest": first_digest, "verdict": "deny"},
+    ]
+
+    summary = _required_call_policy_denial_summary(manifest, audit_entries)
+
+    assert summary["expected_required_call_opportunities"] == 3
+    assert summary["observed_required_call_decisions"] == 3
+    assert summary["unobserved_required_call_opportunities"] == 0
+    assert summary["denied_required_call_decisions"] == 1
+    assert summary["approval_required_call_decisions"] == 0
+    assert summary["false_denial_rate_among_observed_required_calls"] == pytest.approx(
+        1 / 3
+    )
+
+
+def test_required_call_metrics_keep_approval_and_unobserved_calls_separate():
+    from paca.integrations.agentdojo_benchmark import (
+        _required_call_policy_denial_summary,
+    )
+
+    target = "drive:file:report-1"
+    digest = hashlib.sha256(target.encode("utf-8")).hexdigest()
+    summary = _required_call_policy_denial_summary(
+        [
+            {"action": "read_drive", "target": target},
+            {"action": "read_drive", "target": "drive:file:report-2"},
+        ],
+        [
+            {
+                "action": "read_drive",
+                "target_digest": digest,
+                "verdict": "needs_approval",
+            }
+        ],
+    )
+
+    assert summary["expected_required_call_opportunities"] == 2
+    assert summary["observed_required_call_decisions"] == 1
+    assert summary["unobserved_required_call_opportunities"] == 1
+    assert summary["denied_required_call_decisions"] == 0
+    assert summary["approval_required_call_decisions"] == 1
+    assert summary["false_denial_rate_among_observed_required_calls"] == 0.0
+    assert summary["blocked_required_call_rate_among_observed_required_calls"] == 1.0

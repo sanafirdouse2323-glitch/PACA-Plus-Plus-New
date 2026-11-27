@@ -470,7 +470,9 @@ def _broker_access_receipt(
     return receipt
 
 
-def test_postgres_resource_read_and_write_receipts_are_shared_and_replay_safe():
+def test_postgres_resource_read_and_write_receipts_are_shared_and_replay_safe(
+    monkeypatch,
+):
     from paca.authority_runtime import AuthorityRegistryError
     from paca.contracts import digest_object
 
@@ -517,18 +519,36 @@ def test_postgres_resource_read_and_write_receipts_are_shared_and_replay_safe():
         ),
     }
 
-    committed = env["registry_a"].commit_fenced_resource_write(
-        permit,
-        payload,
-        expected_principal="agent-a",
-        access_receipt=write_receipt,
-        provenance_metadata=provenance,
-        protocol_payload_digest=True,
-        expected_resource_version=0,
-    )
-    assert committed["version"] == 1
-    assert committed["idempotent_replay"] is False
+    original_commit = env["registry_a"].commit_fenced_resource_write
 
+    def commit_then_lose_response(*args, **kwargs):
+        original_commit(*args, **kwargs)
+        raise TimeoutError("simulated response loss after PostgreSQL commit")
+
+    monkeypatch.setattr(
+        env["registry_a"],
+        "commit_fenced_resource_write",
+        commit_then_lose_response,
+    )
+    with pytest.raises(TimeoutError, match="response loss"):
+        env["registry_a"].commit_fenced_resource_write(
+            permit,
+            payload,
+            expected_principal="agent-a",
+            access_receipt=write_receipt,
+            provenance_metadata=provenance,
+            protocol_payload_digest=True,
+            expected_resource_version=0,
+        )
+    monkeypatch.setattr(
+        env["registry_a"],
+        "commit_fenced_resource_write",
+        original_commit,
+    )
+
+    # The caller saw a timeout after the shared-primary transaction committed.
+    # The independent registry client must recover that exact operation without
+    # creating a second resource version or charging the budget twice.
     exact_retry = env["registry_b"].commit_fenced_resource_write(
         permit,
         payload,

@@ -295,6 +295,78 @@ def test_workspace_mapper_preserves_prior_output_lineage_on_search_arguments():
     assert "agentdojo_model_argument:query" in request.args["query"].label.origins
 
 
+def test_workspace_adapter_carries_restricted_tool_output_into_next_model_tool_call():
+    capability = _capability(
+        {
+            "mark_mail_read": ("mail:inbox:unread",),
+            "read_mail": ("mail:search:*",),
+        }
+    )
+    context = WorkspaceTaskContext(
+        capability=capability,
+        resource_labeler=_labeler,
+    )
+    base_builder = make_workspace_request_builder(context)
+    captured_requests = []
+
+    def capture_builder(function_name, arguments, env, extra_args):
+        request = base_builder(function_name, arguments, env, extra_args)
+        captured_requests.append(request)
+        return request
+
+    runtime = RuntimeStub(["get_unread_emails", "search_emails"])
+    executor = PacaToolsExecutor(Monitor(), capture_builder)
+
+    first = executor.query(
+        "Read my unread mail",
+        runtime,
+        object(),
+        [
+            {
+                "role": "assistant",
+                "content": None,
+                "tool_calls": [
+                    FunctionCall(function="get_unread_emails", args={}, id="read-1")
+                ],
+            }
+        ],
+        {},
+    )
+    state = first[-1]
+
+    assert state["paca_output_labels"]["read-1:1"].integrity == "untrusted"
+    assert state["paca_output_labels"]["read-1:1"].sensitivity == 2
+    assert state["paca_output_labels"]["read-1:1"].origins == {"fixture:mail"}
+
+    executor.query(
+        "Search the previous result for invoices",
+        runtime,
+        object(),
+        [
+            {
+                "role": "assistant",
+                "content": None,
+                "tool_calls": [
+                    FunctionCall(
+                        function="search_emails",
+                        args={"query": "invoice"},
+                        id="search-1",
+                    )
+                ],
+            }
+        ],
+        state,
+    )
+
+    later_argument = captured_requests[-1].args["query"]
+    assert later_argument.value == "invoice"
+    assert later_argument.label.integrity == "untrusted"
+    assert later_argument.label.sensitivity == 2
+    assert "fixture:mail" in later_argument.label.origins
+    assert "agentdojo_model_argument:query" in later_argument.label.origins
+    assert len(runtime.calls) == 2
+
+
 def test_workspace_mapper_requires_trusted_resource_labeler():
     with pytest.raises(TypeError, match="resource_labeler must be callable"):
         WorkspaceTaskContext(

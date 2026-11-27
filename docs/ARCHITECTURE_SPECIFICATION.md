@@ -221,7 +221,7 @@ The model tracks two linked but distinct histories.
 
 The information graph describes where data came from and how it changed. It records source, object/version, digest, parent dependencies, transformation, tenant, sensitivity, integrity and lifecycle status.
 
-Derived content inherits the conservative combination of its inputs. A summary, embedding, memory record, retrieved value or forwarded message must not silently become more trusted or less sensitive than its dependencies. Unknown or incomplete lineage remains explicitly unknown/incomplete.
+Derived content inherits the conservative combination of its inputs. A summary, embedding, memory record, retrieved value or forwarded message must not silently become less sensitive or erase its dependencies. Model-generated summaries, embeddings, compactions and other generated transformations are marked untrusted even when every input was trusted, while retaining maximum sensitivity and all origin/tenant dependencies. A parent edge and content digest prove recorded origin and byte identity, not semantic correctness. The current reference schema has no authenticated transform-validation receipt or model-output trust-promotion path. Unknown or incomplete lineage remains explicitly unknown/incomplete.
 
 Declassification, redaction or trust reclassification is a privileged, explicit transformation. It requires a named authority, policy rule, evidence, new object/version and audit record. Merely transforming text does not declassify it.
 

@@ -1,0 +1,77 @@
+name: Ratchet independent delegation-broker baseline
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - ".github/workflows/ratchet-baseline.yml"
+      - "docs/industry_comparator_matrix.json"
+      - "docs/SIX_POINT_INDUSTRY_EVALUATION_PROTOCOL.md"
+      - "tests/test_comparator_matrix.py"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  ratchet-core-baseline:
+    name: Reproduce pinned Ratchet core tests and benchmark
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout pinned independent Ratchet source
+        uses: actions/checkout@v4
+        with:
+          repository: 1manideep/ratchet
+          ref: 813afc2b97eadf44e8962f69acf4b027be052e11
+          path: external/ratchet
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Record source and environment identity
+        working-directory: external/ratchet
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "813afc2b97eadf44e8962f69acf4b027be052e11"
+          {
+            echo "repository=https://github.com/1manideep/ratchet"
+            echo "version=0.1.0"
+            echo "commit=$(git rev-parse HEAD)"
+            echo "python=$(python --version)"
+            echo "platform=$(python -c 'import platform; print(platform.platform())')"
+            echo "machine=$(python -c 'import platform; print(platform.machine())')"
+          } | tee ratchet-baseline-environment.txt
+
+      - name: Install only Ratchet core and pytest
+        working-directory: external/ratchet
+        run: |
+          python -m pip install --disable-pip-version-check --no-cache-dir -e packages/ratchet-core pytest
+
+      - name: Run pinned Ratchet core tests
+        working-directory: external/ratchet
+        run: |
+          set -o pipefail
+          pytest -q packages/ratchet-core/tests/ | tee ratchet-core-tests.txt
+
+      - name: Run Ratchet's published paper-number reproduction script
+        working-directory: external/ratchet
+        run: |
+          set -o pipefail
+          python benchmarks/reproduce_paper_numbers.py | tee ratchet-paper-numbers.txt
+
+      - name: Upload raw Ratchet baseline evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ratchet-independent-baseline-813afc2
+          path: |
+            external/ratchet/ratchet-baseline-environment.txt
+            external/ratchet/ratchet-core-tests.txt
+            external/ratchet/ratchet-paper-numbers.txt
+          if-no-files-found: warn
+          retention-days: 90

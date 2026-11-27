@@ -366,6 +366,41 @@ def test_summarisation_and_compaction_keep_source_lineage(tmp_path):
     )
 
 
+def test_model_generated_memory_downgrades_trusted_source_integrity(tmp_path):
+    env = _environment(tmp_path)
+    env["connector"].integrity = "trusted"
+    source = _ingest(env, {"text": "authenticated internal policy"})
+
+    assert source.label.integrity == "trusted"
+
+    summary = env["memory"].summarise(
+        {"summary": "model-generated policy summary"},
+        source,
+        object_id="mem/trusted-source-summary",
+        version_id="v1",
+        purpose="prepare-report",
+        capability_token=env["root"].token,
+    )
+    compacted = env["memory"].compact(
+        {"summary": "model-generated compacted policy summary"},
+        summary,
+        object_id="mem/trusted-source-compacted",
+        version_id="v1",
+        purpose="prepare-report",
+        capability_token=env["root"].token,
+    )
+
+    for derived in (summary, compacted):
+        assert derived.label.integrity == "untrusted"
+        assert derived.label.sensitivity == source.label.sensitivity
+        assert derived.label.tenants == source.label.tenants
+        assert derived.label.origins == source.label.origins
+        node = env["repo"].get_node(next(iter(derived.lineage_refs)))
+        assert node is not None
+        assert node.source_class == "model_generated"
+        assert node.label.integrity == "untrusted"
+
+
 def test_revoking_source_lineage_blocks_derived_memory_before_value_fetch(
     tmp_path, monkeypatch
 ):
