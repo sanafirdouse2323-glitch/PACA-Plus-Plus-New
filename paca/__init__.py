@@ -30,6 +30,14 @@ from .durable import (
 from .engine import PolicyEngine
 from .evaluator import evaluate_policy, evaluate_policy_set
 from .filesystem_commit import FilesystemFencedResourceExecutor
+from .lifecycle import (
+    LifecycleAuditEvent,
+    LifecyclePhase,
+    LifecycleSecurityController,
+    LifecycleSecurityError,
+    LifecycleSecurityPolicy,
+    LifecycleSession,
+)
 from .memory import (
     HMACAgentMessageCodec,
     MemoryAccessContext,
@@ -80,6 +88,12 @@ __all__ = [
     "InProcessBrokerWriteMediator",
     "ImmutableLineageConflict",
     "Label",
+    "LifecycleAuditEvent",
+    "LifecyclePhase",
+    "LifecycleSecurityController",
+    "LifecycleSecurityError",
+    "LifecycleSecurityPolicy",
+    "LifecycleSession",
     "LineageIntegrityError",
     "LineageNode",
     "MemoryAccessContext",
