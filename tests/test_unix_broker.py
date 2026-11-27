@@ -481,7 +481,9 @@ def test_unprivileged_worker_uses_broker_without_direct_file_access():
                 expected_server_uid=0,
             ).request(lambda session: {"operation": "read"})
             marker = "blocked" if direct_access_blocked else "direct-access-allowed"
-            payload = f"{marker}:{response['principal_id']}".encode("ascii")
+            payload = (
+                f"{marker}:{response['principal_id']}:{response['content']}"
+            ).encode("ascii")
             os.write(result_write, payload)
             os._exit(0)
         except BaseException:
@@ -495,11 +497,16 @@ def test_unprivileged_worker_uses_broker_without_direct_file_access():
     thread = None
     ready_signalled = False
     worker_reaped = False
+    def broker_read(_message, session):
+        with open(protected_path, "rb") as protected_file:
+            content = protected_file.read().decode("ascii")
+        return {"principal_id": session.principal_id, "content": content}
+
     try:
         server = UnixDomainBrokerServer(
             socket_path,
             peer_bindings={worker_uid: _binding(uid=worker_uid, gid=worker_gid)},
-            dispatcher=lambda _message, session: {"principal_id": session.principal_id},
+            dispatcher=broker_read,
             socket_mode=0o660,
             socket_gid=worker_gid,
         )
@@ -514,7 +521,7 @@ def test_unprivileged_worker_uses_broker_without_direct_file_access():
         worker_reaped = True
         assert os.WIFEXITED(worker_status)
         assert os.WEXITSTATUS(worker_status) == 0, payload
-        assert payload == b"blocked:agent-17"
+        assert payload == b"blocked:agent-17:broker-only"
     finally:
         if not ready_signalled:
             with contextlib.suppress(OSError):
