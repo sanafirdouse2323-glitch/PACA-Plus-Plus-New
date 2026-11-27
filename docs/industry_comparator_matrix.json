@@ -1,11 +1,11 @@
 {
   "schema_version": "1.0.0",
-  "as_of": "2026-11-26",
+  "as_of": "2026-11-27",
   "repository": {
     "name": "PACA-Plus-Plus-New",
     "baseline_branch": "main",
-    "baseline_commit": "ef449fb9813f4070de07143981a2d5ca22cf7ded",
-    "evaluation_branch": "research/six-point-evaluation-2026-11-26",
+    "baseline_commit": "b2e68277d2604c730fd5ae0c86a49ded20a72ef5",
+    "evaluation_branch": "main",
     "evaluation_status": "protocol_and_initial_conformance_tests_only",
     "no_live_vendor_comparison_claim": true
   },
