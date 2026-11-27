@@ -19,9 +19,9 @@ the existing local-file read/write mediators.
 
 **Limited two-UID evidence now exists.** The root-only CI job runs the broker under
 UID 0 and a worker under the unprivileged `nobody` UID. It verifies that the worker
-can use the group-restricted broker socket while a broker-owned mode-0600 test file
-cannot be opened directly by that worker. The child-process test also verifies that
-the broker can run in a separate process.
+can use the group-restricted broker socket to retrieve the content of a broker-read
+mode-0600 test file, while that same file cannot be opened directly by the worker.
+The child-process test also verifies that the broker can run in a separate process.
 
 **Not established:** complete mediation of every path. This fixture covers one local
 socket and one protected file, not all host resources. Workers can still bypass the
