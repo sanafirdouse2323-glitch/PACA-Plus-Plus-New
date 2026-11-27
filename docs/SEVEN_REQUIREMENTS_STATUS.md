@@ -17,11 +17,18 @@ configuration, and the worker checks the expected broker UID. Each connection ha
 a fresh session and carries one signed operation. The transport can dispatch only
 the existing local-file read/write mediators.
 
-**Not established:** complete mediation of every path. Workers can still bypass the
+**Limited two-UID evidence now exists.** The root-only CI job runs the broker under
+UID 0 and a worker under the unprivileged `nobody` UID. It verifies that the worker
+can use the group-restricted broker socket while a broker-owned mode-0600 test file
+cannot be opened directly by that worker. The child-process test also verifies that
+the broker can run in a separate process.
+
+**Not established:** complete mediation of every path. This fixture covers one local
+socket and one protected file, not all host resources. Workers can still bypass the
 socket unless deployment policy removes direct filesystem, database, provider,
 subprocess and framework access. The adapter is not automatically wired into every
-PACAAgentRuntime or third-party tool. Deployment under separate OS identities and
-host-level denial testing are still required.
+PACAAgentRuntime or third-party tool. Production service users, real protected stores
+and every relevant execution path still need host-specific denial testing.
 
 ## 2. Protect every consequential resource and provider commit
 
@@ -73,9 +80,10 @@ session.
 
 Some bypass tests intentionally demonstrate that direct host/framework calls remain
 possible outside PACA hooks. They are evidence of current scope limits, not proof that
-those bypasses are blocked. Tests under distinct real service users, direct access
-denial to protected stores, provider races, multi-host failures and sustained load
-remain outstanding.
+those bypasses are blocked. The new root-only CI fixture checks one unprivileged worker
+against one protected file and one broker socket. Real application resources, other
+host access paths, provider races, multi-host failures and sustained load remain
+outstanding.
 
 ## 6. Matched live-agent experiments against strong existing baselines
 
