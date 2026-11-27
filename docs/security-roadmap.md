@@ -27,6 +27,8 @@
 | Formal models | Bounded authorization and lifecycle TLA+ specifications, checked with TLC | Proof of Python implementation refinement, real database atomicity, host isolation or full lifecycle security |
 | Evaluation | Deterministic simulator, adapter tests, protocol fixtures and a limited AgentDojo runner | Independent benchmark results or demonstrated real-world attack prevention |
 
+The lifecycle controller's process-local digest cache is bounded and fails closed at capacity, but it is not durable or shared across controller instances. Generic Python executor callbacks remain trusted host configuration; the manifest digest does not independently prove callback-code identity. These are explicit prototype limits, not completed lifecycle guarantees.
+
 ## Confirmed evidence and its limits
 
 The simulator has 30 author-written deterministic attack scenarios and 11 benign workflows. Its baselines are hand-authored comparators. This is useful for regression tests and ablations, but the scenarios are not an independent benchmark and do not establish production security effectiveness.
