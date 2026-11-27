@@ -74,7 +74,7 @@ def test_consequential_request_requires_complete_lineage_and_pinned_tool():
     controller = _controller()
     with pytest.raises(LifecycleSecurityError, match="complete trusted lineage"):
         controller.authorize_request(_request(complete=False))
-    with pytest.raises(LifecycleSecurityError, match="digest-pinned"):
+    with pytest.raises(LifecycleSecurityError, match="typed tool manifest"):
         controller.authorize_request(_request(tool=False))
 
 
