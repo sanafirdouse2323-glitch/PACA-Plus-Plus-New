@@ -63,7 +63,6 @@ def _stop_server(server, thread) -> None:
     assert not thread.is_alive()
 
 
-
 def _serve_child_broker(socket_path: str, ready, stop) -> None:
     server = UnixDomainBrokerServer(
         socket_path,
@@ -82,6 +81,7 @@ def _serve_child_broker(socket_path: str, ready, stop) -> None:
         server.shutdown()
         thread.join(timeout=3)
         server.server_close()
+
 
 def test_one_shot_session_is_kernel_bound_and_unique_per_connection(tmp_path):
     seen: list[tuple[dict[str, object], BrokerSessionContext]] = []
