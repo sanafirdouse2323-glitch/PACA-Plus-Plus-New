@@ -290,3 +290,18 @@ def test_client_rejects_a_different_broker_uid_before_receiving_session(tmp_path
     finally:
         _stop_server(server, thread)
     assert calls == []
+
+
+def test_group_writable_parent_directory_is_rejected(tmp_path):
+    parent = tmp_path / "group-writable"
+    parent.mkdir()
+    parent.chmod(0o770)
+    try:
+        with pytest.raises(ValueError, match="group/world-writable"):
+            UnixDomainBrokerServer(
+                str(parent / "broker.sock"),
+                peer_bindings={os.geteuid(): _binding(gid=os.getegid())},
+                dispatcher=lambda message, session: {"ok": True},
+            )
+    finally:
+        parent.chmod(0o700)
