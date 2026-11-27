@@ -3,7 +3,7 @@
 **Research scope:** security of LLM-based agents across their lifecycle.  
 **Repository boundary:** this document applies only to `PACA-Plus-Plus-New`. It does not define or implement the enterprise gateway project in the separate `PACA-Plus-Plus` repository.  
 **Research status:** research architecture and work programme with a partially implemented reference lifecycle control; not a completed implementation or validated security guarantee.  
-**Implementation snapshot:** 27 November 2026, `main` commit `b2e68277d2604c730fd5ae0c86a49ded20a72ef5` after PR #48. Research claims and hypotheses below remain unvalidated until independently evaluated.
+**Implementation snapshot:** 27 November 2026, merge commit `b2e68277d2604c730fd5ae0c86a49ded20a72ef5` on `main` after PR #48. Later documentation-only commits do not change the implementation. Research claims and hypotheses below remain unvalidated until independently evaluated.
 
 ## 1. Research objective
 
