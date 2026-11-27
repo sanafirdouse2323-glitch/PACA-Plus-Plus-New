@@ -10,13 +10,13 @@ prompts, completions, headers or credentials.
 from __future__ import annotations
 
 import argparse
+import concurrent.futures
 import json
 import math
 import os
 import subprocess
 import sys
 import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -395,9 +395,9 @@ def run_concurrent_agentdojo_load(
         record["duration_seconds"] = round(worker_end - worker_start, 6)
         return record
 
-    with ThreadPoolExecutor(max_workers=concurrency) as pool:
+    with concurrent.futures.ThreadPoolExecutor(max_workers=concurrency) as pool:
         futures = [pool.submit(execute_worker, index) for index in range(1, repetitions + 1)]
-        for future in as_completed(futures):
+        for future in concurrent.futures.as_completed(futures):
             worker_results.append(future.result())
     worker_results.sort(key=lambda item: item["worker_id"])
     wall_clock = time.perf_counter() - run_started
