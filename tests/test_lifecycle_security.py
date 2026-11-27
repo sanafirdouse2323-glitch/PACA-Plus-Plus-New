@@ -128,4 +128,3 @@ def test_legacy_capability_without_lineage_is_rejected_by_default():
     request.cap.authority_lineage = None
     with pytest.raises(LifecycleSecurityError, match="immutable authority lineage"):
         controller.authorize_request(request)
-
