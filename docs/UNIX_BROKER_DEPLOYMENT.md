@@ -15,7 +15,9 @@ is accessible only to the broker.
 - Run each worker under a dedicated, unprivileged UID. Do not give the worker direct
   filesystem, database or provider credentials for resources that are meant to be
   protected.
-- Put the socket in an existing broker-owned directory that is not world-writable.
+- Put the socket in an existing broker-owned directory owned by the broker UID. Its
+  path must contain no symlink components, and the directory must not be group- or
+  world-writable.
   Use mode 0600 for one UID or 0660 with a dedicated group. Do not put it in a
   shared writable temporary directory.
 - Configure PeerBinding from trusted deployment configuration. The server uses
