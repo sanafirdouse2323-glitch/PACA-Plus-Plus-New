@@ -14,6 +14,7 @@ and restrict workers' filesystem/network access independently.
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import json
 import math
@@ -30,7 +31,6 @@ from typing import Any
 
 from .contracts.broker import BrokerSessionContext
 
-_PEER_CREDENTIALS = "SO_PEERCRED"
 _SESSION_DOMAIN = b"PACA++/UNIX-BROKER-SESSION/V1\n"
 _ALLOWED_OPERATIONS = frozenset({"read", "write"})
 _DEFAULT_FRAME_LIMIT = 1_048_576
@@ -120,12 +120,18 @@ Dispatcher = Callable[
 class BrokerMediatorDispatcher:
     """Expose only the existing local-file read and write mediators."""
 
-    def __init__(self, *, read_mediator: Any = None, write_mediator: Any = None) -> None:
+    def __init__(
+        self, *, read_mediator: Any = None, write_mediator: Any = None
+    ) -> None:
         if read_mediator is None and write_mediator is None:
             raise ValueError("at least one broker mediator must be configured")
-        if read_mediator is not None and not callable(getattr(read_mediator, "read", None)):
+        if read_mediator is not None and not callable(
+            getattr(read_mediator, "read", None)
+        ):
             raise TypeError("read_mediator must expose read(message, session=...)")
-        if write_mediator is not None and not callable(getattr(write_mediator, "write", None)):
+        if write_mediator is not None and not callable(
+            getattr(write_mediator, "write", None)
+        ):
             raise TypeError("write_mediator must expose write(message, session=...)")
         self._read = read_mediator
         self._write = write_mediator
@@ -308,10 +314,8 @@ class _BrokerRequestHandler(socketserver.StreamRequestHandler):
         self.wfile.flush()
 
     def _safe_send(self, value: Mapping[str, Any]) -> None:
-        try:
+        with contextlib.suppress(OSError, BrokerTransportError):
             self._send(value)
-        except (OSError, BrokerTransportError):
-            pass
 
 
 class UnixDomainBrokerServer:
@@ -364,7 +368,11 @@ class UnixDomainBrokerServer:
             ("max_request_bytes", max_request_bytes),
             ("max_response_bytes", max_response_bytes),
         ):
-            if isinstance(value, bool) or not isinstance(value, int) or not 1_024 <= value <= 16_777_216:
+            if (
+                isinstance(value, bool)
+                or not isinstance(value, int)
+                or not 1_024 <= value <= 16_777_216
+            ):
                 raise ValueError(f"{name} must be between 1 KiB and 16 MiB")
         if (
             isinstance(client_timeout, bool)
@@ -440,8 +448,9 @@ class UnixDomainBrokerServer:
         self._server.server_close()
         try:
             current = os.lstat(self.socket_path)
-            if self._socket_identity == (current.st_dev, current.st_ino) and stat.S_ISSOCK(
-                current.st_mode
+            if (
+                self._socket_identity == (current.st_dev, current.st_ino)
+                and stat.S_ISSOCK(current.st_mode)
             ):
                 os.unlink(self.socket_path)
         except FileNotFoundError:
