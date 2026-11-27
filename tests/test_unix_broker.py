@@ -258,9 +258,11 @@ def test_concurrent_connections_receive_distinct_sessions_and_one_result_each(tm
         return {"operation_id": message["operation_id"]}
 
     path, server, thread = _start_server(tmp_path, dispatch)
-    client = UnixDomainBrokerClient(path, expected_server_uid=os.geteuid())
     try:
         def send(index: int):
+            client = UnixDomainBrokerClient(
+                path, expected_server_uid=os.geteuid(), timeout=10.0
+            )
             return client.request(
                 lambda session: {
                     "operation": "read",
