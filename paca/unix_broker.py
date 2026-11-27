@@ -237,6 +237,7 @@ class _BoundedUnixServer(socketserver.ThreadingMixIn, socketserver.UnixStreamSer
         self.max_response_bytes = max_response_bytes
         self.client_timeout = client_timeout
         self._worker_slots = threading.BoundedSemaphore(max_workers)
+        self.request_queue_size = max_workers * 2
         super().__init__(socket_path, handler, bind_and_activate=True)
 
     def process_request(self, request, client_address) -> None:
