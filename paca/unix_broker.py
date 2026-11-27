@@ -472,11 +472,18 @@ class UnixDomainBrokerClient:
         self,
         socket_path: str,
         *,
+        expected_server_uid: int,
         timeout: float = 5.0,
         max_frame_bytes: int = _DEFAULT_FRAME_LIMIT,
     ) -> None:
         if not isinstance(socket_path, str) or not os.path.isabs(socket_path):
             raise ValueError("socket_path must be an absolute path")
+        if (
+            isinstance(expected_server_uid, bool)
+            or not isinstance(expected_server_uid, int)
+            or expected_server_uid < 0
+        ):
+            raise ValueError("expected_server_uid must be a non-negative integer")
         if (
             isinstance(timeout, bool)
             or not isinstance(timeout, (int, float))
@@ -491,6 +498,7 @@ class UnixDomainBrokerClient:
         ):
             raise ValueError("max_frame_bytes must be between 1 KiB and 16 MiB")
         self.socket_path = socket_path
+        self.expected_server_uid = expected_server_uid
         self.timeout = float(timeout)
         self.max_frame_bytes = max_frame_bytes
 
