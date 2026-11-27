@@ -130,6 +130,7 @@ def test_legacy_capability_without_lineage_is_rejected_by_default():
     with pytest.raises(LifecycleSecurityError, match="immutable authority lineage"):
         controller.authorize_request(request)
 
+
 def test_committed_effect_receipt_capacity_is_bounded_and_fails_closed():
     policy = LifecycleSecurityPolicy(max_committed_effects=128)
     controller = LifecycleSecurityController(policy)
