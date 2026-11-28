@@ -7,7 +7,11 @@ import sqlite3
 from paca.agent_runtime import PACAAgentRuntime
 from paca.authority_runtime import HMACCapabilityAuthority, SQLiteAuthorityRegistry
 from paca.durable import SQLiteProvenanceRepository
-from paca.lifecycle import LifecyclePhase, LifecycleSecurityController
+from paca.lifecycle import (
+    LifecyclePhase,
+    LifecycleSecurityController,
+    LifecycleSecurityError,
+)
 from paca.memory import (
     HMACAgentMessageCodec,
     MemoryAccessDenied,
@@ -620,3 +624,50 @@ def test_integrated_poisoned_memory_cannot_reach_the_fenced_resource_sink(tmp_pa
         and event.decision == "deny"
         for event in env["worker_lifecycle"].audit_events
     )
+
+
+
+def test_reentrant_audit_sink_cannot_stop_then_allow_a_context_transition():
+    controller: LifecycleSecurityController
+
+    def audit_sink(event):
+        if (
+            event.phase == LifecyclePhase.MESSAGE.value
+            and event.decision == "context-validated"
+        ):
+            controller.stop("audit sink requested stop")
+
+    controller = LifecycleSecurityController(
+        clock=lambda: 1_000,
+        audit_sink=audit_sink,
+    )
+    controller.start_session(
+        session_id="audit-reentry-session",
+        principal="agent-a",
+        tenant="acme",
+        task_id="task-1",
+        purpose="research",
+        policy_epoch=3,
+    )
+    invoked = []
+
+    try:
+        controller.run_context_transition(
+            phase=LifecyclePhase.MESSAGE,
+            operation="send",
+            principal="agent-a",
+            tenant="acme",
+            task_id="task-1",
+            purpose="research",
+            policy_epoch=3,
+            subject="worker-b",
+            digest="a" * 64,
+            action=lambda: invoked.append("executed"),
+        )
+    except LifecycleSecurityError as exc:
+        assert "session changed during transition audit" in str(exc)
+    else:
+        raise AssertionError("reentrant audit callback must not authorize the action")
+
+    assert invoked == []
+    assert controller.stopped is True
