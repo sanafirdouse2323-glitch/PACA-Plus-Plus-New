@@ -186,6 +186,7 @@ At minimum compare:
 - a least-privilege tool gate (including a faithful Progent-style comparator where feasible);
 - CaMeL where its architecture and task compatibility permit;
 - multi-CaMeL or its published protocol for inter-agent provenance scenarios;
+- AID-Guard (or its pinned prototype) for commit-time request/provider-state revalidation, reservations, ambiguous-delivery handling and recovery under its declared provider contracts;
 - a generic sandbox-style scoped-permission comparator for a narrowly defined execution-containment baseline;
 - NVIDIA OpenShell as an external runtime-containment baseline, with NVIDIA Sentry evaluated separately only if the required BlueField hardware is available;
 - an explicitly identified OpenAI-hosted Agents API environment or a documented self-hosted environment, not an ambiguous "OpenAI sandbox" label;
