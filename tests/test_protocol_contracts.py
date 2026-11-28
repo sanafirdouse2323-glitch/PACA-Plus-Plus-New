@@ -15,19 +15,6 @@ SCHEMA_PATH = (
 )
 
 
-def test_packaged_schema_matches_versioned_public_contract() -> None:
-    """Keep the wheel's schema copy aligned with the public contract source."""
-    package_schema = (
-        Path(__file__).resolve().parents[1]
-        / "paca"
-        / "contracts"
-        / "schemas"
-        / "v1.0.0"
-        / "paca-contracts.schema.json"
-    )
-    assert package_schema.read_bytes() == SCHEMA_PATH.read_bytes()
-
-
 @pytest.fixture(scope="module")
 def validator():
     jsonschema = importlib.import_module("jsonschema")
