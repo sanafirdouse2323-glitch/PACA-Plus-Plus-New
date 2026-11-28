@@ -98,7 +98,7 @@ uvicorn paca_executor:app --host 127.0.0.1 --port 8000
 
 The built-in simulator has 30 author-written deterministic attack scenarios and 11 benign workflows. Its comparison defences are hand-authored models, not independently deployed products. Results are internal development evidence, not an independent benchmark or proof of real-agent attack resistance.
 
-The checked-in `docs/index.html` and `docs/results.json` are historical snapshots. CI regenerates simulator output as an artifact. AgentDojo adapter tests and dry-run preflight do not count as live-agent evaluation. The billable live-model benchmark runs only for a pull request explicitly labelled `run-live-agentdojo` and only when the protected `OPENAI_API_KEY` secret is configured.
+The checked-in `docs/index.html` and `docs/results.json` are historical snapshots. CI regenerates simulator output as an artifact. AgentDojo adapter tests and dry-run preflight do not count as live-agent evaluation. The billable live-model benchmark runs only for a pull request explicitly labelled `run-live-agentdojo` and only when the protected `OPENAI_API_KEY` secret is configured. Ordinary branch pushes do not run the live benchmark.
 
 Important unresolved boundaries include:
 
