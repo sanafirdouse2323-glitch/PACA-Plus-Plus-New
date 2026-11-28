@@ -29,7 +29,7 @@ extended = [
     "langchain==1.5.2",
     "langgraph-checkpoint-postgres==3.2.1",
 ]
-# Research is additive to Extended; Docker and TLA+/TLC are external tools.
+# Repeat Extended's dependencies below so Research installs independently; Docker and TLA+/TLC are external tools.
 research = [
     "cryptography>=42.0.0",
     "jsonschema>=4.23,<5",

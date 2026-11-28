@@ -459,4 +459,7 @@ rerun stochastic conditions across multiple seeds where supported.
 The existing PACA++ paca bench scores are from scenarios authored in this repository.
 They must not be combined with AgentDojo scores or presented as AgentDojo results.
 No comparative effectiveness claim should be made until actual AgentDojo runs have
-completed under a documented, matched configuration.
+completed under a documented, matched configuration. The repository CI workflow
+runs the live-model job only for a pull request carrying the `run-live-agentdojo`
+label and a configured protected `OPENAI_API_KEY` secret. Routine branch pushes,
+adapter tests and dry-run preflight do not run the live benchmark.
