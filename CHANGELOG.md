@@ -19,6 +19,8 @@ This section records changes merged to `main` after the 0.3.2 packaging release.
 - Adds lifecycle-session checks to `PACAAgentRuntime.delegate()`, `send_message()` and `receive_message()` when lifecycle security is configured. The checks bind the relevant capability to the active principal, tenant, task, purpose and policy epoch; regression tests and an offline SQLite example cover selected trusted and untrusted paths. This does not mediate direct issuer/codec calls or other transports and does not establish complete lifecycle mediation.
 - Gates Docker publication on the Python matrix, wheel smoke test, AgentDojo adapter, lint/type checks, LangGraph, PostgreSQL checkpoint, installation-profile security contracts and broker UID-isolation checks.
 - Strengthens release validation with repository-wide Ruff checks, selected security-critical mypy checks, profile and broker-isolation tests, and a tag-ancestry check requiring release commits to be reachable from `main`.
+- Changes the CI Docker job to build and locally inspect an image without GHCR login or package-write permission; ordinary `main` pushes no longer publish container tags.
+- Restricts container publication to validated version-tag releases, checks the release-triggering account against the repository-owner publisher allowlist, and places GitHub Release publication behind the `paca-release` environment. The administrator must configure required reviewers, branch protection and tag protection in GitHub settings.
 
 These are reference implementations. They do not establish complete lifecycle mediation or independently measured real-world security effectiveness.
 
