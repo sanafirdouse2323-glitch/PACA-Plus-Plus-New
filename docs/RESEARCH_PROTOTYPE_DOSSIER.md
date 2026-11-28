@@ -118,8 +118,11 @@ Use the project environment and run the focused suite:
 
 ```bash
 python -m pip install -e ".[dev]"
-python -m pytest tests/test_lifecycle_communication.py -q
+python examples/lifecycle_security_demo.py --output /tmp/paca-lifecycle-demo.json
+python -m pytest tests/test_lifecycle_communication.py tests/test_lifecycle_demo_cli.py -q
 ```
+
+The executable example runs two local SQLite scenarios and writes a metadata-only JSON trace: a benign delegated message-to-fenced-write path and a poisoned-memory denial path. It uses demo-only HMAC keys, a deterministic plan fixture and a permissive memory metadata callback to isolate the lifecycle/session path. It is not a live LLM evaluation, provider test or deployment configuration.
 
 The full repository CI additionally exercises the Python version matrix, installation profiles, broker UID isolation, AgentDojo adapter, LangGraph integrations, PostgreSQL checkpoint integration, wheel smoke test and repository formatting/lint checks. The branch and commit under review should be used when reproducing the candidate, rather than assuming the change is already on `main`.
 
