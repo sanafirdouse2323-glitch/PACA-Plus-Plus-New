@@ -3,9 +3,9 @@
 **Research scope:** security of LLM-based agents across their lifecycle.  
 **Repository boundary:** this document applies only to `PACA-Plus-Plus-New`. It does not define or implement the enterprise gateway project in the separate `PACA-Plus-Plus` repository.  
 **Research status:** research architecture and work programme with a partially implemented reference lifecycle control; not a completed implementation or validated security guarantee.  
-**Implementation snapshot:** 27 November 2026, merge commit `c9d06c4796a9fb0a04cd5db1ca4c792d2396506a` on `main` after PR #49. The later documentation changes do not alter that implementation baseline. Research claims and hypotheses remain unvalidated until independently evaluated.
+**Earlier implementation baseline:** 27 November 2026, merge commit `c9d06c4796a9fb0a04cd5db1ca4c792d2396506a` on `main` after PR #49. This is retained as the baseline for the earlier lifecycle-controller assessment.
 
-**PR #59 (28 November 2026):** a separate research branch adds session checks to delegation and message send/receive when those operations go through the configured PACA runtime. It also includes an offline example with a trusted-source case and an untrusted-source case. This work is not part of the `main` branch baseline described above. It applies only to the runtime paths covered by the change. Further details are in the [prototype dossier](RESEARCH_PROTOTYPE_DOSSIER.md) and the [communication integration notes](LIFECYCLE_COMMUNICATION_INTEGRATION.md).
+**Current implementation snapshot:** 28 November 2026, merge commit `c45732707cbfccf44bc4903300250f21184aa128` on `main` after PR #59. PR #59 adds session checks to delegation and message send/receive through the configured PACA runtime, together with an offline two-case example and regression tests. This update changes the covered runtime paths; it does not establish complete lifecycle mediation. Main CI run #1062 and release-validation run #841 passed on this commit; the credential-dependent live AgentDojo benchmark was skipped. Research claims and hypotheses remain unvalidated until independently evaluated. Further details are in the [prototype dossier](RESEARCH_PROTOTYPE_DOSSIER.md) and the [communication integration notes](LIFECYCLE_COMMUNICATION_INTEGRATION.md).
 
 ## 1. Research objective
 
