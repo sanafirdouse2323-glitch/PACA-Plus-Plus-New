@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pickle
 
-import paca.integrations as integrations
+from paca import integrations
 from paca.integrations import providers
 
 
