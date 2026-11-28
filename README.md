@@ -1,30 +1,18 @@
-# PAC++ New
+# PACA++ New
 
 **Status: security research prototype. Not production-ready.**
 
-PAC++ New explores provenance-aware, capability-based authorization across selected LLM-agent boundaries. It contains a policy monitor, explicit provenance and authority records, durable memory/authority components, framework adapters, read-only provider connectors, a deterministic simulator and bounded TLA+ models.
+PACA++ New investigates provenance-aware, capability-based authorisation across selected LLM-agent lifecycle boundaries. The repository contains policy and lifecycle controls, authority and provenance components, local resource mediators, optional execution controls, framework adapters, read-only provider integrations, evaluation tooling and bounded TLA+ models.
 
-It does **not** provide complete lifecycle mediation or a universal security boundary for every input, memory, planning, communication, tool or external-effect path. The repository includes a reference orchestration class, but it protects only calls routed through its configured adapters; security also depends on host-supplied identity, provenance and resource controls.
+It does **not** provide complete lifecycle mediation or a universal security boundary. Only operations routed through configured PACA adapters receive the corresponding checks. Direct host, framework, store, subprocess, network and provider paths can remain outside those boundaries. Do not deploy this project as the sole control protecting sensitive data or consequential actions.
 
-**Repository boundary:** this repository is separate from the [PACA-Plus-Plus enterprise authorization gateway](https://github.com/sanafirdouse2323-glitch/PACA-Plus-Plus). Do not combine their code, deployment claims or research evidence.
+**Repository boundary:** this research project is separate from the [PACA-Plus-Plus enterprise authorisation gateway](https://github.com/sanafirdouse2323-glitch/PACA-Plus-Plus). Their code, deployment claims and evidence must not be combined.
 
-## Research scope and comparator positioning
+## Research question
 
-**PACA++ New is an AI-agent lifecycle-security research project, not an enterprise security gateway.** Its intended research scope is continuous authorization and usage control across an agent's operational lifecycle: input and retrieval, memory/context, planning, tool invocation, inter-agent communication, delegation, and consequential action execution/commit. This describes the research target, not a claim that every stage is currently mediated by the implementation. The current code protects selected paths routed through configured PACA components; direct framework, host, store, subprocess and provider paths can remain outside the boundary.
+The project studies whether authority and information-provenance constraints can remain consistent as an agent moves through input/retrieval, memory, planning, tools, inter-agent communication, delegation and consequential effects.
 
-The distinction from two important research comparators is about *scope*, not a claim that PACA is already more effective:
-
-| Work | Primary focus | Relationship to PACA++ New |
-|---|---|---|
-| **Multi-CaMeL — “Can CaMeLs Talk?”** ([paper](https://arxiv.org/abs/2610.05640)) | Preserving trusted-instruction/untrusted-data separation and provenance across communication in hierarchical agent-as-tool systems; addresses cross-agent “boundary laundering”. | A focused mechanism and direct comparator for PACA's inter-agent communication and delegation stages. Its reported results are specific to its evaluated settings and do not establish coverage of the entire agent lifecycle. |
-| **AID-Guard — “Stateful Authorization for Delegated Agent Effects”** ([paper](https://arxiv.org/abs/2608.21159)) | Authorization-to-effect closure: commit-time request/provider-state revalidation, reservations, and retry/recovery handling under declared provider contracts. | A focused mechanism and direct comparator for PACA's consequential action/effect stage. It addresses a narrower authorization-to-effect lifecycle, not the full memory/planning/communication lifecycle. |
-| **PACA++ New** | A proposed unified lifecycle model spanning memory/context, planning, tool use, communication, delegation and effect execution. | Broader intended lifecycle scope; currently a partial research prototype, not demonstrated complete mediation or a proven superset of the focused guarantees above. |
-
-The key research question is therefore not whether PACA lists more lifecycle stages. It is whether a single, composable model preserves authority and information constraints *between* those stages and provides measurable additional protection beyond focused controls such as Multi-CaMeL and AID-Guard. Those systems should be treated as complementary mechanisms and serious baselines, not dismissed as narrower or weaker implementations. See [the research programme](docs/AGENT_LIFECYCLE_SECURITY_RESEARCH.md) for the comparison and evidence requirements.
-
-## Installation profiles
-
-Three additive dependency profiles are available: **Core** (`.[core]`) for the lightweight authorization/policy/provenance and local-resource reference components; **Extended** (`.[extended]`) for optional PostgreSQL, API, provider-client and framework Python integrations; and **Research** (`.[research]`) for Extended plus AgentDojo and pytest. Docker, PostgreSQL servers, TLA+/TLC, model credentials and secure deployment configuration are **not** installed by pip. The original fine-grained extras remain supported. See [installation profiles and verification gates](docs/INSTALLATION_PROFILES.md).
+The lifecycle is the **research target**, not a claim that every stage is implemented or mediated. The research question is whether a composable model provides measurable protection across transitions beyond focused controls such as [Multi-CaMeL](https://arxiv.org/abs/2610.05640) for cross-agent provenance and [AID-Guard](https://arxiv.org/abs/2608.21159) for delegated effects. PACA++ New has not demonstrated superiority over these systems or a complete lifecycle guarantee. See the [research programme](docs/AGENT_LIFECYCLE_SECURITY_RESEARCH.md).
 
 ## Quick start
 
@@ -38,43 +26,51 @@ python -m paca demo C02 paca
 python -m paca bench /tmp/paca-benchmark
 ```
 
-The benchmark command writes `index.html` and `results.json` into the selected output directory. Use a temporary directory so the checked-in historical report under `docs/` is not overwritten accidentally.
+The benchmark command writes `index.html` and `results.json` to the chosen output directory. Use a temporary directory; the checked-in files under `docs/` are historical report snapshots.
 
-## Run the lifecycle example
-
-After installing the development dependencies, run:
+### Offline lifecycle example
 
 ```bash
 python -m pip install -e ".[dev]"
 python examples/lifecycle_security_demo.py --output /tmp/paca-lifecycle-demo.json
 ```
 
-The example runs two local cases. In the first, a trusted test source is passed between two agents and written through the SQLite resource fence. In the second, the source is marked untrusted and the write is blocked. It exercises the configured runtime's lifecycle-session checks for delegation and message send/receive before the final resource action. The example uses fixed test data and demonstration HMAC keys. It does not call an LLM or an external provider, and it is not a deployment configuration. See [the communication integration notes](docs/LIFECYCLE_COMMUNICATION_INTEGRATION.md) for the exact checks and limits.
+This deterministic, local SQLite example runs one trusted and one untrusted source through selected retrieval, delegation, messaging and resource-write paths. It uses fixed test data, demonstration HMAC keys and a permissive test metadata callback. It does not call an LLM or external provider and is not a deployment recipe. See [the communication integration notes](docs/LIFECYCLE_COMMUNICATION_INTEGRATION.md).
 
-## What is implemented
+## Implementation map
 
-| Responsibility group | Included modules | Current boundary |
+The six groups below organise related code; they are **not six complete or independently deployable security layers**.
+
+| Group | Main modules | Implemented scope and boundary |
 |---|---|---|
-| **1. Policy and lifecycle enforcement** | Policy language and evaluation: `paca/ast.py`, `paca/parser.py`, `paca/compiler.py`, `paca/evaluator.py`, `paca/engine.py`, `paca/obligations.py`; enforcement and request flow: `paca/monitor.py`, `paca/runtime.py`, `paca/lifecycle.py`, `paca/agent_runtime.py`; packaged policies | The Monitor evaluates configured rules and capability/effect checks. The lifecycle controller checks the session, task, purpose, policy epoch and selected provenance/tool conditions. When it is configured, the runtime also checks delegation and message send/receive operations against the active session. Direct calls to the authority or message adapters, and other paths outside PACA, do not pass through this check. |
-| **2. Authority and usage state** | `paca/authority.py`, `paca/authority_runtime.py`, `paca/authority_registry.py`, `paca/postgres_authority.py`, `paca/ledger.py` | Capability issuance/verification, delegation, revocation, quotas and selected replay/operation state. The Monitor's operation ledger remains separate from authority-registry quota/revocation state because it records different transitions. PostgreSQL is a shared-primary authority backend, not a unified distributed lifecycle store. Production OIDC/workload identity and KMS/HSM key custody are not implemented. |
-| **3. Information provenance and memory** | `paca/provenance.py`, `paca/durable.py`, `paca/memory.py` | Typed labels, lineage, durable provenance metadata, memory values and selected trusted memory/connector/message adapters. Values and provenance metadata use separate stores; trusted host adapters must supply source and lineage evidence. Hidden model-context dependencies and raw-store bypasses remain. |
-| **4. Protected-resource mediation and commits** | `paca/resource_commit.py`, `paca/filesystem_commit.py`, `paca/broker.py`, `paca/broker_write.py`, `paca/unix_broker.py`, and `paca/contracts/` | Several intentionally distinct paths: the runtime's logical-resource fence, optional Linux filesystem writer, separate signed local logical-file broker mediators, and optional AF_UNIX transport. They are not one universally wired pipeline. Remote-provider mutations and destination-side commit fencing are not implemented. |
-| **5. Execution containment and secure I/O** | `paca/sandbox.py`, `paca/secure_io.py`, `paca/secure_network.py` | Optional digest-pinned Docker command execution and selected Linux filesystem/network protections. These helpers have different scopes; they are not a mandatory OS sandbox and are not automatically applied to every tool or connector. |
-| **6. Framework and provider adapters** | `paca/integrations/agentdojo.py`, `paca/integrations/langchain_middleware.py`, `paca/integrations/langgraph.py`, `paca/integrations/langgraph_checkpoint.py`, `paca/integrations/providers.py` | Explicitly wired AgentDojo, LangChain and LangGraph paths plus read-only Gmail, Microsoft Graph, Slack and Qdrant ingress. Direct tool/framework/database calls can bypass wrappers; provider CI uses mocked HTTP and does not establish live-account security. |
+| **1. Policy and lifecycle** | `paca/ast.py`, `parser.py`, `compiler.py`, `evaluator.py`, `engine.py`, `obligations.py`, `monitor.py`, `runtime.py`, `lifecycle.py`, `agent_runtime.py` | Policy evaluation and selected session, task, purpose, policy-epoch, provenance and tool checks. When configured, `PACAAgentRuntime` also checks delegation and message send/receive. Other call paths are not intercepted. |
+| **2. Authority and usage state** | `paca/authority.py`, `authority_runtime.py`, `authority_registry.py`, `postgres_authority.py`, `ledger.py` | Capability issuance/verification, delegation, revocation, quotas and operation state. PostgreSQL is a shared-primary authority backend, not a distributed lifecycle store. Production workload identity and managed key custody are not included. |
+| **3. Provenance and memory** | `paca/provenance.py`, `durable.py`, `memory.py` | Typed labels, lineage, durable provenance metadata, memory values and selected memory, connector and message adapters. Values and provenance metadata are stored separately; host adapters must provide trustworthy source and lineage evidence. |
+| **4. Resource mediation and commits** | `paca/resource_commit.py`, `filesystem_commit.py`, `broker.py`, `broker_write.py`, `unix_broker.py`, `paca/contracts/` | Distinct logical-resource, filesystem, broker read/write and optional Linux AF_UNIX paths. They are not one universally wired pipeline; remote-provider mutations and universal destination-side commit fencing are absent. |
+| **5. Execution and secure I/O** | `paca/sandbox.py`, `secure_io.py`, `secure_network.py` | Optional Docker command execution and selected Linux filesystem/network protections. These are not mandatory OS-wide isolation and are not automatically applied to every tool or connector. |
+| **6. Framework and provider adapters** | `paca/integrations/agentdojo.py`, `langchain_middleware.py`, `langgraph.py`, `langgraph_checkpoint.py`, `providers.py` | Explicit AgentDojo, LangChain and LangGraph integrations and read-only Gmail, Microsoft Graph, Slack and Qdrant ingress. Direct framework/tool/database calls can bypass wrappers; provider CI uses mocked HTTP. |
 
-These are **six responsibility groups**, not six complete or independently deployable security layers. A row groups related modules for clarity; it does not assert that all modules are connected in one execution path.
+### Why related components remain separate
 
-**Not counted as additional runtime security components:** the simulator, scenario corpus, benchmark runners, statistics helpers, reports, tests and TLA+ models are evaluation/assurance tooling. They provide evidence for selected properties but do not themselves mediate agent effects.
+Some similarly named or adjacent modules enforce different invariants and must not be merged just to reduce file count:
 
-**Why some modules remain separate:** the Monitor operation ledger and authority registry store different security state; the runtime resource fence, broker write mediator and filesystem commit adapter implement different effect paths; and the AF_UNIX transport supplies IPC/peer binding rather than duplicating resource policy. Combining these without a common transaction and trust contract would hide important boundaries.
+- The **Monitor operation ledger** records monitor operation/token history; the **authority registry** stores capability, revocation, quota and resource-receipt state.
+- The **runtime logical-resource fence**, **broker write mediator** and **filesystem commit adapter** have different effect and transaction contracts.
+- The **AF_UNIX transport** provides process communication and peer-credential checks for configured mediators; it is not another policy engine or a universal broker.
 
-## Security profile conformance
+Tests, TLA+ models, simulators, scenarios, benchmarks and reports are assurance/evaluation tooling, not additional runtime security components.
 
-The `core`, `extended` and `research` installation extras are convenience dependency profiles, not separate authorization implementations. CI installs each profile into a clean environment and runs the same shared security-contract tests (`tests/test_profile_security_contract.py`) for capability authorization/revocation, provenance label and lineage preservation, and request-bound single-use local resource commits. This checks that adding optional dependencies does not change these Core contracts. It does **not** prove that every optional framework/provider adapter is secure or completely mediated; those integrations retain their own tests and documented boundaries.
+## Installation profiles and optional integrations
 
-## Install optional integrations
+The `core`, `extended` and `research` extras are dependency profiles, not security levels. CI runs the same `tests/test_profile_security_contract.py` contracts under each profile; this checks selected shared behaviour, not complete adapter security.
 
-Install only the extras needed by the application:
+```bash
+python -m pip install -e ".[core]"
+python -m pip install -e ".[extended]"
+python -m pip install -e ".[research]"
+```
+
+The existing fine-grained extras remain available:
 
 ```bash
 python -m pip install -e ".[dev,agentdojo]"
@@ -85,7 +81,7 @@ python -m pip install -e ".[protocol]"
 python -m pip install -e ".[postgres]"
 ```
 
-For the AgentDojo adapter, inspect the supported workspace tasks with `paca-agentdojo --list-supported-tasks`. The workspace mapper supports a limited read/search set plus the explicit `get_unread_emails` to `mark_mail_read` state change. It rejects unsupported workspace mutations. This is not a generic agent adapter.
+Docker, PostgreSQL servers, TLA+/TLC, model credentials, production identity services and secure deployment configuration must be provisioned separately. See [installation profiles](docs/INSTALLATION_PROFILES.md).
 
 ## Local reference API
 
@@ -96,56 +92,37 @@ python -m pip install -e ".[api]"
 uvicorn paca_executor:app --host 127.0.0.1 --port 8000
 ```
 
-`GET /health` and `POST /decide` are available locally. The API accepts caller-supplied demonstration capability data, does not authenticate an issuer or connect to real tools, and always reports `effect_executed: false`. It is not an authorization boundary for real actions. Do not expose it to an untrusted network or treat its response as the sole control protecting a resource.
+`GET /health` and `POST /decide` are available locally. The API accepts caller-supplied demonstration capability data, does not authenticate an issuer or connect to real tools, and always reports `effect_executed: false`. It is not an enforcement boundary for real actions. The Dockerfile builds this same API; do not expose it as a production service.
 
-The Dockerfile builds this same reference API. Binding the host port to `127.0.0.1` is intended for local demonstration, not public service deployment.
+## Evidence and known limits
 
-**Container release policy:** CI builds the Docker image locally after the required test and security jobs, but does not publish it to GHCR on pull requests or ordinary `main` pushes. Registry publication is restricted to a version-tag release that passes the release workflow's version, main-history and owner-publisher checks, the `PACA_RELEASE_GOVERNANCE_VERIFIED=true` repository variable, and approval through the `paca-release` GitHub environment. Administrators must separately enable the `main` branch ruleset, the `v*` tag ruleset and required reviewers for that environment before setting the variable. See [repository security configuration](docs/REPOSITORY_SECURITY_CONFIGURATION.md).
+The built-in simulator has 30 author-written deterministic attack scenarios and 11 benign workflows. Its comparison defences are hand-authored models, not independently deployed products. Results are internal development evidence, not an independent benchmark or proof of real-agent attack resistance.
 
-## Evidence and evaluation limits
+The checked-in `docs/index.html` and `docs/results.json` are historical snapshots. CI regenerates simulator output as an artifact. AgentDojo adapter tests and dry-run preflight do not count as live-agent evaluation. The billable live-model benchmark runs only for a pull request explicitly labelled `run-live-agentdojo` and only when the protected `OPENAI_API_KEY` secret is configured.
 
-The built-in simulator contains 30 author-written deterministic attack scenarios and 11 benign workflows. Its comparison defences are hand-authored models, not independently deployed products. The scenarios and baselines were developed alongside this code, so the reported scores are preliminary internal simulation results—not independent evidence of real-agent attack resistance.
+Important unresolved boundaries include:
 
-The latest generated simulator output is attached as the `paca-benchmark-regenerated` artifact to the [main-branch CI runs](https://github.com/sanafirdouse2323-glitch/PACA-Plus-Plus-New/actions/workflows/ci.yml?query=branch%3Amain). The checked-in `docs/index.html` and `docs/results.json` are historical snapshots. The credential-dependent live AgentDojo benchmark is skipped when `OPENAI_API_KEY` is unavailable; adapter tests and dry runs are not live effectiveness measurements.
+- **Complete mediation:** raw host, framework, store, database, subprocess and network paths can bypass PACA adapters. The optional AF_UNIX broker is wired only for selected local mediators.
+- **Lifecycle context:** the runtime session identifier is local audit context, not authenticated transport identity. Identity/task callbacks and connector labels are trusted host inputs; arbitrary model-context dependencies are not discovered automatically.
+- **Keys and identity:** Ed25519 issuer/verifier separation exists, but OIDC/workload identity, KMS/HSM custody, authenticated key distribution, automated rotation and emergency key revocation do not.
+- **Persistence and recovery:** provenance, memory values and the Monitor operation ledger use SQLite; the PostgreSQL authority registry is single-primary. Cross-store atomicity, complete replication and safe distributed failover are not provided.
+- **External effects and isolation:** provider integrations are read-only. Remote-provider conditional commit/idempotency enforcement and a production approval service are absent. Docker isolation is opt-in and cannot prevent direct host/framework bypasses.
+- **Evaluation:** no completed matched live-agent effectiveness study, comprehensive host-level bypass evaluation or independent security audit is claimed.
+- **Repository governance:** as rechecked on 28 November 2026, `main` was unprotected and no active repository rulesets were returned. An administrator must configure and verify branch/tag rulesets and required reviewers before setting `PACA_RELEASE_GOVERNANCE_VERIFIED=true`.
 
-The current simulated PACA++ failures include E02 (agent-message propagation, with five simulated harmful effects), R01 (a harmful action based on an incorrect trusted source) and R02 (misleading content sent to the intended recipient). Provenance establishes recorded origin, not truth or semantic safety.
+CI success and bounded TLC model checks establish results only for the tests and finite states actually exercised. They are not a security certification. See the [seven-requirements status](docs/SEVEN_REQUIREMENTS_STATUS.md), [direct-bypass evaluation](docs/DIRECT_BYPASS_EVALUATION.md) and [repository security configuration](docs/REPOSITORY_SECURITY_CONFIGURATION.md).
 
-## Production gaps — read before integrating
+## Documentation index
 
-- **Lifecycle enforcement:** `LifecycleSecurityController` binds PACA-managed effect requests to one session/task, rejects untrusted or incomplete-lineage consequential inputs, requires digest-pinned tool manifests and provides a one-way stop switch. It is only enforced by calls routed through `PACAAgentRuntime`; it does not mediate direct framework/provider clients, raw stores, subprocesses or network paths. Its `session_id` is local audit context rather than an authenticated request field. Its one-use digest cache is bounded but process-local, not durable or shared across replicas. Generic Python executor callbacks remain trusted host configuration; the manifest digest does not independently authenticate arbitrary callback code.
-- **Mediation and bypass:** the optional Linux AF_UNIX broker transport in `paca/unix_broker.py` provides a separate-process path for selected local read/write mediators. It is not universal complete mediation or an OS sandbox. Raw filesystem, database, network, subprocess, framework and provider calls remain possible unless deployment policy removes workers' direct access to protected resources and credentials.
-- **Identity and task binding:** identity and task-context callbacks are trusted host integrations. There is no built-in production OIDC/workload-identity service.
-- **Key management:** Ed25519 separates issuer signing from public-key verification, but KMS/HSM custody, key rotation, authenticated key distribution and emergency key revocation are not implemented.
-- **State and recovery:** the provenance repository, memory value store and Monitor operation ledger use SQLite. The PostgreSQL authority registry is single-primary; cross-store atomicity, safe failover/rollback detection and full-state replication are not provided.
-- **External effects:** provider adapters are read-only. The optional Linux/local-filesystem writer covers only `write_file`; the library adapter does not spawn the broker process. The AF_UNIX transport can dispatch the existing local mediators when explicitly configured, but it does not automatically broker all reads/writes or prevent direct host/framework access. All filesystem broker writers for one root must share one private recovery-state directory. Gmail, Graph, Slack, Qdrant and other remote provider mutations still have no destination-side authorization, conditional commit or idempotency integration.
-- **Isolation and approvals:** Docker worker enforcement is opt-in per `PACAAgentRuntime`; strict mode accepts only `run_command` and requires the concrete Docker executor for calls routed through the runtime. It rejects file, memory and provider actions until brokered access paths exist. It is not an OS-level mandatory-access-control boundary and does not stop direct framework, subprocess, host filesystem or provider-client calls. Composition with the filesystem commit fence remains outstanding. A production approval service is not included; approval verification must be supplied by trusted host code.
-- **Evaluation:** the pinned Ratchet core tests and published paper-number reproduction script have been reproduced in CI and retained as baseline evidence. This is not a matched PACA-versus-Ratchet live-agent experiment. There is still no independent security audit, comprehensive host-level bypass evaluation or completed live-agent effectiveness study; the credential-dependent AgentDojo model run requires a protected `OPENAI_API_KEY`.
-- **Repository governance:** rechecked on 28 November 2026: GitHub still reports `main` as unprotected (`protected: false`), and the repository rulesets endpoint is empty. This connection can inspect the state but does not expose a supported repository-administration write action. A repository administrator must apply and verify the settings in `docs/REPOSITORY_SECURITY_CONFIGURATION.md`.
+Use each document for one primary purpose:
 
-Do not deploy PAC++ New as the sole security control protecting company data, accounts or autonomous business operations.
-
-## Documentation map
-
-- [Open, platform-independent architecture specification](docs/ARCHITECTURE_SPECIFICATION.md) — proposed target architecture (Draft v0.2.0; not an implementation or security guarantee).
-- [Protocol SDK and conformance tests](paca/contracts/) — canonical JSON, domain-separated digests and structural validation helpers.
-- [Versioned protocol contracts v1.0.0](contracts/v1.0.0/README.md) — JSON Schemas and message-security semantics.
-- [Security semantics](docs/SECURITY_SEMANTICS.md) — delegation, provenance, revocation and commit state rules.
-- [Agent-lifecycle enforcement](docs/AGENT_LIFECYCLE_ENFORCEMENT.md) — fail-closed session, provenance, tool and commit checks for the PACA-owned runtime boundary.
-- [Lifecycle communication integration](docs/LIFECYCLE_COMMUNICATION_INTEGRATION.md) — session-bound delegation and message operations, exact scope and regression evidence.
-- [Current implementation status and next gates](docs/security-roadmap.md)
-- [Lifecycle Phase A baseline audit and threat model](docs/LIFECYCLE_PHASE_A_BASELINE_AUDIT.md)
-- [Research question, related work and evaluation plan](docs/AGENT_LIFECYCLE_SECURITY_RESEARCH.md)
-- [PhD research prototype dossier](docs/RESEARCH_PROTOTYPE_DOSSIER.md) — hypothesis, architecture, connected local demonstration, evidence status and research limitations.
-- [Durable lifecycle implementation and trust boundaries](docs/DURABLE_LIFECYCLE_SECURITY.md)
-- [Direct-bypass evaluation](docs/DIRECT_BYPASS_EVALUATION.md)
-- [AgentDojo integration](docs/agentdojo-integration.md)
-- [Sandbox and external-containment evaluation protocol](docs/CONTAINMENT_EVALUATION.md)
-- [PostgreSQL checkpoint adapter](docs/POSTGRES_CHECKPOINT_AND_LIFECYCLE_MODEL.md)
-- [Repository protection configuration](docs/REPOSITORY_SECURITY_CONFIGURATION.md)
-- [Linux separate-process broker transport and deployment boundary](docs/UNIX_BROKER_DEPLOYMENT.md)
-- [Seven security requirements: implementation and evidence status](docs/SEVEN_REQUIREMENTS_STATUS.md)
-- [Core, Extended and Research installation profiles](docs/INSTALLATION_PROFILES.md)
+- **Current implementation and next work:** [security roadmap](docs/security-roadmap.md) (implementation snapshot); [seven requirements](docs/SEVEN_REQUIREMENTS_STATUS.md) (requirement-by-requirement evidence).
+- **Research:** [research programme](docs/AGENT_LIFECYCLE_SECURITY_RESEARCH.md) (question and related work); [prototype dossier](docs/RESEARCH_PROTOTYPE_DOSSIER.md) (PhD-facing synthesis); [six-point evaluation protocol](docs/SIX_POINT_INDUSTRY_EVALUATION_PROTOCOL.md) (study design).
+- **Target design and semantics:** [architecture specification](docs/ARCHITECTURE_SPECIFICATION.md) (proposed architecture only); [security semantics](docs/SECURITY_SEMANTICS.md); [versioned protocol contracts](contracts/v1.0.0/README.md).
+- **Implemented boundaries:** [lifecycle enforcement](docs/AGENT_LIFECYCLE_ENFORCEMENT.md); [durable lifecycle](docs/DURABLE_LIFECYCLE_SECURITY.md); [communication integration](docs/LIFECYCLE_COMMUNICATION_INTEGRATION.md); [AgentDojo](docs/agentdojo-integration.md); [PostgreSQL checkpoint adapter](docs/POSTGRES_CHECKPOINT_AND_LIFECYCLE_MODEL.md); [Linux broker deployment](docs/UNIX_BROKER_DEPLOYMENT.md).
+- **Evaluations and historical records:** [Phase A baseline audit](docs/LIFECYCLE_PHASE_A_BASELINE_AUDIT.md) and [Phase 1 adversarial audit](docs/ADVERSARIAL_SECURITY_AUDIT_PHASE_1.md) are historical snapshots, not current full-repository audits; [containment evaluation](docs/CONTAINMENT_EVALUATION.md); [policy continuity](docs/POLICY_CONTINUITY_EVALUATION.md).
+- **Repository operations:** [security configuration](docs/REPOSITORY_SECURITY_CONFIGURATION.md); [security reporting policy](SECURITY.md); [changelog](CHANGELOG.md).
 
 ## Licence
 
-This is a source-available academic and non-commercial project. Commercial use requires separate written permission; see [LICENSE](LICENSE).
+This is source-available academic and non-commercial software. Commercial use requires separate written permission; see [LICENSE](LICENSE).
