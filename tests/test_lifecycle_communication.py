@@ -30,13 +30,22 @@ def _environment(tmp_path):
             principal and tenant == "acme"
         ),
         task_context_verifier=lambda principal, tenant, task_id, purpose: bool(
-            principal and tenant == "acme" and task_id == "task-1" and purpose == "research"
+            principal
+            and tenant == "acme"
+            and task_id == "task-1"
+            and purpose == "research"
         ),
         clock=clock,
     )
     repository = SQLiteProvenanceRepository(tmp_path / "lineage.sqlite3")
     values = SQLiteMemoryValueStore(tmp_path / "memory-values.sqlite3")
-    memory = TrustedMemoryAdapter(repository, values, issuer, clock=clock)
+    memory = TrustedMemoryAdapter(
+        repository,
+        values,
+        issuer,
+        authorize=lambda _context, _node: True,
+        clock=clock,
+    )
     messages = HMACAgentMessageCodec(
         b"M" * 32,
         issuer,
