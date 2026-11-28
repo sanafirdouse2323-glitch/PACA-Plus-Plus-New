@@ -141,7 +141,7 @@ The following are not established as solved:
 - all frameworks, providers, agent topologies or operating systems; or
 - production availability, side-channel resistance or general denial-of-service protection.
 
-A digest binds supplied bytes and metadata; it does not prove truth. A digest in an audit log is not encryption or a confidentiality mechanism. Audit stores still require access controls and appropriate retention.
+A digest binds supplied bytes and metadata; it does not prove truth. A digest in an audit log is not encryption or a confidentiality mechanism. Audit stores still require access controls and appropriate retention. The connected test fixture uses a permissive memory metadata callback to isolate the lifecycle-session and provenance path; it does not replace the repository's separate memory-policy tests or establish production metadata-policy behaviour.
 
 ## 7. Evidence status on 28 November 2026
 
