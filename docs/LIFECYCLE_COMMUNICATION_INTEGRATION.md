@@ -1,78 +1,75 @@
-# Lifecycle communication and delegation integration
+# Lifecycle communication and delegation
 
-**Repository:** `PACA-Plus-Plus-New` only.  
-**Change:** session-bound delegation and inter-agent message operations in `PACAAgentRuntime`.  
-**Implementation branch:** `research/lifecycle-session-communication-2026-11-28`.  
-**Status:** implemented on the PR research branch; CI run #1050 and release-validation run #829 passed for the code revision. Not merged to `main` and not independently security-reviewed.
+**Repository:** `PACA-Plus-Plus-New`  
+**Implementation:** `PACAAgentRuntime`  
+**Branch:** `research/lifecycle-session-communication-2026-11-28`  
+**Status:** Implemented on the PR branch. The code revision passed CI run #1050 and release-validation run #829. It has not been merged into `main` or independently security-reviewed.
 
-## Problem addressed
+## Why this change was needed
 
-The original lifecycle controller bound effect requests to one active session, but `PACAAgentRuntime.delegate()`, `send_message()` and `receive_message()` invoked their authority/message adapters without applying that session binding. The adapters had their own authority, envelope, provenance, revocation and replay checks, but those checks did not prove that the operation belonged to the active orchestrator session.
+The lifecycle controller already checked selected effect requests against an active session. The same check was missing from three other runtime operations: `delegate()`, `send_message()` and `receive_message()`.
 
-This left a continuity gap: a valid capability belonging to a different principal or task could be presented to a runtime instance whose lifecycle controller represented another session.
+The authority issuer and message codec already performed their own checks. They verified permissions, message authentication, provenance, revocation and replay state. The gap was that they did not also establish that the operation belonged to the session currently represented by the runtime's lifecycle controller.
 
-## Change
+This meant that a valid capability for one principal or task could be presented to a runtime whose active session represented someone else. PR #59 adds a session check to those three runtime methods.
 
-When `lifecycle_security` is configured:
+## What changed
 
-1. **Delegation:** the runtime verifies the parent capability, requires immutable authority lineage, hashes a canonical delegation-intent record (including child tool pins), and routes issuance through the internal lifecycle transition helper. The context must match the active principal, tenant, task, purpose and policy epoch. `PACAAgentRuntime.delegate()` now exposes the issuer's existing `tool_pins` option so the child can receive only an implementation digest already pinned by its parent. The authority issuer remains responsible for parent delegation scope, child grant attenuation, expiry, tool-pin attenuation, call/fan-out quotas and authenticated child identity.
-2. **Message send:** the runtime verifies the sender capability and authority lineage, computes a digest over the typed payload value and its provenance label/references, and routes the signed-envelope operation through the active session check. The message codec remains responsible for send-recipient scope, memory access, lineage integrity, revocation and envelope authentication.
-3. **Message receive:** the runtime verifies the recipient capability and lineage, binds it to the active recipient session, and only then invokes the message codec. Thus a session mismatch is rejected before the codec consumes the durable message receipt or memory-read budget. The codec remains responsible for signature verification, sender/recipient grants, replay receipt, provenance and memory authorization.
-4. **Stop/session serialization:** the trusted adapter callback executes while the lifecycle controller lock is held. A concurrent `stop()` or `close_session()` therefore cannot pass the context check and change the local session before the routed adapter operation completes.
-5. **Audit minimisation and re-entry:** transition events record phase, operation, session metadata, subject and SHA-256 digest. They do not contain message payload bytes or raw token values. Because the configured audit sink is trusted host code and may be invoked synchronously, the controller rechecks that the active session has not been stopped or replaced by a reentrant audit callback before dispatching the adapter operation.
+The new check is used only when `lifecycle_security` is configured on `PACAAgentRuntime`.
 
-The controller accepts only the explicit transition pairs `delegation/delegate` and `message/send|receive`. The helper is an internal PACA runtime primitive, not an application authorisation API. Its callback is a trusted PACA-owned adapter operation; model- or user-supplied callbacks must never be passed to it.
+For delegation, the runtime verifies the parent capability and its immutable authority lineage. It records a digest of the delegation request, including the requested child tool pins, and checks that the parent's principal, tenant, task, purpose and policy epoch match the active session. The existing authority issuer then creates the child capability and applies its normal restrictions. The issuer remains responsible for checking that the child receives no more authority, quota or tool access than the parent can delegate.
 
-## Validation record
+For message sending, the runtime verifies the sender capability and lineage before passing the message to the existing codec. It calculates a digest from the typed payload and its provenance information. The codec still checks the recipient grant, memory access, lineage, revocation and message authentication.
 
-- **CI run #1050** (`46156942241`): Python 3.10–3.13, Ruff lint/format, all three installation-profile security contracts, broker UID isolation, AgentDojo adapter, LangGraph, PostgreSQL checkpoint integration, wheel smoke test and Docker build completed successfully.
-- **Release-validation run #829** (`46156942338`): complete test suite, configured security-critical type checks, lint/format, installation-profile contracts, broker isolation, wheel/source-distribution build and smoke tests completed successfully.
-- The `agentdojo-real-benchmark` job in CI #1050 ended successfully with its credential-dependent preflight, live model run and upload steps **skipped** because `OPENAI_API_KEY` was not configured. No live-model result is claimed.
-- The validated code head for these runs was `bece5c3f507cac0669c60b778a42b4b456b25d03`. Subsequent branch commits through the current documentation snapshot were documentation-only. No independent security review has been completed.
+For message receiving, the runtime verifies the recipient capability and checks it against the recipient's active session before calling the codec. A session mismatch is therefore rejected before the codec consumes the message receipt or memory-read budget. The codec continues to perform its own signature, sender, recipient, provenance, replay and memory checks.
 
-## Regression tests
+The local adapter operation runs while the lifecycle controller holds its lock. This prevents a concurrent `stop()` or `close_session()` from changing the session between the check and the adapter call. The controller also checks the session again after invoking the audit callback. That second check matters because trusted host audit code can call back into the controller and stop or replace the session.
 
-`examples/lifecycle_security_demo.py` is a standalone deterministic two-scenario offline run. `tests/test_lifecycle_demo_cli.py` executes it as a smoke test, checks the benign commit receipt fields and verifies that the poisoned scenario has no sink row. `tests/test_lifecycle_communication.py` adds isolated tests for:
+The helper used for this work is an internal runtime method. It is not intended to be an authorisation API for applications, and its callback must remain a PACA-owned adapter operation. It accepts only the intended delegation and message transition types.
 
-- rejecting delegation when the parent capability principal differs from the active lifecycle principal;
-- recording a successfully issued, attenuated child capability as a session-bound delegation;
-- recording a successful message-send transition without writing payload text into the audit stream;
-- rejecting a sender capability outside the active session;
-- rejecting a recipient-session mismatch before message receipt consumption, followed by successful delivery through the correct recipient session; and
-- rejecting message operations after the lifecycle kill switch has stopped the controller.
+## Tests and runnable example
 
-These tests complement, rather than replace, the existing durable-message tests for signature verification, provenance checks, replay receipts, authority revocation and concurrent receipt consumption.
+The change includes focused tests in `tests/test_lifecycle_communication.py`. They check that:
 
-## Connected deterministic trajectory
+- delegation is rejected when the parent capability does not match the active session;
+- valid delegation is recorded against the session;
+- message sending is checked against the sender's session;
+- message receiving is checked against the recipient's session before the message receipt is consumed;
+- the kill switch blocks a message operation; and
+- an audit callback cannot stop the session and still allow the operation to run.
 
-The added tests also exercise a single local reference trajectory rather than only isolated method calls:
+The tests also cover a connected local workflow. A host-configured connector supplies a versioned source. The sender retrieves it, records the input and retrieval events, delegates limited authority, and sends the data to a second agent. The receiving agent checks its session and submits the received value to `PACAAgentRuntime.execute_effect()`, which uses the packaged `Monitor` and `SQLiteFencedResourceExecutor`.
 
-1. A fixed-identity connector captures either an explicitly trusted test source or an untrusted external-content source with versioned lineage.
-2. The sender retrieves the source through `TrustedMemoryAdapter` and records input, retrieval and a model-independent candidate-plan audit digest. The plan is an explicit test fixture; no hidden model reasoning is claimed.
-3. The sender delegates an attenuated child capability to `worker-b`, including the parent-pinned `write_file` implementation digest.
-4. The sender seals the lineage-bearing payload; a separate recipient session validates and opens the message.
-5. The recipient submits the exact received value to `PACAAgentRuntime.execute_effect()` with the concrete SQLite fenced-resource executor and the packaged `Monitor`.
-6. The benign control writes a row whose version, child authority ID, request digest and commit nonce are checked in the actual resource registry. The poisoned-memory control is denied by lifecycle integrity policy and asserts that no sink row or successful lifecycle commit event exists.
+There are two cases. The trusted-source case writes a row to the local resource registry. The test checks the version, child authority ID, request digest and commit nonce. The untrusted-source case is denied, and the test confirms that no resource row was created. The plan and source data are fixed test inputs; the example does not call an LLM or claim to test hidden model planning.
 
-This provides an executable integration demonstration for a declared local reference path, including a positive-utility control and a protected-sink negative case. It does not represent a live LLM, hidden planning, a production connector, an arbitrary host filesystem, a remote SaaS provider or universal six-stage mediation. The deterministic plan and connectors are test fixtures; trust comes from the host-configured adapter labels, not from the model's assertion.
+The branch also includes `examples/lifecycle_security_demo.py`, a standalone two-case example. `tests/test_lifecycle_demo_cli.py` runs that example as a smoke test and checks both outcomes.
 
-## Security boundary and limitations
+Run the example and the focused tests from the repository root:
 
-This change improves lifecycle continuity only for operations routed through the configured `PACAAgentRuntime`. It does not make the Python object boundary a host security boundary. Direct calls to `HMACCapabilityAuthority.issue()`, `HMACAgentMessageCodec.seal()` or `HMACAgentMessageCodec.open()`, alternate transports, raw framework APIs and direct database access can still bypass the runtime session gate.
+```bash
+python -m pip install -e ".[dev]"
+python examples/lifecycle_security_demo.py --output /tmp/paca-lifecycle-demo.json
+python -m pytest tests/test_lifecycle_communication.py tests/test_lifecycle_demo_cli.py -q
+```
 
-The SHA-256 audit digest is a correlation/integrity reference, not encryption or a confidentiality guarantee; treat audit records as sensitive and restrict access. The integration test fixture uses a permissive memory metadata callback to isolate the session/lineage path, so it does not replace the repository's dedicated memory-policy and adapter tests.
+## Validation results
 
-Each `LifecycleSecurityController` represents one active session/principal. Multi-agent deployments must use distinct controller/runtime instances whose session data is established by trusted host identity/session code. A local `completed` event means the local adapter call returned; it is not proof of network delivery, remote processing or destination-side effect commitment.
+The code revision validated by the following runs was `bece5c3f507cac0669c60b778a42b4b456b25d03`. The commits after that revision, up to the current documentation snapshot, changed documentation only.
 
-The message codec currently uses HMAC for its envelope signature. This work does not change its key-custody or distributed key-management assumptions, nor does it add production OIDC/workload identity, KMS/HSM custody or a distributed lifecycle transaction.
+CI run #1050 (`46156942241`) passed the Python 3.10–3.13 test matrix, Ruff lint and formatting, the core, extended and research installation-profile checks, broker UID isolation, AgentDojo adapter tests, LangGraph integration, PostgreSQL checkpoint integration, wheel smoke tests and Docker build.
 
-## Validation required
+Release-validation run #829 (`46156942338`) passed the full test suite, the configured security-critical type checks, lint and formatting, installation-profile checks, broker isolation, and wheel and source-distribution build and smoke tests.
 
-Before describing this change as validated, require:
+The live AgentDojo benchmark did not run. No `OPENAI_API_KEY` was configured, so its preflight, model run and result upload steps were skipped. The job's successful status does not mean that a live-model experiment was completed.
 
-- the lifecycle session-binding tests, the benign/poisoned connected trajectory tests and the reentrant-audit test to pass;
-- the complete Python test matrix and repository lint/type checks to pass;
-- durable lifecycle/message and PostgreSQL-backed authority integration tests to pass; and
-- review of the branch diff to confirm that no existing adapter checks or replay/usage semantics were weakened.
+## What this change does not establish
 
-A successful CI run validates the repository test suite for the branch; it does not establish complete lifecycle mediation, live multi-agent effectiveness, production readiness or independent security assurance.
+The new check applies only to operations sent through the configured `PACAAgentRuntime` methods. Direct calls to `HMACCapabilityAuthority.issue()`, `HMACAgentMessageCodec.seal()` or `HMACAgentMessageCodec.open()` still bypass this runtime session check. The same is true for alternate transports, raw framework APIs and direct database access.
+
+Each `LifecycleSecurityController` represents one active principal and session. A multi-agent application therefore needs separate controller/runtime instances for separately authenticated agents, with the host responsible for establishing their session details. The local `completed` audit event means that the adapter call returned. It does not prove that a message reached another machine, that the receiving agent processed it, or that a remote resource committed an effect.
+
+The message codec still uses HMAC for its envelope signature. This change does not add OIDC or workload identity, managed KMS/HSM key custody, a distributed lifecycle transaction or remote-provider commit protection.
+
+The audit digest is useful for matching an event to the data that was processed. It is not encryption and should not be treated as a confidentiality control. Audit records still need suitable access controls and retention. The connected test fixture also uses a permissive memory metadata callback to isolate the session and lineage checks; the repository's separate memory-policy tests remain necessary.
+
+**In summary:** PR #59 connects the existing session check to delegation and message operations on the PACA runtime path. It closes that specific gap, but it does not make every path through an agent, framework, host or provider subject to lifecycle enforcement.
