@@ -28,7 +28,7 @@ PUBLIC_TYPES = (
 def test_provider_public_imports_and_pickle_names_are_stable() -> None:
     for name in PUBLIC_TYPES:
         provider_type = getattr(providers, name)
-        assert getattr(paca.integrations, name) is provider_type
+        assert getattr(integrations, name) is provider_type
         assert provider_type.__module__ == "paca.integrations.providers"
         assert pickle.loads(pickle.dumps(provider_type)) is provider_type
 
