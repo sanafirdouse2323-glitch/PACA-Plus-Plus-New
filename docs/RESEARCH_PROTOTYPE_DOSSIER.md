@@ -3,8 +3,8 @@
 **Assessment date:** 28 November 2026  
 **Project:** `PACA-Plus-Plus-New`  
 **Current status:** Research prototype. It is not production-ready.  
-**Implementation work:** [PR #59 — Bind agent communication and delegation to lifecycle sessions](https://github.com/sanafirdouse2323-glitch/PACA-Plus-Plus-New/pull/59)  
-**Working branch:** `research/lifecycle-session-communication-2026-11-28`
+**Current implementation commit:** `c45732707cbfccf44bc4903300250f21184aa128` on `main`  
+**Merged change:** [PR #59 — Bind agent communication and delegation to lifecycle sessions](https://github.com/sanafirdouse2323-glitch/PACA-Plus-Plus-New/pull/59)
 
 This document describes `PACA-Plus-Plus-New` only. The separate `PACA-Plus-Plus` enterprise gateway is a different project, with a different codebase and evidence. The two should not be confused.
 
@@ -74,11 +74,11 @@ These are separate pieces with different boundaries. They are not six complete l
 
 Formal models, tests and benchmark tools help examine the implementation. They are not additional runtime enforcement layers.
 
-### The change in PR #59
+### Lifecycle-session checks for communication and delegation
 
 The Phase A audit identified one specific gap. When `lifecycle_security` was configured, `PACAAgentRuntime.execute_effect()` checked selected effect requests against the active session. However, `delegate()`, `send_message()` and `receive_message()` did not apply the same session check.
 
-PR #59 adds that check to those three runtime methods. Before delegation, the runtime verifies the parent capability and its authority lineage. Before sending or receiving a message, it verifies the relevant sender or recipient capability. The principal, tenant, task, purpose and policy epoch must match the active lifecycle session.
+The change merged in PR #59 adds that check to those three runtime methods. Before delegation, the runtime verifies the parent capability and its authority lineage. Before sending or receiving a message, it verifies the relevant sender or recipient capability. The principal, tenant, task, purpose and policy epoch must match the active lifecycle session.
 
 The actual delegation and message work still goes through the existing authority issuer and message codec. The issuer remains responsible for restricting a child's permissions and tool pins. The message codec continues to check message authentication, recipient permissions, provenance, revocation and replay. The new session check does not replace those controls.
 
@@ -88,7 +88,7 @@ This change only covers calls made through the configured `PACAAgentRuntime`. It
 
 ## 5. Demonstration and tests
 
-The branch includes a small offline example at `examples/lifecycle_security_demo.py`. It uses local SQLite stores and two agents. It does not call an LLM or a live provider.
+The merged `main` branch includes a small offline example at `examples/lifecycle_security_demo.py`. It uses local SQLite stores and two agents. It does not call an LLM or a live provider.
 
 The example runs two cases. In the first, a source is marked trusted by the host-configured test connector. One agent retrieves it, delegates limited authority to a second agent and sends the data in a signed message. The receiving agent checks its session and attempts a write through the local SQLite resource fence. The example checks the resulting resource record, including its version, authority identifier, request digest and commit nonce.
 
@@ -118,15 +118,13 @@ The demonstration uses a permissive memory metadata callback so that it can focu
 
 ## 7. What the validation shows
 
-The validation results below apply to the code revision `bece5c3f507cac0669c60b778a42b4b456b25d03`. The later commits up to the current PR documentation snapshot changed documentation only.
+The results below apply to the merged implementation commit `c45732707cbfccf44bc4903300250f21184aa128` on `main`.
 
-CI run #1050 (`46156942241`) passed the Python test matrix on versions 3.10, 3.11, 3.12 and 3.13. The Ruff checks, all three installation-profile security contracts, broker UID-isolation test, AgentDojo adapter, LangGraph integration, PostgreSQL checkpoint integration, wheel smoke test and Docker build also passed.
+Main-branch CI run #1062 (`46165972063`) passed the Python 3.10–3.13 test matrix, Ruff checks, all three installation-profile security contracts, broker UID isolation, AgentDojo adapter tests, LangGraph integration, PostgreSQL checkpoint integration, wheel smoke tests and the Docker build. The credential-dependent `agentdojo-real-benchmark` job was skipped. No live-model experiment or result is claimed.
 
-Release-validation run #829 (`46156942338`) passed the complete test suite, configured security-critical type checks, lint and formatting checks, installation-profile contracts, broker isolation, and wheel and source-distribution build and smoke tests.
+Main-branch release-validation run #841 (`46165972095`) passed the complete test suite, configured security-critical type checks, lint and formatting, installation-profile contracts, broker isolation, and wheel and source-distribution build and smoke tests. The tag-specific GitHub Release and container publication steps were skipped because this was a normal `main` push.
 
-The live AgentDojo benchmark did not run. Its credential check found no `OPENAI_API_KEY`, so the preflight, model run and result upload were skipped. The job completed successfully because those steps were skipped; this is not evidence of live-model effectiveness.
-
-PR #59 remains open on a separate branch. It has not been merged into `main` and has not received an independent security review. The repository's branch-protection settings also need an administrator to apply and verify the ruleset described in the security-configuration guide.
+PR #59 is merged. No independent security review is recorded. The repository's `main` branch is still unprotected (`protected: false`) and the rulesets endpoint was empty when checked on 28 November 2026. An administrator still needs to apply and verify the ruleset described in the security-configuration guide.
 
 These checks show that the tested code paths and package checks passed. They do not show complete lifecycle mediation, production readiness or independent security assurance.
 
@@ -146,7 +144,7 @@ The current AgentDojo work is an adapter and harness pilot. It is not a complete
 
 The repository contains reference implementations for policy evaluation, capability authority, provenance-aware memory, selected local resource commits, optional execution containment and selected framework adapters.
 
-The lifecycle controller checks selected effect requests against an active session. The PR #59 branch extends that check to delegation and inter-agent messages made through the configured runtime. The deterministic local example shows one benign delegated-message-to-resource-write path and one case where untrusted memory is denied before a resource record is created.
+The lifecycle controller checks selected effect requests against an active session. The change merged in PR #59 extends that check to delegation and inter-agent messages made through the configured runtime. The deterministic local example shows one benign delegated-message-to-resource-write path and one case where untrusted memory is denied before a resource record is created.
 
 Those statements describe the current implementation and tests. The following stronger claims are not supported: complete lifecycle mediation, protection against prompt injection across arbitrary models and frameworks, production-grade identity or key management, general remote-provider commit safety, superiority over the related research systems, successful live-model evaluation or independent security certification.
 
