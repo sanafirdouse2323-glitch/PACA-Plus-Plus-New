@@ -15,13 +15,13 @@ This left a continuity gap: a valid capability belonging to a different principa
 
 When `lifecycle_security` is configured:
 
-1. **Delegation:** the runtime verifies the parent capability, requires immutable authority lineage, hashes a canonical delegation-intent record, and routes issuance through a lifecycle context transition. The context must match the active principal, tenant, task, purpose and policy epoch. The authority issuer remains responsible for parent delegation scope, child grant attenuation, expiry, call/fan-out quotas and authenticated child identity.
+1. **Delegation:** the runtime verifies the parent capability, requires immutable authority lineage, hashes a canonical delegation-intent record (including child tool pins), and routes issuance through the internal lifecycle transition helper. The context must match the active principal, tenant, task, purpose and policy epoch. `PACAAgentRuntime.delegate()` now exposes the issuer's existing `tool_pins` option so the child can receive only an implementation digest already pinned by its parent. The authority issuer remains responsible for parent delegation scope, child grant attenuation, expiry, tool-pin attenuation, call/fan-out quotas and authenticated child identity.
 2. **Message send:** the runtime verifies the sender capability and authority lineage, computes a digest over the typed payload value and its provenance label/references, and routes the signed-envelope operation through the active session check. The message codec remains responsible for send-recipient scope, memory access, lineage integrity, revocation and envelope authentication.
 3. **Message receive:** the runtime verifies the recipient capability and lineage, binds it to the active recipient session, and only then invokes the message codec. Thus a session mismatch is rejected before the codec consumes the durable message receipt or memory-read budget. The codec remains responsible for signature verification, sender/recipient grants, replay receipt, provenance and memory authorization.
 4. **Stop/session serialization:** the trusted adapter callback executes while the lifecycle controller lock is held. A concurrent `stop()` or `close_session()` therefore cannot pass the context check and change the local session before the routed adapter operation completes.
 5. **Audit minimisation and re-entry:** transition events record phase, operation, session metadata, subject and SHA-256 digest. They do not contain message payload bytes or raw token values. Because the configured audit sink is trusted host code and may be invoked synchronously, the controller rechecks that the active session has not been stopped or replaced by a reentrant audit callback before dispatching the adapter operation.
 
-The controller accepts only the explicit transition pairs `delegation/delegate` and `message/send|receive`. The callback is a trusted PACA-owned adapter operation; model- or user-supplied callbacks must never be passed to this API.
+The controller accepts only the explicit transition pairs `delegation/delegate` and `message/send|receive`. The helper is an internal PACA runtime primitive, not an application authorisation API. Its callback is a trusted PACA-owned adapter operation; model- or user-supplied callbacks must never be passed to it.
 
 ## Regression tests
 
@@ -52,6 +52,8 @@ This provides an executable integration demonstration for a declared local refer
 ## Security boundary and limitations
 
 This change improves lifecycle continuity only for operations routed through the configured `PACAAgentRuntime`. It does not make the Python object boundary a host security boundary. Direct calls to `HMACCapabilityAuthority.issue()`, `HMACAgentMessageCodec.seal()` or `HMACAgentMessageCodec.open()`, alternate transports, raw framework APIs and direct database access can still bypass the runtime session gate.
+
+The SHA-256 audit digest is a correlation/integrity reference, not encryption or a confidentiality guarantee; treat audit records as sensitive and restrict access. The integration test fixture uses a permissive memory metadata callback to isolate the session/lineage path, so it does not replace the repository's dedicated memory-policy and adapter tests.
 
 Each `LifecycleSecurityController` represents one active session/principal. Multi-agent deployments must use distinct controller/runtime instances whose session data is established by trusted host identity/session code. A local `completed` event means the local adapter call returned; it is not proof of network delivery, remote processing or destination-side effect commitment.
 
