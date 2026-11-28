@@ -333,8 +333,6 @@ def _run_scenario(root: Path, *, content_integrity: str) -> dict[str, Any]:
             "reason": str(exc),
             "sink_row": None if row is None else {"unexpected_row_present": True},
         }
-    finally:
-        executor.close()
 
     row = _resource_row(registry, RESOURCE)
     if content_integrity == "trusted":
