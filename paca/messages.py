@@ -36,6 +36,7 @@ def _b64decode(value: str) -> bytes:
         validate=True,
     )
 
+
 class HMACAgentMessageCodec:
     """Sign inter-agent message envelopes while preserving Arg labels and lineage."""
 
@@ -375,6 +376,7 @@ class HMACAgentMessageCodec:
             raise MemoryAccessDenied(
                 "inter-agent message authentication or provenance validation failed"
             ) from exc
+
 
 # Preserve the original qualified name for imports, reprs and pickle references.
 HMACAgentMessageCodec.__module__ = "paca.memory"
