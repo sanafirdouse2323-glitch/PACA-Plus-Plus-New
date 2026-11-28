@@ -3,7 +3,8 @@
 **Repository:** `PACA-Plus-Plus-New` only.  
 **Profile version:** 0.1 (28 November 2026).  
 **Pilot configuration baseline:** PR #49 merge `c9d06c4796a9fb0a04cd5db1ca4c792d2396506a` (the frozen AgentDojo adapter/task configuration).  
-**Current `main` baseline:** `c45732707cbfccf44bc4903300250f21184aa128`, including PR #59's runtime communication/delegation session checks. This AgentDojo pilot does not exercise those checks.  
+**Frozen implementation baseline:** `c45732707cbfccf44bc4903300250f21184aa128` (PR #59; last change to `paca/` implementation code). This AgentDojo pilot does not exercise the communication/delegation checks.  
+**Current repository head:** `31faa24a29bf48248d5ab16d6d874a57a9409d8c`; later PRs #60 and #61 changed documentation, workflows and tests, not the AgentDojo adapter.  
 **Status:** proposed executable pilot profile; not preregistered, not independently approved, and not run live.  
 **Purpose:** validate the existing AgentDojo comparison harness on a narrow supported task subset before attempting a broader lifecycle study.
 
