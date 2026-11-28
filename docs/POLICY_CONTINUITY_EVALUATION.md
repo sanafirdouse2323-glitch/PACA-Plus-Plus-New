@@ -17,15 +17,17 @@ reference runtime makes four dimensions explicit:
 | Usage continuity | A retry or duplicate call cannot silently reuse the same effect authorization; quotas and monitor decisions remain part of the final path. | monitor effect token, authority usage registry and one-use lifecycle request digest |
 | Effect continuity | The final action, arguments, tool identity and policy-relevant metadata are the same frozen values that were authorized. | request digest, snapshot checks, typed digest-pinned tool and `commit_authorization()` |
 
-These invariants are conditional on the effect being routed through
-`PACAAgentRuntime` and its approved adapters. Direct provider clients, raw
-database handles, host subprocesses, unrestricted network paths and unmediated
-framework callbacks remain deployment bypasses until the surrounding system
-removes or separately enforces them.
+These invariants are conditional on the relevant operation being routed through
+`PACAAgentRuntime` and its configured adapters with `lifecycle_security` enabled
+for the lifecycle-session checks. Direct provider clients, raw database handles,
+host subprocesses, unrestricted network paths, direct issuer/codec calls and
+unmediated framework callbacks remain deployment bypasses until the surrounding
+system removes or separately enforces them.
 
 ## What this implementation rejects
 
-The default lifecycle policy fails closed when:
+For operations routed through the configured runtime and lifecycle controller,
+the applicable checks fail closed when:
 
 - no active session binds an effect, delegation or message operation to the intended principal, tenant, task, purpose and policy epoch;
 - the capability has no immutable authority lineage, or its purpose/policy epoch
@@ -78,10 +80,11 @@ stress test; scripted cases remain the reproducible regression baseline.
 
 ## Baseline and claims discipline
 
-Freeze the unextended PACA++ baseline before measuring this controller. Compare
-the same agent, model, tools, task set, timeouts and sink protocol with and
-without the lifecycle control. Report the residual bypasses instead of
-converting benchmark results into a universal security claim.
+Freeze the comparison baseline without the proposed combined continuity
+controls before measuring their contribution. Compare the same agent, model,
+tools, task set, timeouts and sink protocol with and without the configured
+lifecycle controls. Report the residual bypasses instead of converting benchmark
+results into a universal security claim.
 
 Research findings motivate this design: tool-using agents remain vulnerable to
 indirect injection and memory/tool abuse; deterministic least-privilege and
