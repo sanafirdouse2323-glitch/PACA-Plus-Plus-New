@@ -8,16 +8,17 @@ from paca.agent_runtime import PACAAgentRuntime
 from paca.authority_runtime import HMACCapabilityAuthority, SQLiteAuthorityRegistry
 from paca.durable import SQLiteProvenanceRepository
 from paca.lifecycle import LifecyclePhase, LifecycleSecurityController
-from paca.monitor import Monitor
-from paca.resource_commit import SQLiteFencedResourceExecutor
-from paca.runtime import Request, Tool
 from paca.memory import (
     HMACAgentMessageCodec,
     MemoryAccessDenied,
     SQLiteMemoryValueStore,
     TrustedConnectorAdapter,
     TrustedMemoryAdapter,
+    canonical_value_bytes,
 )
+from paca.monitor import Monitor
+from paca.resource_commit import SQLiteFencedResourceExecutor
+from paca.runtime import Request, Tool
 
 
 def _environment(tmp_path):
@@ -437,9 +438,7 @@ def _integrated_environment(tmp_path, *, content_integrity: str):
         LifecyclePhase.INPUT,
         "trusted_ingress_capture",
         subject="report-source:acme",
-        digest=hashlib.sha256(
-            json.dumps(source_value, sort_keys=True, separators=(",", ":")).encode()
-        ).hexdigest(),
+        digest=hashlib.sha256(canonical_value_bytes(source_value)).hexdigest(),
         trusted=content_integrity == "trusted",
     )
     retrieved = memory.read(
@@ -452,9 +451,7 @@ def _integrated_environment(tmp_path, *, content_integrity: str):
         LifecyclePhase.RETRIEVAL,
         "memory_retrieval",
         subject="mem/integrated-source",
-        digest=hashlib.sha256(
-            json.dumps(retrieved.value, sort_keys=True, separators=(",", ":")).encode()
-        ).hexdigest(),
+        digest=hashlib.sha256(canonical_value_bytes(retrieved.value)).hexdigest(),
         trusted=retrieved.label.integrity == "trusted",
     )
     plan = {
@@ -462,9 +459,7 @@ def _integrated_environment(tmp_path, *, content_integrity: str):
         "target": "/acme/reports/integrated-report.txt",
         "source_lineage": sorted(retrieved.lineage_refs),
     }
-    plan_digest = hashlib.sha256(
-        json.dumps(plan, sort_keys=True, separators=(",", ":")).encode()
-    ).hexdigest()
+    plan_digest = hashlib.sha256(canonical_value_bytes(plan)).hexdigest()
     sender_lifecycle.observe(
         LifecyclePhase.PLAN,
         "candidate_plan",
@@ -577,7 +572,7 @@ def test_integrated_benign_lifecycle_reaches_the_fenced_resource_sink(tmp_path):
     assert result["version"] == 1
     row = _integrated_sink_row(env["registry"], env["resource"])
     assert row is not None
-    assert json.loads(row[0]) == {"content": "approved report content"}
+    assert json.loads(row[0]) == {"content": {"body": "approved report content"}}
     assert row[1] == 1
     assert row[2] == env["child"].capability.cap_id
     assert row[3] == decision.digest
