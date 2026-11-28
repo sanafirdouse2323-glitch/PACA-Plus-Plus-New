@@ -1,4 +1,4 @@
-"""Trusted memory, connector and inter-agent adapters for PACA++ New.
+"""Trusted memory and connector adapters for PACA++ New.
 
 The SQLite value table is separate from lineage metadata. Inter-agent message
 handling lives in :mod:`paca.messages`; this module owns memory storage and policy.
