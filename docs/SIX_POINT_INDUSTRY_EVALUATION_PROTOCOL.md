@@ -2,7 +2,8 @@
 
 **Status:** execution protocol and baseline evidence register; not a completed comparative experiment.  
 **Repository:** `PACA-Plus-Plus-New` only.  
-**Current implementation baseline:** merge commit `c45732707cbfccf44bc4903300250f21184aa128` on `main`, verified 28 November 2026 after PR #59 was merged.  
+**Frozen implementation/evaluation baseline:** PR #59 merge `c45732707cbfccf44bc4903300250f21184aa128` (last `paca/` implementation-code change).  
+**Current repository head:** `31faa24a29bf48248d5ab16d6d874a57a9409d8c`; PRs #60 and #61 changed documentation, workflows and tests, not the evaluated implementation code.  
 **Purpose:** turn the six proposed research priorities into a falsifiable, reproducible engineering and evaluation programme.  
 **Claim boundary:** no vendor product is represented as tested until its real service/runtime is configured, version-pinned, exercised, and its raw outputs are retained.
 
