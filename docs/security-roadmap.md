@@ -1,6 +1,6 @@
 # PAC++ New — implementation status and engineering gates
 
-**Implementation snapshot baseline:** 27 November 2026, merge commit `b2e68277d2604c730fd5ae0c86a49ded20a72ef5` on `main`. This is the verified code baseline for this status update; later documentation-only commits do not change the implementation. Older architecture and evaluation documents retain their own historical baselines.
+**Implementation snapshot baseline:** 27 November 2026, merge commit `c9d06c4796a9fb0a04cd5db1ca4c792d2396506a` on `main` after PR #49. This is the verified security-code baseline for this status update; later dependency and documentation commits do not change the lifecycle implementation. Older architecture and evaluation documents retain their own historical baselines.
 
 **Maturity:** research prototype. The repository contains useful reference mechanisms and integrations, but does not mediate every agent lifecycle transition and is not production-ready.
 
