@@ -150,7 +150,10 @@ jobs:
           import os
           from importlib.metadata import distribution, version
 
+          import pickle
           import paca
+          from paca.memory import HMACAgentMessageCodec as legacy_codec
+          from paca.messages import HMACAgentMessageCodec as extracted_codec
           from paca_executor import app
 
           expected = os.environ["EXPECTED_VERSION"]
@@ -162,6 +165,9 @@ jobs:
           assert version("paca-plus-plus") == expected
           assert paca.__version__ == expected
           assert app.title == "PACA++ Reference Decision API"
+          assert legacy_codec is extracted_codec is paca.HMACAgentMessageCodec
+          assert extracted_codec.__module__ == "paca.memory"
+          assert pickle.loads(pickle.dumps(extracted_codec)) is extracted_codec
           print(f"Wheel installation and import smoke test passed for {expected}.")
           PY
           )
@@ -175,7 +181,10 @@ jobs:
           import os
           from importlib.metadata import distribution, version
 
+          import pickle
           import paca
+          from paca.memory import HMACAgentMessageCodec as legacy_codec
+          from paca.messages import HMACAgentMessageCodec as extracted_codec
           from paca_executor import app
 
           expected = os.environ["EXPECTED_VERSION"]
@@ -187,6 +196,9 @@ jobs:
           assert version("paca-plus-plus") == expected
           assert paca.__version__ == expected
           assert app.title == "PACA++ Reference Decision API"
+          assert legacy_codec is extracted_codec is paca.HMACAgentMessageCodec
+          assert extracted_codec.__module__ == "paca.memory"
+          assert pickle.loads(pickle.dumps(extracted_codec)) is extracted_codec
           print(f"Source distribution installation and import smoke test passed for {expected}.")
           PY
           )
