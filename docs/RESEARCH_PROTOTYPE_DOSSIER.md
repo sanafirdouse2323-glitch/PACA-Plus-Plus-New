@@ -26,17 +26,17 @@ This is a hypothesis to evaluate, not a result already established by the reposi
 
 Existing work already addresses important parts of this problem. PACA++ New must not claim to be the first capability-based agent monitor, the first information-flow control for tool calls, or the first delegated-authority reference monitor.
 
-The repository's research programme identifies the following relevant native comparators:
+The repository's research programme identifies the following relevant native comparators. The 2026 papers below are recent arXiv preprints; their reported evaluations are the authors' results, not independent reproductions by PACA++ New. Pin each artifact and reproduce its native setup before quantitative comparison:
 
 | Research area | Relevant prior work | Role in the evaluation |
 |---|---|---|
-| Tool-boundary information flow and privilege policy | CaMeL; Progent | Strong native controls for trusted/untrusted data separation, value-level capabilities and symbolic tool/argument restrictions |
-| Multi-agent communication | Multi-CaMeL | Native comparison for preserving instruction/data separation and provenance across delegated agent communication |
-| Commit-time authorisation and recovery | AID-Guard | Comparison for request/provider-state revalidation, reservation, ambiguous delivery and retry/recovery under declared provider contracts |
-| Stateful delegation/reference monitoring | DelegateGuard; Delegation Without Trust | Close novelty comparators for attenuable authority, broker-mediated effects, delegation, revocation and untrusted agents |
+| Tool-boundary information flow and privilege policy | [CaMeL](https://arxiv.org/abs/2503.18813); [Progent](https://arxiv.org/abs/2504.11703) | Native comparisons for trusted/untrusted data separation, value-level capabilities and symbolic tool/argument restrictions |
+| Multi-agent communication | [Multi-CaMeL](https://arxiv.org/abs/2610.05640), submitted 5 October 2026 | Native comparison for preserving instruction/data separation and provenance across delegated agent communication; its reported results are paper results, not PACA evidence |
+| Commit-time authorisation and recovery | [AID-Guard](https://arxiv.org/abs/2608.21159), submitted 21 August 2026 | Comparison for request/provider-state revalidation, reservation, ambiguous delivery and retry/recovery under declared provider contracts; its provider claims depend on evaluated contracts and effect-path inventory |
+| Stateful delegation/reference monitoring | [DelegateGuard](https://arxiv.org/abs/2610.16005), submitted 12 October 2026; [Delegation Without Trust](https://arxiv.org/abs/2609.00267), submitted 31 August 2026 | Very close novelty comparators for purpose/label/operation/sink-bound attenuable authority, model-independent reference monitoring, identity, delegation, revocation and compromised sub-agents |
 | Benchmark-native tool filtering | AgentDojo native `tool_filter` | Baseline for the subset of AgentDojo workspace tasks supported by the current adapter |
 
-**Defensible research position:** the potential contribution is not any one of these mechanisms in isolation. It is the formally specified and empirically tested composition of information continuity, authority continuity, usage continuity and effect continuity across distinct runtime stages, including the failure and recovery boundary at a protected sink. Whether this provides additional protection over the best layered combination of existing systems remains an open experimental question.
+**Defensible research position:** recent prior art makes broad claims to model-independent delegated authorisation, attenuable capabilities, provenance transfer between agents and commit-time authorisation/recovery untenable as novelty claims by themselves. The potential contribution is narrower: a formally specified and empirically tested composition of information continuity, authority continuity, usage continuity and effect continuity across distinct runtime stages, with explicit cross-store and resource-side failure semantics. Whether this provides additional protection over the best layered combination of existing systems remains an open experimental question. A G2 residual-gap study is mandatory before claiming a novel mechanism is needed.
 
 The six-point comparative protocol requires native, version-pinned comparators. A home-written imitation must not be reported as CaMeL, Multi-CaMeL, Progent or AID-Guard. Comparator descriptions in the repository are documentary/source evidence unless a native reproduction has actually been completed.
 
