@@ -26,7 +26,9 @@ def test_offline_lifecycle_demo_emits_benign_and_poisoned_sink_results(tmp_path)
     )
     assert completed.stdout == ""
     report = json.loads(report_path.read_text(encoding="utf-8"))
-    assert report["mode"] == "deterministic local reference path; no live LLM or provider"
+    assert (
+        report["mode"] == "deterministic local reference path; no live LLM or provider"
+    )
 
     benign, poisoned = report["scenarios"]
     assert benign["scenario"] == "benign"
