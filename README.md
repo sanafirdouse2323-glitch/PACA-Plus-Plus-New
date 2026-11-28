@@ -40,22 +40,22 @@ python -m paca bench /tmp/paca-benchmark
 
 The benchmark command writes `index.html` and `results.json` into the selected output directory. Use a temporary directory so the checked-in historical report under `docs/` is not overwritten accidentally.
 
-## Offline lifecycle integration demonstration
+## Run the lifecycle example
 
-Run the deterministic two-agent example after installing the development dependencies:
+After installing the development dependencies, run:
 
 ```bash
 python -m pip install -e ".[dev]"
 python examples/lifecycle_security_demo.py --output /tmp/paca-lifecycle-demo.json
 ```
 
-The JSON report contains a benign source-to-memory-to-delegated-message-to-fenced-write control and an untrusted-memory denial control. It uses local SQLite stores, demonstration HMAC keys and a fixed test plan. It does not call an LLM or external provider and is not a production deployment configuration.
+The example runs two local cases. In the first, a trusted test source is passed between two agents and written through the SQLite resource fence. In the second, the source is marked untrusted and the write is blocked. The example uses fixed test data and demonstration HMAC keys. It does not call an LLM or an external provider, and it is not a deployment configuration.
 
 ## What is implemented
 
 | Responsibility group | Included modules | Current boundary |
 |---|---|---|
-| **1. Policy and lifecycle enforcement** | Policy language and evaluation: `paca/ast.py`, `paca/parser.py`, `paca/compiler.py`, `paca/evaluator.py`, `paca/engine.py`, `paca/obligations.py`; enforcement and request flow: `paca/monitor.py`, `paca/runtime.py`, `paca/lifecycle.py`, `paca/agent_runtime.py`; packaged policies | The Monitor evaluates configured rules and capability/effect checks. The lifecycle controller adds session, task, purpose, epoch and selected provenance/tool checks. When configured, the agent runtime also binds delegation and inter-agent message operations routed through its methods to the active lifecycle session. These are complementary responsibilities, not duplicate policy engines; direct authority/message adapter calls and other non-PACA paths remain outside that boundary. |
+| **1. Policy and lifecycle enforcement** | Policy language and evaluation: `paca/ast.py`, `paca/parser.py`, `paca/compiler.py`, `paca/evaluator.py`, `paca/engine.py`, `paca/obligations.py`; enforcement and request flow: `paca/monitor.py`, `paca/runtime.py`, `paca/lifecycle.py`, `paca/agent_runtime.py`; packaged policies | The Monitor evaluates configured rules and capability/effect checks. The lifecycle controller checks the session, task, purpose, policy epoch and selected provenance/tool conditions. When it is configured, the runtime also checks delegation and message send/receive operations against the active session. Direct calls to the authority or message adapters, and other paths outside PACA, do not pass through this check. |
 | **2. Authority and usage state** | `paca/authority.py`, `authority_runtime.py`, `authority_registry.py`, `postgres_authority.py`, `ledger.py` | Capability issuance/verification, delegation, revocation, quotas and selected replay/operation state. The Monitor's operation ledger remains separate from authority-registry quota/revocation state because it records different transitions. PostgreSQL is a shared-primary authority backend, not a unified distributed lifecycle store. Production OIDC/workload identity and KMS/HSM key custody are not implemented. |
 | **3. Information provenance and memory** | `paca/provenance.py`, `paca/durable.py`, `paca/memory.py` | Typed labels, lineage, durable provenance metadata, memory values and selected trusted memory/connector/message adapters. Values and provenance metadata use separate stores; trusted host adapters must supply source and lineage evidence. Hidden model-context dependencies and raw-store bypasses remain. |
 | **4. Protected-resource mediation and commits** | `paca/resource_commit.py`, `filesystem_commit.py`, `broker.py`, `broker_write.py`, `unix_broker.py`, and `paca/contracts/` | Several intentionally distinct paths: the runtime's logical-resource fence, optional Linux filesystem writer, separate signed local logical-file broker mediators, and optional AF_UNIX transport. They are not one universally wired pipeline. Remote-provider mutations and destination-side commit fencing are not implemented. |
