@@ -33,6 +33,7 @@ from .provenance import Arg, Label, LineageNode
 
 if TYPE_CHECKING:
     from .agent_runtime import PACAAgentRuntime
+    from .messages import HMACAgentMessageCodec
 
 
 class MemoryAccessDenied(PermissionError):
