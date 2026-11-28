@@ -5,6 +5,7 @@ on:
     branches: [main, "fix/**"]
   pull_request:
     branches: [main, "security/**"]
+    types: [opened, synchronize, reopened, labeled, unlabeled]
 
 permissions:
   contents: read
@@ -225,7 +226,9 @@ jobs:
           PY
 
   agentdojo-real-benchmark:
-    if: github.event_name == 'pull_request'
+    # Real-model calls can incur charges. Run only when a maintainer explicitly
+    # opts this pull request in with the run-live-agentdojo label.
+    if: github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'run-live-agentdojo')
     needs: agentdojo-integration
     runs-on: ubuntu-latest
     timeout-minutes: 90
