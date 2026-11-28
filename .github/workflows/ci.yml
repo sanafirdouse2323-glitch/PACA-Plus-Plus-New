@@ -344,10 +344,11 @@ jobs:
           paca/contracts/permits.py
 
   docker-build:
+    # CI validates that the image builds. It never has package-write permission
+    # and never authenticates to GHCR. Publishing is release-workflow-only.
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      packages: write
     needs:
       - tests
       - wheel-smoke-test
@@ -361,21 +362,15 @@ jobs:
       - uses: actions/checkout@v7
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
-      - name: Log in to GitHub Container Registry
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ github.token }}
-      - name: Build and push Docker image
+      - name: Build Docker image without registry publication
         uses: docker/build-push-action@v7
         with:
           context: .
-          push: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
-          tags: |
-            ghcr.io/sanafirdouse2323-glitch/paca-plus-plus-new:${{ github.sha }}
-            ghcr.io/sanafirdouse2323-glitch/paca-plus-plus-new:latest
+          push: false
+          load: true
+          tags: paca-plus-plus-new:ci-${{ github.sha }}
+      - name: Verify local Docker image
+        run: docker image inspect paca-plus-plus-new:ci-${{ github.sha }} >/dev/null
 
   langgraph-postgres-checkpoint:
     runs-on: ubuntu-latest
