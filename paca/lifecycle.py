@@ -307,7 +307,7 @@ class LifecycleSecurityController:
                 digest=digest,
             )
 
-    def __run_context_transition(
+    def _run_context_transition(
         self,
         *,
         phase: LifecyclePhase,
