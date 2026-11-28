@@ -50,3 +50,4 @@ A GitHub Actions workflow cannot activate a branch ruleset on its own. The GitHu
 6. Confirm unauthorized actors cannot create, move or delete `v*` tags and cannot bypass the `main` branch ruleset.
 
 Until an administrator completes these steps and verifies the result in GitHub, the repository must be described as **having a proposed branch-protection configuration, not enforced branch protection**.
+
