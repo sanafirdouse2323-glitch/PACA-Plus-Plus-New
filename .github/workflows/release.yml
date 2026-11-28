@@ -195,7 +195,7 @@ jobs:
         run: sha256sum dist/*.whl dist/*.tar.gz > dist/SHA256SUMS
 
       - name: Upload Python release assets
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: paca-python-distributions
           path: dist/

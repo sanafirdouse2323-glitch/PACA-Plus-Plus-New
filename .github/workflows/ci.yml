@@ -43,7 +43,7 @@ jobs:
 
       - name: Upload regenerated benchmark
         if: matrix.python-version == '3.11'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: paca-benchmark-regenerated
           path: /tmp/paca-generated/
@@ -302,7 +302,7 @@ jobs:
 
       - name: Upload raw AgentDojo results and logs
         if: always() && steps.credential.outputs.configured == 'true'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: agentdojo-real-benchmark
           path: runs/agentdojo-real/
