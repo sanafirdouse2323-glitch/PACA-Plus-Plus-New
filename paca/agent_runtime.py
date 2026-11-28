@@ -16,7 +16,11 @@ from collections.abc import Callable, Iterable, Mapping
 from typing import Any
 
 from .authority_runtime import HMACCapabilityAuthority
-from .lifecycle import LifecycleSecurityController, LifecycleSecurityError
+from .lifecycle import (
+    LifecyclePhase,
+    LifecycleSecurityController,
+    LifecycleSecurityError,
+)
 from .memory import (
     HMACAgentMessageCodec,
     MemoryAccessDenied,
@@ -170,16 +174,69 @@ class PACAAgentRuntime:
         max_fanout: int = 5,
         max_task_calls: int | None = None,
     ):
-        return self.authority.issue(
-            parent_token=parent_token,
-            principal=principal,
-            grants=grants,
-            expires_at=expires_at,
-            role=role,
-            max_calls=max_calls,
-            max_fanout=max_fanout,
-            max_task_calls=max_task_calls,
-        )
+        # Snapshot iterable grants once. The same immutable request is both
+        # audited and passed to the authority issuer.
+        grant_snapshot = {
+            action: tuple(patterns) for action, patterns in grants.items()
+        }
+        if self.lifecycle_security is None:
+            return self.authority.issue(
+                parent_token=parent_token,
+                principal=principal,
+                grants=grant_snapshot,
+                expires_at=expires_at,
+                role=role,
+                max_calls=max_calls,
+                max_fanout=max_fanout,
+                max_task_calls=max_task_calls,
+            )
+
+        parent = self.authority.verify(parent_token).capability
+        parent_lineage = parent.authority_lineage
+        if parent_lineage is None:
+            raise MemoryAccessDenied(
+                "lifecycle delegation requires immutable parent authority lineage"
+            )
+        intent = {
+            "parent_authority_id": parent.cap_id,
+            "child_principal": principal,
+            "grants": {
+                action: list(patterns)
+                for action, patterns in sorted(grant_snapshot.items())
+            },
+            "expires_at": expires_at,
+            "role": role,
+            "max_calls": max_calls,
+            "max_fanout": max_fanout,
+            "max_task_calls": max_task_calls,
+        }
+        digest = hashlib.sha256(canonical_value_bytes(intent)).hexdigest()
+        try:
+            return self.lifecycle_security.run_context_transition(
+                phase=LifecyclePhase.DELEGATION,
+                operation="delegate",
+                principal=parent.principal,
+                tenant=parent.tenant,
+                task_id=parent.task_id,
+                purpose=parent_lineage.purpose,
+                policy_epoch=parent_lineage.policy_epoch,
+                subject=principal,
+                digest=digest,
+                action=lambda: self.authority.issue(
+                    parent_token=parent_token,
+                    principal=principal,
+                    grants=grant_snapshot,
+                    expires_at=expires_at,
+                    role=role,
+                    max_calls=max_calls,
+                    max_fanout=max_fanout,
+                    max_task_calls=max_task_calls,
+                ),
+            )
+        except LifecycleSecurityError as exc:
+            raise MemoryAccessDenied(
+                "lifecycle security rejected capability delegation: " + str(exc)
+            ) from exc
 
     def send_message(
         self,
@@ -189,15 +246,89 @@ class PACAAgentRuntime:
         recipient: str,
         capability_token: str,
     ) -> str:
-        return self.messages.seal(
-            payload,
-            sender=sender,
-            recipient=recipient,
-            capability_token=capability_token,
-        )
+        if self.lifecycle_security is None:
+            return self.messages.seal(
+                payload,
+                sender=sender,
+                recipient=recipient,
+                capability_token=capability_token,
+            )
+        if not isinstance(payload, Arg):
+            raise MemoryAccessDenied("inter-agent message payload must be a typed Arg")
+        signed = self.authority.verify(capability_token)
+        authority = signed.capability
+        authority_lineage = authority.authority_lineage
+        if authority_lineage is None:
+            raise MemoryAccessDenied(
+                "lifecycle message sending requires immutable authority lineage"
+            )
+        payload_manifest = {
+            "value": payload.value,
+            "integrity": payload.label.integrity,
+            "sensitivity": payload.label.sensitivity,
+            "tenants": sorted(payload.label.tenants),
+            "tenant_unknown": payload.label.tenant_unknown,
+            "origins": sorted(payload.label.origins),
+            "lineage_refs": sorted(payload.lineage_refs),
+            "lineage_incomplete": payload.lineage_incomplete,
+        }
+        digest = hashlib.sha256(canonical_value_bytes(payload_manifest)).hexdigest()
+        try:
+            return self.lifecycle_security.run_context_transition(
+                phase=LifecyclePhase.MESSAGE,
+                operation="send",
+                principal=authority.principal,
+                tenant=authority.tenant,
+                task_id=authority.task_id,
+                purpose=authority_lineage.purpose,
+                policy_epoch=authority_lineage.policy_epoch,
+                subject=recipient,
+                digest=digest,
+                action=lambda: self.messages.seal(
+                    payload,
+                    sender=sender,
+                    recipient=recipient,
+                    capability_token=capability_token,
+                ),
+            )
+        except LifecycleSecurityError as exc:
+            raise MemoryAccessDenied(
+                "lifecycle security rejected inter-agent message sending: " + str(exc)
+            ) from exc
 
     def receive_message(self, token: str, *, recipient_token: str) -> Arg:
-        return self.messages.open(token, recipient_token=recipient_token)
+        if self.lifecycle_security is None:
+            return self.messages.open(token, recipient_token=recipient_token)
+        signed = self.authority.verify(recipient_token)
+        recipient = signed.capability
+        recipient_lineage = recipient.authority_lineage
+        if recipient_lineage is None:
+            raise MemoryAccessDenied(
+                "lifecycle message receiving requires immutable recipient authority lineage"
+            )
+        if not isinstance(token, str):
+            raise MemoryAccessDenied("inter-agent message token must be text")
+        digest = hashlib.sha256(token.encode("utf-8")).hexdigest()
+        try:
+            return self.lifecycle_security.run_context_transition(
+                phase=LifecyclePhase.MESSAGE,
+                operation="receive",
+                principal=recipient.principal,
+                tenant=recipient.tenant,
+                task_id=recipient.task_id,
+                purpose=recipient_lineage.purpose,
+                policy_epoch=recipient_lineage.policy_epoch,
+                subject=recipient.principal,
+                digest=digest,
+                action=lambda: self.messages.open(
+                    token,
+                    recipient_token=recipient_token,
+                ),
+            )
+        except LifecycleSecurityError as exc:
+            raise MemoryAccessDenied(
+                "lifecycle security rejected inter-agent message receiving: " + str(exc)
+            ) from exc
 
     def revoke_authority(self, authority_id: str, reason: str) -> tuple[str, ...]:
         return self.authority.registry.revoke(authority_id, reason)
