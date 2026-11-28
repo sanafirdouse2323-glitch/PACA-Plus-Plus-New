@@ -1,10 +1,10 @@
 # PACA++ New: PhD research prototype
 
-**Assessment date:** 28 November 2026  
-**Project:** `PACA-Plus-Plus-New`  
-**Current status:** Research prototype. It is not production-ready.  
-**Last implementation-code commit (PR #59):** `c45732707cbfccf44bc4903300250f21184aa128`  
-**Current repository head:** `31faa24a29bf48248d5ab16d6d874a57a9409d8c` (PRs #60 and #61 changed documentation, workflows and tests, not `paca/` implementation code).  
+**Assessment date:** 28 November 2026
+**Project:** `PACA-Plus-Plus-New`
+**Current status:** Research prototype. It is not production-ready.
+**Lifecycle behavior baseline (PR #59):** `c45732707cbfccf44bc4903300250f21184aa128`
+**Repository snapshot reviewed:** `5cd0936710809108a661e81a5b1798049a6a26a3`; a later commit extracted the message codec without an intended behavior change.
 **Merged change:** [PR #59 — Bind agent communication and delegation to lifecycle sessions](https://github.com/sanafirdouse2323-glitch/PACA-Plus-Plus-New/pull/59)
 
 This document describes `PACA-Plus-Plus-New` only. The separate `PACA-Plus-Plus` enterprise gateway is a different project, with a different codebase and evidence. The two should not be confused.
