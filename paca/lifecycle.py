@@ -332,7 +332,10 @@ class LifecycleSecurityController:
             LifecyclePhase.DELEGATION: frozenset({"delegate"}),
             LifecyclePhase.MESSAGE: frozenset({"send", "receive"}),
         }
-        if phase not in allowed_operations or operation not in allowed_operations[phase]:
+        if (
+            phase not in allowed_operations
+            or operation not in allowed_operations[phase]
+        ):
             raise ValueError("unsupported lifecycle context transition")
         self._required_text("principal", principal)
         self._required_text("tenant", tenant)
@@ -374,12 +377,16 @@ class LifecycleSecurityController:
                 or task_id != session.task_id
                 or purpose != session.purpose
             ):
-                reject("communication or delegation authority is outside the active session")
+                reject(
+                    "communication or delegation authority is outside the active session"
+                )
             if (
                 session.policy_epoch is not None
                 and policy_epoch != session.policy_epoch
             ):
-                reject("communication or delegation authority is outside the active policy epoch")
+                reject(
+                    "communication or delegation authority is outside the active policy epoch"
+                )
 
             self._emit(
                 phase,
