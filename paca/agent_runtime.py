@@ -22,12 +22,12 @@ from .lifecycle import (
     LifecycleSecurityError,
 )
 from .memory import (
-    HMACAgentMessageCodec,
     MemoryAccessDenied,
     TrustedMemoryAdapter,
     _AuthorizedMemoryReference,
     canonical_value_bytes,
 )
+from .messages import HMACAgentMessageCodec
 from .provenance import Arg
 from .runtime import ACTIONS, Decision, Request, Tool
 
