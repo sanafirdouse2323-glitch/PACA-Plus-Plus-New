@@ -786,7 +786,6 @@ class TrustedConnectorAdapter:
         return self.memory._write(node, value, capability_token)
 
 
-
 def __getattr__(name: str) -> Any:
     """Load compatibility exports lazily to keep module dependencies acyclic."""
     if name == "PACAAgentRuntime":
