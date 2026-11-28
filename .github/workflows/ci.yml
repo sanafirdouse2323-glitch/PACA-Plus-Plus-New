@@ -117,7 +117,21 @@ jobs:
           python -m venv /tmp/paca-wheel-env
           /tmp/paca-wheel-env/bin/pip install dist/*.whl "fastapi>=0.110.0" "uvicorn[standard]>=0.30.0" "jsonschema>=4.23,<5" "rfc8785>=0.1.4,<0.2"
           cd /tmp
-          /tmp/paca-wheel-env/bin/python -c "from paca.monitor import Monitor; m = Monitor(); assert m.rules.policies; from paca_executor import app; assert app.title == 'PACA++ Reference Decision API'"
+          /tmp/paca-wheel-env/bin/python - <<'PY'
+          import pickle
+          import paca
+          from paca.memory import HMACAgentMessageCodec as legacy_codec
+          from paca.messages import HMACAgentMessageCodec as extracted_codec
+          from paca.monitor import Monitor
+          from paca_executor import app
+
+          assert Monitor().rules.policies
+          assert app.title == "PACA++ Reference Decision API"
+          assert legacy_codec is extracted_codec is paca.HMACAgentMessageCodec
+          assert extracted_codec.__module__ == "paca.memory"
+          assert pickle.loads(pickle.dumps(extracted_codec)) is extracted_codec
+          print("Installed wheel preserves the extracted and legacy message codec imports.")
+          PY
 
       - name: Exercise the protocol schema from the installed wheel
         working-directory: /tmp
