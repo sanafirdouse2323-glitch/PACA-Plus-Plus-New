@@ -5,8 +5,8 @@
 **Status:** Proposed architecture; not a conformance standard or implementation claim  
 **Repository:** PACA-Plus-Plus-New (research repository only)  
 **Target-architecture baseline:** 24 November 2026, main commit a81bbffe3cf081830e7b87bba90f5342a327dfa0  
-**Implementation behaviour baseline:** 28 November 2026, PR #59 merge `c45732707cbfccf44bc4903300250f21184aa128` (last change to `paca/` implementation code).  
-**Current repository head:** 28 November 2026, `31faa24a29bf48248d5ab16d6d874a57a9409d8c` (PRs #60 and #61 updated documentation, workflows and tests; they did not change `paca/` implementation code).
+**Implementation behavior baseline:** 28 November 2026, PR #59 merge `c45732707cbfccf44bc4903300250f21184aa128` (lifecycle-session behavior assessed here).  
+**Repository snapshot reviewed:** 28 November 2026, `5cd0936710809108a661e81a5b1798049a6a26a3`. The later message-codec extraction is a code-organization change; the PR #59 behavioral baseline above remains the basis for implementation mapping.
 
 > This document specifies the intended architecture for the research project. It deliberately describes target components and security contracts separately from the code currently implemented. A component appearing in this specification is not evidence that the component already exists or has been independently validated.
 

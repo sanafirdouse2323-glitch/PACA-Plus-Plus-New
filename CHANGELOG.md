@@ -1,9 +1,10 @@
 # Changelog
 
-## Unreleased — 2026-11-28
+## Unreleased — 2026-11-29
 
 This section records changes merged to `main` after the 0.3.2 packaging release. It does not claim production readiness or improved real-agent attack resistance.
 
+- Refreshes current repository snapshot references and records the 29 November 2026 branch-protection/ruleset recheck; CI results remain tied to the commits that ran them.
 - Adds durable provenance and memory reference components, signed capability envelopes, policy epochs, revocation, per-capability and tenant/task aggregate quotas, and persistent message replay receipts.
 - Adds an optional PostgreSQL shared-primary authority registry and an Ed25519 issuer/verifier separation primitive.
 - Adds read-only Gmail, Microsoft Graph, Slack and Qdrant provider adapters with bounded response handling and provenance capture; CI uses mocked provider HTTP.

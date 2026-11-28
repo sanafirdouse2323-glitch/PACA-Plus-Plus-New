@@ -13,6 +13,18 @@ SCHEMA_PATH = (
     / "v1.0.0"
     / "paca-contracts.schema.json"
 )
+PACKAGED_SCHEMA_PATH = (
+    Path(__file__).resolve().parents[1]
+    / "paca"
+    / "contracts"
+    / "schemas"
+    / "v1.0.0"
+    / "paca-contracts.schema.json"
+)
+
+
+def test_packaged_schema_matches_versioned_contract():
+    assert PACKAGED_SCHEMA_PATH.read_bytes() == SCHEMA_PATH.read_bytes()
 
 
 @pytest.fixture(scope="module")

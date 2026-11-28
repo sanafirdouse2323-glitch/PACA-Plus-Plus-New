@@ -3,7 +3,7 @@
 **Status:** execution protocol and baseline evidence register; not a completed comparative experiment.  
 **Repository:** `PACA-Plus-Plus-New` only.  
 **Frozen implementation/evaluation baseline:** PR #59 merge `c45732707cbfccf44bc4903300250f21184aa128` (last `paca/` implementation-code change).  
-**Current repository head:** `31faa24a29bf48248d5ab16d6d874a57a9409d8c`; PRs #60 and #61 changed documentation, workflows and tests, not the evaluated implementation code.  
+**Repository snapshot reviewed:** `5cd0936710809108a661e81a5b1798049a6a26a3`; the message-codec extraction does not change the protocol's evaluated scope.  
 **Purpose:** turn the six proposed research priorities into a falsifiable, reproducible engineering and evaluation programme.  
 **Claim boundary:** no vendor product is represented as tested until its real service/runtime is configured, version-pinned, exercised, and its raw outputs are retained.
 
@@ -365,3 +365,4 @@ The immediate implementation order is:
 6. Configure the model credential in protected secret storage, run the matched model-in-loop and semantic-transformation experiments, then use `paca-agentdojo-load` with an explicitly acknowledged provider-cost budget for the preregistered concurrency levels. Token totals are available in run output; obtain the dated provider billing export before dollar-cost claims and run separate injected-failure/long-duration trials before availability claims.
 
 No comparative effectiveness, superiority, commercial readiness, complete five-domain mediation, or future-incident-prevention claim is made by this protocol. The DelegateGuard and Delegation Without Trust papers are particularly close prior art: broad claims to model-independent delegation authorization, attenuable capabilities, broker-mediated tool actions, label propagation or revocation are not novel on the basis of this repository's current evidence. Any defensible contribution must be narrower and empirically distinguishable, for example by tested cross-domain state/usage semantics or resource-side commit fencing under a matched threat model.
+

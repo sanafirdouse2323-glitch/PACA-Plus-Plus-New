@@ -3,8 +3,8 @@
 **Repository:** `PACA-Plus-Plus-New` only.  
 **Profile version:** 0.1 (28 November 2026).  
 **Pilot configuration baseline:** PR #49 merge `c9d06c4796a9fb0a04cd5db1ca4c792d2396506a` (the frozen AgentDojo adapter/task configuration).  
-**Frozen implementation baseline:** `c45732707cbfccf44bc4903300250f21184aa128` (PR #59; last change to `paca/` implementation code). This AgentDojo pilot does not exercise the communication/delegation checks.  
-**Current repository head:** `31faa24a29bf48248d5ab16d6d874a57a9409d8c`; later PRs #60 and #61 changed documentation, workflows and tests, not the AgentDojo adapter.  
+**Frozen lifecycle behavior baseline:** `c45732707cbfccf44bc4903300250f21184aa128` (PR #59). This AgentDojo pilot does not exercise the communication/delegation checks.  
+**Repository snapshot reviewed:** `5cd0936710809108a661e81a5b1798049a6a26a3`; the codec extraction does not change the AgentDojo adapter or this pilot's measured scope.  
 **Status:** proposed executable pilot profile; not preregistered, not independently approved, and not run live.  
 **Purpose:** validate the existing AgentDojo comparison harness on a narrow supported task subset before attempting a broader lifecycle study.
 
@@ -160,3 +160,4 @@ After the dry-run and, if authorised, the live pilot, append a dated result reco
 - explicit statement that the pilot does not evaluate the full six-stage hypothesis.
 
 Do not edit the comparator matrix from `D / not_run` to a reproduced result until an actual native run has completed and its raw evidence has been reviewed. Do not use this pilot to claim lifecycle-wide superiority or to mark Phase A complete.
+

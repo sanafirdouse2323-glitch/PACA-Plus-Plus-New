@@ -1,13 +1,13 @@
 # Seven security requirements — implementation and evidence status
 
 **Repository:** PACA-Plus-Plus-New  
-**Assessment snapshot:** 28 November 2026; repository `main` head `31faa24a29bf48248d5ab16d6d874a57a9409d8c` (after PRs #59–#61). Repository settings were rechecked on this date.  
+**Assessment snapshot:** 28 November 2026; repository `main` head `5cd0936710809108a661e81a5b1798049a6a26a3`. Repository settings were rechecked on 29 November 2026.  
 **Status:** Research implementation; not production-certified.  
-**Last implementation-code baseline:** PR #59 merge `c45732707cbfccf44bc4903300250f21184aa128`. PRs #60 and #61 changed documentation, workflows and tests; they did not change `paca/` implementation code.
+**Lifecycle behavior baseline:** PR #59 merge `c45732707cbfccf44bc4903300250f21184aa128`. The subsequent `5cd0936` commit extracted the message codec while preserving its historical import path; no intended behavior change is claimed.
 
 This status record carries forward the earlier PR #49 assessment and includes the PR #59 lifecycle-session checks. PR #49 hardened release/replay controls; PR #59 added active-session checks to runtime delegation and message send/receive operations when lifecycle security is configured. Neither change establishes complete mediation or production certification. Historical evidence remains tied to its original commit and test configuration.
 
-PR #59 validation on its implementation commit: CI run #1062 (`46165972063`) and release-validation run #841 (`46165972095`) passed. On the current repository head `31faa24a29bf48248d5ab16d6d874a57a9409d8c`, post-merge CI run #1070 (`46168770369`) and release-validation run #848 (`46168770423`) also passed. The live AgentDojo model benchmark was not run; adapter and dry-run checks are not live-agent results. Tag-specific release publication jobs were skipped on the normal `main` push. No independent security review of PR #59 is recorded. Direct issuer/codec calls and paths outside the configured PACA runtime are not covered by its session check.
+PR #59 validation on its implementation commit: CI run #1062 (`46165972063`) and release-validation run #841 (`46165972095`) passed. CI run #1070 (`46168770369`) and release-validation run #848 (`46168770423`) passed on the earlier `31faa24` snapshot. The current `5cd0936` snapshot moves the message codec into `paca/messages.py` while retaining its historical import path; no validation result for that refactor is recorded here. The live AgentDojo model benchmark was not run; adapter and dry-run checks are not live-agent results. Tag-specific release publication jobs were skipped on the normal `main` push. No independent security review of PR #59 is recorded. Direct issuer/codec calls and paths outside the configured PACA runtime are not covered by its session check.
 
 This record separates code that exists from system properties that have not yet been
 demonstrated. A passing unit test is evidence only for the path it exercises.
@@ -145,3 +145,4 @@ Before describing PACA++ as comprehensively effective or production-ready:
 Until these gates are met, report the project as a research prototype with meaningful
 selected-path controls—not as universal agent security, complete mediation or a
 production security product.
+

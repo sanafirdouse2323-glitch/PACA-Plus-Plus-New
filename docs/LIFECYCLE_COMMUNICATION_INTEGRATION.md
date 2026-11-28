@@ -3,7 +3,7 @@
 **Repository:** `PACA-Plus-Plus-New`  
 **Implementation:** `PACAAgentRuntime`  
 **Feature implementation commit (PR #59):** `c45732707cbfccf44bc4903300250f21184aa128`  
-**Current repository head:** `31faa24a29bf48248d5ab16d6d874a57a9409d8c` (PRs #60 and #61 changed docs/CI/tests, not this implementation).  
+**Repository snapshot reviewed:** `5cd0936710809108a661e81a5b1798049a6a26a3`; a later refactor extracted the codec while preserving its legacy import path.  
 **Status:** Merged into `main` in [PR #59](https://github.com/sanafirdouse2323-glitch/PACA-Plus-Plus-New/pull/59). Main-branch CI run #1062 and release-validation run #841 passed on this commit. No independent security review is recorded.
 
 ## Why this change was needed
@@ -72,3 +72,4 @@ The message codec still uses HMAC for its envelope signature. This change does n
 The audit digest is useful for matching an event to the data that was processed. It is not encryption and should not be treated as a confidentiality control. Audit records still need suitable access controls and retention. The connected test fixture also uses a permissive memory metadata callback to isolate the session and lineage checks; the repository's separate memory-policy tests remain necessary.
 
 **In summary:** the change merged in PR #59 connects the existing session check to delegation and message operations on the PACA runtime path. It closes that specific runtime-path gap, but it does not make every path through an agent, framework, host or provider subject to lifecycle enforcement.
+

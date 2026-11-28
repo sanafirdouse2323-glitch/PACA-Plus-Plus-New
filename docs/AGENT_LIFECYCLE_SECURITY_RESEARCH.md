@@ -5,8 +5,7 @@
 **Research status:** research architecture and work programme with a partially implemented reference lifecycle control; not a completed implementation or validated security guarantee.  
 **Earlier implementation baseline:** 27 November 2026, merge commit `c9d06c4796a9fb0a04cd5db1ca4c792d2396506a` on `main` after PR #49. This is retained as the baseline for the earlier lifecycle-controller assessment.
 
-**Implementation behaviour baseline:** 28 November 2026, PR #59 merge `c45732707cbfccf44bc4903300250f21184aa128`. This is the last change to `paca/` implementation code. PR #59 adds session checks to delegation and message send/receive through the configured PACA runtime, with an offline example and regression tests; it does not establish complete lifecycle mediation.  
-**Current repository head:** 28 November 2026, `31faa24a29bf48248d5ab16d6d874a57a9409d8c`. PRs #60 and #61 updated documentation, CI workflows and workflow-contract tests, but did not change `paca/` implementation code. CI #1070 and release validation #848 passed on this repository head; the credential-dependent live AgentDojo benchmark was not run. Research claims remain unvalidated until independently evaluated. See the [prototype dossier](RESEARCH_PROTOTYPE_DOSSIER.md) and [communication integration notes](LIFECYCLE_COMMUNICATION_INTEGRATION.md).
+**Implementation behavior baseline:** PR #59 merge `c45732707cbfccf44bc4903300250f21184aa128`. It adds session checks to delegation and message send/receive through the configured PACA runtime, with an offline example and regression tests; it does not establish complete lifecycle mediation. The later `5cd0936710809108a661e81a5b1798049a6a26a3` repository snapshot includes a message-codec extraction with no intended behavior change. CI #1070 and release validation #848 passed on the earlier `31faa24` snapshot; the credential-dependent live AgentDojo benchmark was not run. Research claims remain unvalidated until independently evaluated. See the [prototype dossier](RESEARCH_PROTOTYPE_DOSSIER.md) and [communication integration notes](LIFECYCLE_COMMUNICATION_INTEGRATION.md).
 
 ## 1. Research objective
 
@@ -332,3 +331,4 @@ Framework interface references used during implementation:
 - [LangChain agent middleware](https://docs.langchain.com/oss/python/langchain/agents/middleware), including synchronous and asynchronous tool interception.
 
 The Phase C implementation is deliberately scoped to selected, instrumented lifecycle boundaries. The claim discipline in Section 9 remains in force.
+

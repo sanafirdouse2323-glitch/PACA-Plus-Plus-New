@@ -1,8 +1,7 @@
 # PAC++ New — implementation status and engineering gates
 
-**Last implementation-code baseline:** 28 November 2026, PR #59 merge commit `c45732707cbfccf44bc4903300250f21184aa128`.  
-**Current repository head:** 28 November 2026, `31faa24a29bf48248d5ab16d6d874a57a9409d8c` (PRs #60 and #61 changed documentation, workflows and tests, not `paca/` implementation code).  
-**Validation:** PR #59 CI #1062 (`46165972063`) and release validation #841 (`46165972095`) passed on the implementation baseline. Post-merge CI #1070 (`46168770369`) and release validation #848 (`46168770423`) passed on the current repository head. The live AgentDojo model benchmark was not run. Release publication jobs were skipped on the normal `main` push. Architecture and evaluation documents retain their own versioned design/protocol baselines.
+**Repository snapshot reviewed:** `main` at `5cd0936710809108a661e81a5b1798049a6a26a3` (28 November 2026).  
+**Behavioral baseline:** PR #59 merge `c45732707cbfccf44bc4903300250f21184aa128`; the later `5cd0936` commit moved the message codec without an intended behavior change. CI #1070 (`46168770369`) and release validation #848 (`46168770423`) passed on the earlier `31faa24` snapshot, not on `5cd0936`. The live AgentDojo model benchmark was not run. Architecture and evaluation documents retain their own frozen design/protocol baselines.
 
 **PR #59 (28 November 2026):** merged into `main`. It adds active-session checks to `PACAAgentRuntime.delegate()`, `send_message()` and `receive_message()` when lifecycle security is configured, plus a local SQLite example and regression/smoke tests for a trusted source and an untrusted source. The checks bind the relevant parent, sender or recipient capability to the active principal, tenant, task, purpose and policy epoch. They apply only to calls routed through these runtime methods; direct issuer/codec calls, other transports, host, framework and provider paths remain outside this check. No independent security review is recorded.
 

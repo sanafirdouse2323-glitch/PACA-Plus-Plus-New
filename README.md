@@ -108,7 +108,7 @@ Important unresolved boundaries include:
 - **Persistence and recovery:** provenance, memory values and the Monitor operation ledger use SQLite; the PostgreSQL authority registry is single-primary. Cross-store atomicity, complete replication and safe distributed failover are not provided.
 - **External effects and isolation:** provider integrations are read-only. Remote-provider conditional commit/idempotency enforcement and a production approval service are absent. Docker isolation is opt-in and cannot prevent direct host/framework bypasses.
 - **Evaluation:** no completed matched live-agent effectiveness study, comprehensive host-level bypass evaluation or independent security audit is claimed.
-- **Repository governance:** as rechecked on 28 November 2026, `main` was unprotected and no active repository rulesets were returned. An administrator must configure and verify branch/tag rulesets and required reviewers before setting `PACA_RELEASE_GOVERNANCE_VERIFIED=true`.
+- **Repository governance:** as rechecked on 29 November 2026, `main` is unprotected and no active repository rulesets were returned. An administrator must configure and verify branch/tag rulesets and required reviewers before setting `PACA_RELEASE_GOVERNANCE_VERIFIED=true`.
 
 CI success and bounded TLC model checks establish results only for the tests and finite states actually exercised. They are not a security certification. See the [seven-requirements status](docs/SEVEN_REQUIREMENTS_STATUS.md), [direct-bypass evaluation](docs/DIRECT_BYPASS_EVALUATION.md) and [repository security configuration](docs/REPOSITORY_SECURITY_CONFIGURATION.md).
 

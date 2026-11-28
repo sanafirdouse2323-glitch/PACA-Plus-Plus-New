@@ -4,7 +4,7 @@
 
 ## Observed repository setting
 
-On 28 November 2026, the GitHub API recheck reported that the default `main` branch was not protected (`protected: false`) and the repository rulesets endpoint returned an empty list. The available GitHub connection for this work can inspect these settings but does not expose repository-administration write permission or an action to create/enforce rulesets. Therefore, this document is an administrator action plan; it is not evidence that branch protection has been enabled.
+On 29 November 2026, the GitHub API recheck reported that the default `main` branch was not protected (`protected: false`) and the repository rulesets endpoint returned an empty list. The available GitHub connection for this work can inspect these settings but does not expose repository-administration write permission or an action to create/enforce rulesets. Therefore, this document is an administrator action plan; it is not evidence that branch protection has been enabled.
 
 ## Required `main` ruleset
 
@@ -50,3 +50,4 @@ A GitHub Actions workflow cannot activate a branch ruleset on its own. The GitHu
 6. Confirm unauthorized actors cannot create, move or delete `v*` tags and cannot bypass the `main` branch ruleset.
 
 Until an administrator completes these steps and verifies the result in GitHub, the repository must be described as **having a proposed branch-protection configuration, not enforced branch protection**.
+
