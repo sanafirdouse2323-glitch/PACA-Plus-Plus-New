@@ -324,49 +324,49 @@ def test_kill_switch_and_reentrant_audit_sink_block_context_transition(tmp_path)
     assert event.phase == LifecyclePhase.MESSAGE.value
     assert event.decision == "deny"
 
-        controller: LifecycleSecurityController
+    controller: LifecycleSecurityController
 
-        def audit_sink(event):
-            if (
-                event.phase == LifecyclePhase.MESSAGE.value
-                and event.decision == "context-validated"
-            ):
-                controller.stop("audit sink requested stop")
+    def audit_sink(event):
+        if (
+            event.phase == LifecyclePhase.MESSAGE.value
+            and event.decision == "context-validated"
+        ):
+            controller.stop("audit sink requested stop")
 
-        controller = LifecycleSecurityController(
-            clock=lambda: 1_000,
-            audit_sink=audit_sink,
-        )
-        controller.start_session(
-            session_id="audit-reentry-session",
+    controller = LifecycleSecurityController(
+        clock=lambda: 1_000,
+        audit_sink=audit_sink,
+    )
+    controller.start_session(
+        session_id="audit-reentry-session",
+        principal="agent-a",
+        tenant="acme",
+        task_id="task-1",
+        purpose="research",
+        policy_epoch=3,
+    )
+    invoked = []
+
+    try:
+        controller._run_context_transition(
+            phase=LifecyclePhase.MESSAGE,
+            operation="send",
             principal="agent-a",
             tenant="acme",
             task_id="task-1",
             purpose="research",
             policy_epoch=3,
+            subject="worker-b",
+            digest="a" * 64,
+            action=lambda: invoked.append("executed"),
         )
-        invoked = []
+    except LifecycleSecurityError as exc:
+        assert "session changed during transition audit" in str(exc)
+    else:
+        raise AssertionError("reentrant audit callback must not authorize the action")
 
-        try:
-            controller._run_context_transition(
-                phase=LifecyclePhase.MESSAGE,
-                operation="send",
-                principal="agent-a",
-                tenant="acme",
-                task_id="task-1",
-                purpose="research",
-                policy_epoch=3,
-                subject="worker-b",
-                digest="a" * 64,
-                action=lambda: invoked.append("executed"),
-            )
-        except LifecycleSecurityError as exc:
-            assert "session changed during transition audit" in str(exc)
-        else:
-            raise AssertionError("reentrant audit callback must not authorize the action")
-
-        assert invoked == []
-        assert controller.stopped is True
+    assert invoked == []
+    assert controller.stopped is True
 
 
 def _integrated_environment(tmp_path, *, content_integrity: str):
