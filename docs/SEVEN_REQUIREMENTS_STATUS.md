@@ -1,13 +1,13 @@
 # Seven security requirements — implementation and evidence status
 
 **Repository:** PACA-Plus-Plus-New  
-**Assessment snapshot:** 28 November 2026 (after PR #59 was merged); repository settings rechecked 28 November 2026  
+**Assessment snapshot:** 28 November 2026; repository `main` head `31faa24a29bf48248d5ab16d6d874a57a9409d8c` (after PRs #59–#61). Repository settings were rechecked on this date.  
 **Status:** Research implementation; not production-certified.  
-**Implementation baseline:** squash-merge commit `c45732707cbfccf44bc4903300250f21184aa128` on `main` (PR #59 merged 28 November 2026)
+**Last implementation-code baseline:** PR #59 merge `c45732707cbfccf44bc4903300250f21184aa128`. PRs #60 and #61 changed documentation, workflows and tests; they did not change `paca/` implementation code.
 
-This status record carries forward the earlier PR #49 assessment and updates the implementation baseline to include PR #59. PR #49 hardened publication/release gates and lifecycle replay bounds. PR #59 adds active-session checks to runtime delegation and message send/receive operations when lifecycle security is configured. Neither change establishes complete mediation or production certification. Historical evidence remains labelled by its original commit and test configuration.
+This status record carries forward the earlier PR #49 assessment and includes the PR #59 lifecycle-session checks. PR #49 hardened release/replay controls; PR #59 added active-session checks to runtime delegation and message send/receive operations when lifecycle security is configured. Neither change establishes complete mediation or production certification. Historical evidence remains tied to its original commit and test configuration.
 
-Main-branch CI run #1062 (`46165972063`) and release-validation run #841 (`46165972095`) completed successfully on the implementation baseline above. The credential-dependent live AgentDojo benchmark was skipped in CI; this is not a live-agent result. The release workflow's tag-specific publication steps were skipped because the run was a normal `main` push. No independent security review of PR #59 is recorded. Direct calls to the authority and message adapters, and paths outside the configured PACA runtime, are not covered by its session check.
+PR #59 validation on its implementation commit: CI run #1062 (`46165972063`) and release-validation run #841 (`46165972095`) passed. On the current repository head `31faa24a29bf48248d5ab16d6d874a57a9409d8c`, post-merge CI run #1070 (`46168770369`) and release-validation run #848 (`46168770423`) also passed. The live AgentDojo model benchmark was not run; adapter and dry-run checks are not live-agent results. Tag-specific release publication jobs were skipped on the normal `main` push. No independent security review of PR #59 is recorded. Direct issuer/codec calls and paths outside the configured PACA runtime are not covered by its session check.
 
 This record separates code that exists from system properties that have not yet been
 demonstrated. A passing unit test is evidence only for the path it exercises.
