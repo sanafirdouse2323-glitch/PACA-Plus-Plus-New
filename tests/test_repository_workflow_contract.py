@@ -34,6 +34,20 @@ def test_ci_docker_job_is_build_only_and_has_no_registry_write_access():
     assert "docker image inspect" in docker_job
 
 
+def test_live_agentdojo_benchmark_requires_explicit_pull_request_label():
+    workflow = (ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
+    assert "types: [opened, synchronize, reopened, labeled, unlabeled]" in workflow
+    assert (
+        "contains(github.event.pull_request.labels.*.name, 'run-live-agentdojo')"
+        in workflow
+    )
+    benchmark = workflow.split("\\n  agentdojo-real-benchmark:", 1)[1].split(
+        "\\n  lint:", 1
+    )[0]
+    assert "OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}" in benchmark
+    assert "Run matched AgentDojo baseline, tool_filter, and PAC++ New benchmark" in benchmark
+
+
 def test_release_validation_runs_repository_and_security_contract_checks():
     workflow = (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
     validation = workflow.split("\n  verify-release-tag:", maxsplit=1)[0]
