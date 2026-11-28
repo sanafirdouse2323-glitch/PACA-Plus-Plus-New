@@ -1,7 +1,7 @@
 # Seven security requirements — implementation and evidence status
 
 **Repository:** PACA-Plus-Plus-New  
-**Assessment date:** 28 November 2026  
+**Assessment snapshot:** 27 November 2026 (PR #49 code baseline); repository settings rechecked 28 November 2026  
 **Status:** Research implementation; not production-certified.  
 **Implementation baseline:** merge commit `c9d06c4796a9fb0a04cd5db1ca4c792d2396506a` on `main` (PR #49 merged 27 November 2026)
 
