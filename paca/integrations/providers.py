@@ -7,8 +7,8 @@ Provider-specific request and response handling lives in its own module.
 from .gmail import GmailConnector
 from .microsoft_graph import MicrosoftGraphMailConnector
 from .provider_core import (
-    OAuth2RefreshTokenProvider,
     OAuthAccessToken,
+    OAuth2RefreshTokenProvider,
     ProviderAuthenticationError,
     ProviderCapture,
     ProviderConnectorError,
