@@ -22,7 +22,7 @@ jobs:
       contents: read
     steps:
       - name: Checkout pinned independent Ratchet source
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: 1manideep/ratchet
           ref: 813afc2b97eadf44e8962f69acf4b027be052e11

@@ -31,7 +31,7 @@ jobs:
       major_minor: ${{ steps.metadata.outputs.major_minor }}
     steps:
       - name: Check out source
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up Python
         uses: actions/setup-python@v7
@@ -213,7 +213,7 @@ jobs:
       release_tag: ${{ steps.verify.outputs.release_tag }}
     steps:
       - name: Check out source and tags
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -294,7 +294,7 @@ jobs:
       packages: write
     steps:
       - name: Check out source
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
