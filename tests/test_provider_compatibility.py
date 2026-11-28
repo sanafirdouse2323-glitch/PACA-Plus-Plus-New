@@ -55,6 +55,27 @@ def test_provider_capture_and_page_instances_remain_pickle_compatible() -> None:
         assert restored == value
 
 
+def test_provider_connector_modules_reexport_through_legacy_facade() -> None:
+    modules = {
+        "GmailConnector": "paca.integrations.gmail",
+        "MicrosoftGraphMailConnector": "paca.integrations.microsoft_graph",
+        "SlackHistoryConnector": "paca.integrations.slack",
+        "QdrantVectorConnector": "paca.integrations.qdrant",
+    }
+    for name, module_name in modules.items():
+        provider_type = getattr(importlib.import_module(module_name), name)
+        assert getattr(providers, name) is provider_type
+        assert provider_type.__module__ == "paca.integrations.providers"
+        assert pickle.loads(pickle.dumps(provider_type)) is provider_type
+
+
+def test_shared_http_wrapper_is_exported_by_legacy_facade() -> None:
+    from paca.integrations import provider_core
+    from paca.integrations.providers import _ProviderHTTPClient
+
+    assert _ProviderHTTPClient is provider_core._ProviderHTTPClient
+
+
 def test_private_http_wrapper_remains_importable_from_compatibility_module() -> None:
     from paca.integrations.providers import _ProviderHTTPClient
 
