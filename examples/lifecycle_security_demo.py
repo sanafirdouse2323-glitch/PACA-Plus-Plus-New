@@ -217,9 +217,7 @@ def _run_scenario(root: Path, *, content_integrity: str) -> dict[str, Any]:
         LifecyclePhase.RETRIEVAL,
         "versioned_memory_read",
         subject=f"mem/{scenario}-source",
-        digest=hashlib.sha256(
-            canonical_value_bytes(retrieved.value)
-        ).hexdigest(),
+        digest=hashlib.sha256(canonical_value_bytes(retrieved.value)).hexdigest(),
         trusted=retrieved.label.integrity == "trusted",
     )
 
@@ -336,13 +334,19 @@ def _run_scenario(root: Path, *, content_integrity: str) -> dict[str, Any]:
     row = _resource_row(registry, RESOURCE)
     if content_integrity == "trusted":
         if row is None or outcome["decision"] != "allow":
-            raise RuntimeError("benign control did not commit to the fenced resource sink")
+            raise RuntimeError(
+                "benign control did not commit to the fenced resource sink"
+            )
     elif row is not None or outcome["decision"] != "deny":
-        raise RuntimeError("poisoned control was not blocked before resource commitment")
+        raise RuntimeError(
+            "poisoned control was not blocked before resource commitment"
+        )
 
     return {
         "scenario": scenario,
-        "expected": "allow-and-commit" if content_integrity == "trusted" else "deny-no-commit",
+        "expected": "allow-and-commit"
+        if content_integrity == "trusted"
+        else "deny-no-commit",
         "outcome": outcome,
         "sender_lifecycle_events": _event_rows(sender_lifecycle),
         "worker_lifecycle_events": _event_rows(worker_lifecycle),
