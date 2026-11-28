@@ -100,7 +100,7 @@ uvicorn paca_executor:app --host 127.0.0.1 --port 8000
 
 The Dockerfile builds this same reference API. Binding the host port to `127.0.0.1` is intended for local demonstration, not public service deployment.
 
-**Container release policy:** CI builds the Docker image locally after the required test and security jobs, but does not publish it to GHCR on pull requests or ordinary `main` pushes. Registry publication is restricted to a version-tag release that passes the release workflow's version, main-history and publisher checks, followed by approval through the `paca-release` GitHub environment. Repository administrators must separately enable the `main` branch ruleset, the `v*` tag ruleset and required reviewers for that environment. See [repository security configuration](docs/REPOSITORY_SECURITY_CONFIGURATION.md).
+**Container release policy:** CI builds the Docker image locally after the required test and security jobs, but does not publish it to GHCR on pull requests or ordinary `main` pushes. Registry publication is restricted to a version-tag release that passes the release workflow's version, main-history and owner-publisher checks, the `PACA_RELEASE_GOVERNANCE_VERIFIED=true` repository variable, and approval through the `paca-release` GitHub environment. Administrators must separately enable the `main` branch ruleset, the `v*` tag ruleset and required reviewers for that environment before setting the variable. See [repository security configuration](docs/REPOSITORY_SECURITY_CONFIGURATION.md).
 
 ## Evidence and evaluation limits
 
