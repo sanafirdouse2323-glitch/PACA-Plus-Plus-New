@@ -7,6 +7,8 @@
 
 This current-baseline record supersedes the earlier PR #48 snapshot. PR #49 hardened publication/release gates and lifecycle replay bounds; it did not convert the partial lifecycle controls described below into complete mediation or production certification. Historical evidence remains labelled by its original commit and test configuration.
 
+**Unmerged PR #59 candidate (28 November 2026):** the research branch adds a lifecycle-session gate around runtime-routed delegation and inter-agent send/receive, plus a deterministic SQLite sink demonstration and regression tests. This candidate is not part of the PR #49 `main` baseline recorded by this document. Its tests establish only the declared adapter path; direct authority/message-adapter calls and non-PACA paths remain out of scope. The candidate's latest CI and review status must be checked separately before counting it as validated implementation.
+
 This record separates code that exists from system properties that have not yet been
 demonstrated. A passing unit test is evidence only for the path it exercises.
 
