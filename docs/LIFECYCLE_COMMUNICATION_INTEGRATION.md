@@ -25,7 +25,7 @@ The controller accepts only the explicit transition pairs `delegation/delegate` 
 
 ## Regression tests
 
-`tests/test_lifecycle_communication.py` adds isolated tests for:
+`examples/lifecycle_security_demo.py` is a standalone deterministic two-scenario offline run. `tests/test_lifecycle_demo_cli.py` executes it as a smoke test, checks the benign commit receipt fields and verifies that the poisoned scenario has no sink row. `tests/test_lifecycle_communication.py` adds isolated tests for:
 
 - rejecting delegation when the parent capability principal differs from the active lifecycle principal;
 - recording a successfully issued, attenuated child capability as a session-bound delegation;
