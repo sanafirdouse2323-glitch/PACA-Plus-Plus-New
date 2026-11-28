@@ -49,7 +49,7 @@ python -m pip install -e ".[dev]"
 python examples/lifecycle_security_demo.py --output /tmp/paca-lifecycle-demo.json
 ```
 
-The example runs two local cases. In the first, a trusted test source is passed between two agents and written through the SQLite resource fence. In the second, the source is marked untrusted and the write is blocked. The example uses fixed test data and demonstration HMAC keys. It does not call an LLM or an external provider, and it is not a deployment configuration.
+The example runs two local cases. In the first, a trusted test source is passed between two agents and written through the SQLite resource fence. In the second, the source is marked untrusted and the write is blocked. It exercises the configured runtime's lifecycle-session checks for delegation and message send/receive before the final resource action. The example uses fixed test data and demonstration HMAC keys. It does not call an LLM or an external provider, and it is not a deployment configuration. See [the communication integration notes](docs/LIFECYCLE_COMMUNICATION_INTEGRATION.md) for the exact checks and limits.
 
 ## What is implemented
 
