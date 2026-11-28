@@ -3,7 +3,7 @@
 **Research scope:** security of LLM-based agents across their lifecycle.  
 **Repository boundary:** this document applies only to `PACA-Plus-Plus-New`. It does not define or implement the enterprise gateway project in the separate `PACA-Plus-Plus` repository.  
 **Research status:** research architecture and work programme with a partially implemented reference lifecycle control; not a completed implementation or validated security guarantee.  
-**Implementation snapshot:** 27 November 2026, merge commit `c9d06c4796a9fb0a04cd5db1ca4c792d2396506a` on `main` after PR #49. Research claims and hypotheses below remain unvalidated until independently evaluated. Research claims and hypotheses below remain unvalidated until independently evaluated.
+**Implementation snapshot:** 27 November 2026, merge commit `c9d06c4796a9fb0a04cd5db1ca4c792d2396506a` on `main` after PR #49. The later documentation changes do not alter that implementation baseline. Research claims and hypotheses remain unvalidated until independently evaluated.
 
 ## 1. Research objective
 
@@ -64,7 +64,6 @@ The literature rules out several overly broad novelty claims.
 
 **“Can CaMeLs Talk?” (October 2026)** reports that individually protected agents do not automatically compose: untrusted data can be reinterpreted as trusted input at an agent boundary. Its multi-CaMeL protocol separates trusted instructions and untrusted data in inter-agent communication. PAC++ New must treat this as existing work and compare with it; it cannot claim first cross-agent provenance preservation. [2026 preprint](https://arxiv.org/abs/2610.05640)
 
- 
 **AID-Guard — “Stateful Authorization for Delegated Agent Effects” (August 2026)** studies the later part of the lifecycle: it revalidates the approved request and provider state at commit, maintains reservations while delivery is ambiguous, and constrains retries/recovery using provider-specific terminal-result or delivery-fence evidence. Its at-most-one-effect claim is conditional on the supported provider contracts and evaluated schedules; the paper's reported prototype/evaluation results are not universal guarantees. PAC++ New must treat AID-Guard as a direct comparator for action execution and effect commitment, not claim that its own current local commit paths already provide equivalent remote-provider closure. [2026 preprint](https://arxiv.org/abs/2608.21159)
 
 **How these works differ in scope:** Multi-CaMeL concentrates on preserving instruction/data separation and provenance across hierarchical agent-to-agent communication. AID-Guard concentrates on authorization remaining valid through delegated effect delivery, commit, ambiguity and recovery. PAC++ New's *research ambition* is broader: connect memory/context, planning, tool use, communication, delegation and effect execution within one lifecycle-continuity model. This is a distinction in intended coverage, not an implementation-completeness or performance ranking. The two focused works may provide stronger, more deeply evaluated mechanisms in their respective domains than PAC++ New currently demonstrates.
