@@ -20,7 +20,7 @@ This section records changes merged to `main` after the 0.3.2 packaging release.
 - Gates Docker publication on the Python matrix, wheel smoke test, AgentDojo adapter, lint/type checks, LangGraph, PostgreSQL checkpoint, installation-profile security contracts and broker UID-isolation checks.
 - Strengthens release validation with repository-wide Ruff checks, selected security-critical mypy checks, profile and broker-isolation tests, and a tag-ancestry check requiring release commits to be reachable from `main`.
 - Changes the CI Docker job to build and locally inspect an image without GHCR login or package-write permission; ordinary `main` pushes no longer publish container tags.
-- Restricts container publication to validated version-tag releases, checks the release-triggering account against the repository-owner publisher allowlist, and places GitHub Release publication behind the `paca-release` environment. The administrator must configure required reviewers, branch protection and tag protection in GitHub settings.
+- Restricts container publication to validated version-tag releases, checks the release-triggering account against the repository-owner publisher allowlist, requires the administrator-set `PACA_RELEASE_GOVERNANCE_VERIFIED=true` attestation, and places GitHub Release publication behind the `paca-release` environment. The administrator must configure required reviewers, branch protection and tag protection in GitHub settings before enabling the attestation.
 
 These are reference implementations. They do not establish complete lifecycle mediation or independently measured real-world security effectiveness.
 
