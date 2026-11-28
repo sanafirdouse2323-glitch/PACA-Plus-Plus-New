@@ -83,7 +83,7 @@ When a lifecycle controller is configured, the candidate now:
 
 - verifies the parent/sender/recipient capability and immutable authority lineage;
 - binds principal, tenant, task, purpose and policy epoch to the active session;
-- routes delegation and message operations through an explicit, restricted context-transition API;
+- routes delegation and message operations through an explicit, restricted internal context-transition helper;
 - serialises the trusted local adapter operation against `stop()` and `close_session()`;
 - supports child tool pins, subject to the issuer's existing parent-pin attenuation checks; and
 - records routing metadata and payload digests rather than raw message bytes or token values.
