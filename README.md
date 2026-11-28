@@ -8,6 +8,20 @@ It does **not** provide complete lifecycle mediation or a universal security bou
 
 **Repository boundary:** this repository is separate from the [PACA-Plus-Plus enterprise authorization gateway](https://github.com/sanafirdouse2323-glitch/PACA-Plus-Plus). Do not combine their code, deployment claims or research evidence.
 
+## Research scope and comparator positioning
+
+**PACA++ New is an AI-agent lifecycle-security research project, not an enterprise security gateway.** Its intended research scope is continuous authorization and usage control across an agent's operational lifecycle: input and retrieval, memory/context, planning, tool invocation, inter-agent communication, delegation, and consequential action execution/commit. This describes the research target, not a claim that every stage is currently mediated by the implementation. The current code protects selected paths routed through configured PACA components; direct framework, host, store, subprocess and provider paths can remain outside the boundary.
+
+The distinction from two important research comparators is about *scope*, not a claim that PACA is already more effective:
+
+| Work | Primary focus | Relationship to PACA++ New |
+|---|---|---|
+| **Multi-CaMeL — “Can CaMeLs Talk?”** ([paper](https://arxiv.org/abs/2610.05640)) | Preserving trusted-instruction/untrusted-data separation and provenance across communication in hierarchical agent-as-tool systems; addresses cross-agent “boundary laundering”. | A focused mechanism and direct comparator for PACA's inter-agent communication and delegation stages. Its reported results are specific to its evaluated settings and do not establish coverage of the entire agent lifecycle. |
+| **AID-Guard — “Stateful Authorization for Delegated Agent Effects”** ([paper](https://arxiv.org/abs/2608.21159)) | Authorization-to-effect closure: commit-time request/provider-state revalidation, reservations, and retry/recovery handling under declared provider contracts. | A focused mechanism and direct comparator for PACA's consequential action/effect stage. It addresses a narrower authorization-to-effect lifecycle, not the full memory/planning/communication lifecycle. |
+| **PACA++ New** | A proposed unified lifecycle model spanning memory/context, planning, tool use, communication, delegation and effect execution. | Broader intended lifecycle scope; currently a partial research prototype, not demonstrated complete mediation or a proven superset of the focused guarantees above. |
+
+The key research question is therefore not whether PACA lists more lifecycle stages. It is whether a single, composable model preserves authority and information constraints *between* those stages and provides measurable additional protection beyond focused controls such as Multi-CaMeL and AID-Guard. Those systems should be treated as complementary mechanisms and serious baselines, not dismissed as narrower or weaker implementations. See [the research programme](docs/AGENT_LIFECYCLE_SECURITY_RESEARCH.md) for the comparison and evidence requirements.
+
 ## Installation profiles
 
 Three additive dependency profiles are available: **Core** (`.[core]`) for the lightweight authorization/policy/provenance and local-resource reference components; **Extended** (`.[extended]`) for optional PostgreSQL, API, provider-client and framework Python integrations; and **Research** (`.[research]`) for Extended plus AgentDojo and pytest. Docker, PostgreSQL servers, TLA+/TLC, model credentials and secure deployment configuration are **not** installed by pip. The original fine-grained extras remain supported. See [installation profiles and verification gates](docs/INSTALLATION_PROFILES.md).

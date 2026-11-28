@@ -75,6 +75,17 @@ kill switch for that controller instance.
 
 The one-use digest set is process-local. It is bounded by `LifecycleSecurityPolicy.max_committed_effects` (default 100,000); reaching the limit denies further commits rather than evicting receipts. A process restart loses this controller-local set, and separate controller instances do not share it. Do not treat it as durable or distributed replay protection; retain the authority-registry, monitor-ledger and destination-side replay checks that apply to the deployment.
 
+## Position within the agent-lifecycle research landscape
+
+PACA's intended scope is lifecycle-wide: it studies continuity across input/retrieval, memory/context, planning, tool invocation, inter-agent communication, delegation, and consequential effect execution. This should not be read as a claim that the current controller mediates every one of those stages in every framework. The controller enforces only the calls routed through the configured PACA runtime and adapters; the host must still close direct-access and alternate-path bypasses.
+
+Two focused works are particularly important comparators:
+
+- **Multi-CaMeL** ([paper](https://arxiv.org/abs/2610.05640)) addresses trusted-instruction/untrusted-data separation and provenance across hierarchical agent-as-tool communication. It is a direct comparator for the communication/delegation part of the lifecycle.
+- **AID-Guard** ([paper](https://arxiv.org/abs/2608.21159)) addresses authorization-to-effect continuity through commit-time revalidation, reservations and ambiguous delivery/recovery under declared provider contracts. It is a direct comparator for the effect-commit part of the lifecycle.
+
+These are complementary focused mechanisms, not evidence that PACA already subsumes their guarantees. PACA's research burden is to demonstrate that connecting lifecycle stages yields additional end-to-end security properties, with matched baselines and observed effects. Do not infer complete mediation, remote provider fencing or superiority from the breadth of the lifecycle diagram alone.
+
 ## Research evidence versus engineering requirements
 
 The research record supports the direction, not a universal security claim:

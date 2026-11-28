@@ -3,9 +3,9 @@
 **Repository:** PACA-Plus-Plus-New  
 **Assessment date:** 27 November 2026  
 **Status:** Research implementation; not production-certified.  
-**Implementation baseline:** merge commit `b2e68277d2604c730fd5ae0c86a49ded20a72ef5` on `main` (PR #48 merged 27 November 2026)
+**Implementation baseline:** merge commit `c9d06c4796a9fb0a04cd5db1ca4c792d2396506a` on `main` (PR #49 merged 27 November 2026)
 
-This current-baseline record supersedes the earlier PR #47 snapshot. Historical evidence remains labelled by its original commit and test configuration.
+This current-baseline record supersedes the earlier PR #48 snapshot. PR #49 hardened publication/release gates and lifecycle replay bounds; it did not convert the partial lifecycle controls described below into complete mediation or production certification. Historical evidence remains labelled by its original commit and test configuration.
 
 This record separates code that exists from system properties that have not yet been
 demonstrated. A passing unit test is evidence only for the path it exercises.
