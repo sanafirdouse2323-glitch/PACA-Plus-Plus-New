@@ -1,4 +1,4 @@
-"""PACA agent runtime orchestration across authority, monitor and memory adapters.
+"""PACA agent runtime orchestration across authority, monitor, memory and messaging.
 
 The runtime covers only calls routed through its methods. Direct tool clients,
 framework callbacks, subprocesses and remote resource servers require separate
@@ -22,12 +22,12 @@ from .lifecycle import (
     LifecycleSecurityError,
 )
 from .memory import (
-    HMACAgentMessageCodec,
     MemoryAccessDenied,
     TrustedMemoryAdapter,
     _AuthorizedMemoryReference,
     canonical_value_bytes,
 )
+from .messages import HMACAgentMessageCodec
 from .provenance import Arg
 from .runtime import ACTIONS, Decision, Request, Tool
 

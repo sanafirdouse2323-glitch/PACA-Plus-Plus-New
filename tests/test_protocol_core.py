@@ -154,9 +154,7 @@ def test_packaged_schema_matches_source_contract_schema() -> None:
         / "v1.0.0"
         / "paca-contracts.schema.json"
     )
-    assert json.loads(source_schema.read_text(encoding="utf-8")) == json.loads(
-        packaged_schema.read_text(encoding="utf-8")
-    )
+    assert source_schema.read_bytes() == packaged_schema.read_bytes()
 
 
 def _base_message() -> dict[str, object]:
