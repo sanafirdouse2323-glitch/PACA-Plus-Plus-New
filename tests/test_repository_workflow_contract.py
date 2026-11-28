@@ -83,13 +83,18 @@ def test_registry_publication_is_limited_to_validated_version_tag_releases():
         'if [ "$EVENT_ACTOR" != "$EXPECTED_RELEASE_ACTOR" ]'
     )
     assert "EXPECTED_TAG" in verify
-    assert 'git merge-base --is-ancestor "$tagged_sha" refs/remotes/origin/main' in verify
+    assert (
+        'git merge-base --is-ancestor "$tagged_sha" refs/remotes/origin/main' in verify
+    )
 
     publisher = workflow.split("\n  publish-container:", 1)[1]
     assert "packages: write" in publisher
     assert "push: true" in publisher
     assert "paca-plus-plus-new:latest" in publisher
-    assert "needs: [validate-and-build, verify-release-tag, publish-github-release]" in publisher
+    assert (
+        "needs: [validate-and-build, verify-release-tag, publish-github-release]"
+        in publisher
+    )
 
 
 def test_release_publication_uses_a_protected_environment():
