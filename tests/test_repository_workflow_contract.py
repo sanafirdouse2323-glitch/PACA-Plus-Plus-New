@@ -76,7 +76,12 @@ def test_registry_publication_is_limited_to_validated_version_tag_releases():
     )[0]
     assert "github.ref_type == 'tag'" in workflow
     assert "EXPECTED_RELEASE_ACTOR: sanafirdouse2323-glitch" in verify
+    assert "GOVERNANCE_VERIFIED: ${{ vars.PACA_RELEASE_GOVERNANCE_VERIFIED }}" in verify
+    assert 'if [ "$GOVERNANCE_VERIFIED" != "true" ]' in verify
     assert 'if [ "$EVENT_ACTOR" != "$EXPECTED_RELEASE_ACTOR" ]' in verify
+    assert verify.index('if [ "$GOVERNANCE_VERIFIED" != "true" ]') < verify.index(
+        'if [ "$EVENT_ACTOR" != "$EXPECTED_RELEASE_ACTOR" ]'
+    )
     assert "EXPECTED_TAG" in verify
     assert 'git merge-base --is-ancestor "$tagged_sha" refs/remotes/origin/main' in verify
 
