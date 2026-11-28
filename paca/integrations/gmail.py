@@ -133,4 +133,3 @@ class GmailConnector:
 
     def close(self) -> None:
         self.http.close()
-
