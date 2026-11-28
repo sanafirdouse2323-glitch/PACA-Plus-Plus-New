@@ -32,7 +32,6 @@ from paca.monitor import Monitor
 from paca.resource_commit import SQLiteFencedResourceExecutor
 from paca.runtime import Request, Tool
 
-
 TENANT = "demo-tenant"
 TASK_ID = "demo-lifecycle-task"
 PURPOSE = "prepare-research-report"
