@@ -16,9 +16,7 @@ from .provider_core import (
     ProviderProtocolError,
     ProviderResponseTooLarge,
     ProviderScopeError,
-    _ProviderHTTPClient,
-    _require_scope,
-    _version_id,
+    _ProviderHTTPClient as _ProviderHTTPClient,
 )
 from .qdrant import QdrantVectorConnector
 from .slack import SlackHistoryConnector
