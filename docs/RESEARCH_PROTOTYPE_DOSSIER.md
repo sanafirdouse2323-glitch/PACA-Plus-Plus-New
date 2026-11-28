@@ -150,7 +150,7 @@ The lifecycle controller checks selected effect requests against an active sessi
 
 Those statements describe the current implementation and tests. The following stronger claims are not supported: complete lifecycle mediation, protection against prompt injection across arbitrary models and frameworks, production-grade identity or key management, general remote-provider commit safety, superiority over the related research systems, successful live-model evaluation or independent security certification.
 
-**Overall assessment:** PACA++ New is a research prototype with a working local integration example and defined limitations. It gives the PhD research a concrete implementation to investigate. The main research question—whether the combined controls offer measurable protection beyond strong existing systems—still needs to be answered experimentally.
+PACA++ New is a research prototype with a working local example and clearly stated limitations. It gives the proposed PhD work a concrete system to investigate. Whether the combined controls provide additional protection over the strongest existing systems remains an open question, and the planned experiments must answer it.
 
 ## 10. Related project documentation
 
