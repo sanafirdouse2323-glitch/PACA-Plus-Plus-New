@@ -12,7 +12,7 @@ reference runtime makes four dimensions explicit:
 
 | Dimension | Required invariant | Current PACA hook |
 |---|---|---|
-| Authority continuity | The active principal, tenant, task, purpose and policy epoch remain bound to the request; delegation cannot broaden the immutable grant chain. | `LifecycleSecurityController`, `AuthorityLineageGraph`, capability verification and registry revocation |
+| Authority continuity | The active principal, tenant, task, purpose and policy epoch remain bound to the request, delegation and message operations; delegation cannot broaden the immutable grant chain. | `LifecycleSecurityController`, `AuthorityLineageGraph`, capability verification and registry revocation; configured `PACAAgentRuntime` session checks for delegation and message send/receive |
 | Information continuity | Sensitive or untrusted information cannot become an effect argument without complete lineage, tenant compatibility and a trusted adapter boundary. | `Arg.lineage_refs`, `lineage_incomplete`, `Label`, `TrustedMemoryAdapter` and lifecycle checks |
 | Usage continuity | A retry or duplicate call cannot silently reuse the same effect authorization; quotas and monitor decisions remain part of the final path. | monitor effect token, authority usage registry and one-use lifecycle request digest |
 | Effect continuity | The final action, arguments, tool identity and policy-relevant metadata are the same frozen values that were authorized. | request digest, snapshot checks, typed digest-pinned tool and `commit_authorization()` |
@@ -27,7 +27,7 @@ removes or separately enforces them.
 
 The default lifecycle policy fails closed when:
 
-- no active session binds the request to the intended principal, tenant and task;
+- no active session binds an effect, delegation or message operation to the intended principal, tenant, task, purpose and policy epoch;
 - the capability has no immutable authority lineage, or its purpose/policy epoch
   does not match the active session binding;
 - a consequential action has no typed tool manifest or its implementation is
@@ -53,7 +53,7 @@ separate rows, with the same task identity and sink observed for every row:
 3. retrieval and memory poisoning, memory extraction and cross-session reuse;
 4. delegation, policy-epoch change, revocation and purpose/tenant mismatch;
 5. concurrent requests, retries, timeouts, duplicate delivery and uncertain
-   external outcomes; and
+   external outcomes;
 6. malicious or substituted tools, inter-agent transfer and destination drift; and
 7. executor substitution, stale tool manifests, controller restart, receipt-capacity exhaustion and duplicate requests routed through separate controller instances.
 
@@ -64,6 +64,12 @@ For each row, record at least:
 - indeterminate/uncertain outcome rate;
 - time, throughput, latency and resource cost; and
 - the complete decision/commit trace plus the observed sink state.
+
+The repository's `tests/test_lifecycle_communication.py` also checks selected
+session-bound delegation and message routes, including sender/recipient mismatch,
+message-receipt ordering, the kill switch and audit-callback re-entry. These are
+focused regression tests, not evidence of full multi-hop or transport-wide
+mediation. See [the communication integration notes](LIFECYCLE_COMMUNICATION_INTEGRATION.md).
 
 Prompt-level refusal is not a sufficient success criterion. A row passes only
 when the intended security property holds and the executable sink shows no
