@@ -19,7 +19,7 @@ Enable these protections:
 5. Require the release validation/build check for changes covered by `.github/workflows/release.yml`.
 6. Block force pushes and branch deletion. Apply the ruleset to administrators and avoid bypass actors. Any emergency bypass should be time-limited, documented and reviewed after use.
 
-Do **not** make the real-model AgentDojo benchmark a required check: the workflow intentionally skips that job when `OPENAI_API_KEY` is unavailable. A skipped credential-dependent experiment must not block otherwise-valid code changes.
+Do **not** make the real-model AgentDojo benchmark a required check. It now runs only when a maintainer explicitly adds the `run-live-agentdojo` label to a pull request and the `OPENAI_API_KEY` secret is configured. Without that label or credential, the job is skipped. The adapter tests and dry-run preflight remain part of normal CI; they do not make model calls. A skipped credential-dependent experiment must not block otherwise-valid code changes.
 
 GitHub displays the exact required-check names after the workflows have run on pull requests. Select the stable job/check names from the actual runs rather than guessing names from YAML display titles.
 
@@ -34,6 +34,7 @@ The workflows now separate image validation from image publication:
 - GitHub Release publication uses the `paca-release` environment. An administrator must configure that environment with at least one required reviewer, disable self-review, and restrict deployment branches/tags to version tags matching `v*`. Container publication waits for the approved GitHub Release job to finish.
 - The release publishes version-specific image tags and updates `latest` only after the tag checks and release approval. The CI workflow never updates `latest`.
 - Keep GitHub Actions permissions least-privileged. Only the release container job has `packages: write`; do not grant that permission to CI or pull-request jobs.
+- Treat the `run-live-agentdojo` label as an explicit spend approval. Add it only after confirming the model, task subset, iteration limit and intended API spend; remove it when the run is no longer needed.
 - Protect version tags matching `v*` with a separate active tag ruleset. Restrict tag creation to the intended release publisher, and block tag update/deletion. The workflow allowlist is a second control, not a replacement for the tag ruleset.
 - Preserve the release workflow's version/tag validation and clean package-install checks. Do not bypass failing release validation to publish artifacts.
 
