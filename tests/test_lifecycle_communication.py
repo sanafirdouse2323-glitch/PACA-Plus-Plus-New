@@ -629,8 +629,6 @@ def test_integrated_poisoned_memory_cannot_reach_the_fenced_resource_sink(tmp_pa
         for event in env["worker_lifecycle"].audit_events
     )
 
-
-
 def test_reentrant_audit_sink_cannot_stop_then_allow_a_context_transition():
     controller: LifecycleSecurityController
 
