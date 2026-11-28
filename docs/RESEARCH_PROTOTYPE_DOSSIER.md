@@ -153,14 +153,14 @@ Evidence is labelled by what actually ran, not by what the architecture intends.
 | Evidence item | Observed status | Permitted conclusion |
 |---|---|---|
 | Existing targeted unit/regression suites | Present in the repository and exercised by CI | Evidence for the individual declared fixtures and adapter paths only |
-| PR #59 Python test matrix | The latest observed run passed Python 3.10, 3.11, 3.12 and 3.13, including the new connected trajectory tests | The branch's tests passed on that run; the subsequent change was a Python-formatting-only whitespace correction and requires a final clean CI rerun |
-| Broker UID-isolation, installation-profile security contracts, AgentDojo adapter, wheel smoke, LangGraph integration and PostgreSQL checkpoint jobs | Passed in the same observed CI run | Evidence for the named CI configurations, not universal mediation |
-| Repository formatting check | The observed run failed only because of top-level blank-line formatting in the new test file; a follow-up whitespace correction was committed | Do not call the latest revision fully green until a fresh CI run succeeds |
+| PR #59 Python test matrix | CI run #1050 (run ID `46156942241`) passed Python 3.10, 3.11, 3.12 and 3.13, including the connected trajectory and offline demo smoke tests, on code head `bece5c3f507cac0669c60b778a42b4b456b25d03` | The validated code is present at the current PR head; subsequent commits through the current documentation snapshot changed documentation only. The exact latest documentation head was not separately re-run through CI |
+| Broker UID-isolation, installation-profile security contracts, AgentDojo adapter, wheel smoke, LangGraph integration, PostgreSQL checkpoint and Docker build jobs | Passed in CI run #1050 | Evidence for the named CI configurations, not universal mediation |
+| Lint, formatting and type checks | Ruff lint/format and the repository's configured security-critical type checks passed in release-validation run #829 (run ID `46156942338`) | The release workflow validates packaging and project checks; it is not independent security certification |
 | AgentDojo real-model benchmark | Explicitly skipped because `OPENAI_API_KEY` was not configured | No live model effectiveness result exists |
 | Vendor/service comparators | The repository's Phase A matrix marks the external comparators documentary/not-run | No matched vendor/research-comparator result or superiority claim |
 | Independent security review | Not completed | No independent certification or external assurance claim |
 
-The working change is a draft PR, not an already merged `main` implementation. Repository branch protection was previously observed as inactive; an administrator still needs to apply and verify the documented ruleset.
+The working change is PR #59 on a separate research branch and is not merged into `main`. CI run #1050 passed the complete non-credential-dependent job matrix. The `agentdojo-real-benchmark` job concluded successfully only because the credential check found no `OPENAI_API_KEY` and skipped the live preflight, model run and result upload. Release-validation run #829 passed the complete test suite, lint/type checks, installation contracts, broker UID isolation and wheel/sdist build/smoke test; release publication steps were skipped because this was not a tagged release. The exact current branch head includes documentation-only updates after the validated code head. Repository branch protection was previously observed as inactive; an administrator still needs to apply and verify the documented ruleset.
 
 ## 8. Evaluation programme
 
