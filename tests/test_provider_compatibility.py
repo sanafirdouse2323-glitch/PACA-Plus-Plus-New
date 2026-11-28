@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+import importlib
 import pickle
 
-import paca.integrations
-
 from paca.integrations import providers
+
+integrations = importlib.import_module("paca.integrations")
 
 
 PUBLIC_TYPES = (
