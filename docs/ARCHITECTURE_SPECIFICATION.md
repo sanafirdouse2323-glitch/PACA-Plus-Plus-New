@@ -486,25 +486,30 @@ Every result must state whether it is a unit test, protocol fixture, integration
 
 The following mapping relates the target architecture to the research repository as inspected at the baseline commit in the header. It does not certify the components.
 
-| Target responsibility | Existing research-repository building blocks | Current boundary |
+The current code is grouped below into six responsibility areas to make the implementation easier to navigate. These are **implementation groupings**, not a collapse of the target architecture's logical planes in Section 4. Policy, identity, information provenance, authority, enforcement and assurance retain distinct security semantics even when modules are presented together.
+
+| Implementation group | Building blocks | Current boundary |
 |---|---|---|
-| Policy decision and enforcement | paca/monitor.py, paca/runtime.py, packaged policy | Selected mapped actions only; not universal mediation. |
-| Agent runtime and lifecycle hooks | paca/agent_runtime.py, framework integrations | Calls outside configured adapters can bypass the runtime. |
-| Information provenance | paca/provenance.py | Trusted adapters supply source identity/labels; hidden model context is not automatically captured. |
-| Authority and delegation | paca/authority.py, paca/authority_runtime.py, paca/authority_registry.py | Host identity callbacks remain trusted; production identity/key-management gaps remain. |
-| Memory | paca/memory.py, paca/durable.py | Raw stores can be accessed directly; separate persistence components are not one atomic lifecycle store. |
-| Shared authority persistence | paca/postgres_authority.py | Single-primary authority state; not distributed lifecycle consistency or multi-primary consensus. |
-| Logical resource commit fence | paca/resource_commit.py | Selected logical local writes; not a real filesystem broker or remote-provider commit protocol. |
-| Framework and protocol adapters | paca/integrations/ | Integrations cover selected paths and do not prevent all direct framework/tool access. |
-| Execution helpers | paca/sandbox.py, paca/secure_io.py, paca/secure_network.py | Optional helpers; no universal isolation or complete brokered resource channel. |
-| Formal models | models/PACAAuth.tla, models/PACALifecycle.tla | Bounded models cover selected authority/lifecycle properties; they do not establish code refinement or host isolation. |
-| Evaluation | tests, simulator, AgentDojo integration | Internal simulation and adapter tests are not independent evidence of general real-world effectiveness. |
+| **1. Policy and lifecycle enforcement** | Policy DSL/evaluator modules; `paca/monitor.py`, `runtime.py`, `lifecycle.py`, `agent_runtime.py` | Monitor policy/effect decisions, lifecycle session continuity checks and runtime orchestration are complementary. Only configured requests routed through PACA are covered; internal planning and every framework transition are not intercepted. |
+| **2. Authority and usage state** | `paca/authority.py`, `authority_runtime.py`, `authority_registry.py`, `postgres_authority.py`, `ledger.py` | Capability lineage, HMAC/Ed25519 issuance and verification, delegation/revocation, quotas and selected operation-token state. Host-supplied identity remains trusted input. The Monitor operation ledger and authority registry have different state contracts and transaction boundaries. |
+| **3. Information provenance and memory** | `paca/provenance.py`, `durable.py`, `memory.py` | Typed information labels and lineage, durable metadata, values, and selected memory/connector/message adapters. Hidden context dependencies are not automatically discovered; direct store access can bypass wrappers. |
+| **4. Protected-resource mediation and commits** | `paca/resource_commit.py`, `filesystem_commit.py`, `broker.py`, `broker_write.py`, `unix_broker.py`, `paca/contracts/` | Separate local logical, filesystem, broker read/write and optional Linux IPC paths. They are not a single lifecycle-integrated pipeline, and they do not provide remote-provider commit enforcement or universal host mediation. |
+| **5. Execution containment and secure I/O** | `paca/sandbox.py`, `secure_io.py`, `secure_network.py` | Optional Docker command execution and selected filesystem/network controls. Different helpers protect different paths; no mandatory OS-wide isolation is established. |
+| **6. Framework and provider adapters** | `paca/integrations/` | Explicit AgentDojo, LangGraph, LangChain, checkpoint and read-only provider ingress paths. Direct calls to raw tools, stores, clients or databases remain possible. |
 
-### 15.1 Separate draft changes
+**Assurance and evaluation tooling is separate from the six runtime groups.** The TLA+ specifications, tests, deterministic simulator, benchmark/load runners, statistics and reports assess selected properties; they are not extra enforcement layers and do not establish implementation refinement or production security.
 
-At the baseline inspection, PR #36 (filesystem resource-side commit fence) and PR #37 (strict Docker runtime effects) were separate open draft pull requests and were not part of the main-branch baseline used for this specification.
+### 15.1 Why related modules remain separate
 
-PR #36 describes an optional Linux/local-filesystem write adapter. Its platform-specific design is an implementation candidate, not the cross-platform architecture. PR #37 describes an opt-in Docker runtime guard limited to calls routed through its runtime and to the supported command action. Neither PR closes direct host/framework bypasses or implements the complete broker architecture specified here. Their status and contents must be rechecked before any future integration decision.
+The grouping above is intended to remove duplicate *inventory labels*, not to merge components with different security contracts:
+
+- The **Monitor** evaluates policy and verifies effect tokens; the **LifecycleSecurityController** binds selected requests to session/task/purpose/epoch and selected provenance/tool constraints. One does not replace the other.
+- The **authority registry** maintains authority, revocation, capability/task quotas and resource receipts. The **Monitor operation ledger** maintains the Monitor's operation/token history, strikes and destination-fan-out state. They are not duplicate databases for the same invariants.
+- The **runtime resource fence**, **broker write mediator** and **filesystem commit adapter** have different request, receipt, storage and commit semantics. In particular, the broker write mediator is not automatically part of the runtime lifecycle-controller path.
+- The **AF_UNIX transport** provides a separate-process communication and peer-credential boundary for configured mediator calls; it is not a second policy engine or a universal resource broker.
+- Compatibility aliases and lazy import shims are retained where they preserve existing public imports. They are not additional implementations and should not be removed without an API-compatibility migration.
+
+Do not merge these modules merely to reduce file count. A source-level consolidation requires demonstrated equivalence of invariants, transaction ordering, failure behaviour, public APIs and regression coverage.
 
 ### 15.2 Work required before implementation can claim the target architecture
 
