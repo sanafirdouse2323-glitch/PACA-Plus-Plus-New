@@ -1,12 +1,12 @@
 # Agent-lifecycle enforcement
 
-**Status:** implemented reference checks for selected PACA-managed effect requests. This is stronger than an advisory prompt guard, but it is not a complete lifecycle monitor, host security boundary or provider security boundary.
+**Status:** implemented reference checks for selected PACA-managed effect requests and, when configured, delegation and message operations. This is stronger than an advisory prompt guard, but it is not a complete lifecycle monitor, host security boundary or provider security boundary.
 
 ## Why this exists
 
 The security question is whether information and authority constraints remain valid as an agent moves from input and retrieval through memory, planning, tools, communication and consequential effects. A prompt-level refusal is not sufficient evidence: the protected resource must show that an unauthorized effect did not occur.
 
-PACA contains useful, separately implemented controls for provenance, memory, authority, messaging, selected framework adapters and local resource commits. The `LifecycleSecurityController` connects a subset of these checks to effect requests made through `PACAAgentRuntime`. It does not automatically observe or mediate every transition in an agent's internal execution.
+PACA contains useful, separately implemented controls for provenance, memory, authority, messaging, selected framework adapters and local resource commits. The `LifecycleSecurityController` connects a subset of these checks to effect requests and, when configured, delegation and message send/receive operations made through `PACAAgentRuntime`. It does not automatically observe or mediate every transition in an agent's internal execution.
 
 ## What is enforced today
 
