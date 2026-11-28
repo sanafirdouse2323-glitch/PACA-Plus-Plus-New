@@ -24,7 +24,7 @@ This is a systems-security problem. Model alignment, prompt wording and injectio
 
 ## 2. What the current repository actually contains
 
-The code on `main` is a substantial but partial research prototype. The table describes implementation scope, not independently verified security guarantees.
+The code on `main` is a substantial but partial research prototype. The grouped inventory in the README describes implementation scope, not independently verified security guarantees.
 
 The source-code component inventory is maintained once in the [README implementation map](../README.md#what-is-implemented), which groups modules into six responsibility areas. This research document does not repeat a second per-module component table. The grouping is for navigation only: it does not claim that all paths are integrated or that any group is a complete security boundary.
 
