@@ -3,7 +3,7 @@
 **Repository:** `PACA-Plus-Plus-New` only.  
 **Change:** session-bound delegation and inter-agent message operations in `PACAAgentRuntime`.  
 **Implementation branch:** `research/lifecycle-session-communication-2026-11-28`.  
-**Status:** implementation candidate; CI and review evidence must be checked before treating this change as validated.
+**Status:** implemented on the PR research branch; CI run #1050 and release-validation run #829 passed for the code revision. Not merged to `main` and not independently security-reviewed.
 
 ## Problem addressed
 
@@ -22,6 +22,13 @@ When `lifecycle_security` is configured:
 5. **Audit minimisation and re-entry:** transition events record phase, operation, session metadata, subject and SHA-256 digest. They do not contain message payload bytes or raw token values. Because the configured audit sink is trusted host code and may be invoked synchronously, the controller rechecks that the active session has not been stopped or replaced by a reentrant audit callback before dispatching the adapter operation.
 
 The controller accepts only the explicit transition pairs `delegation/delegate` and `message/send|receive`. The helper is an internal PACA runtime primitive, not an application authorisation API. Its callback is a trusted PACA-owned adapter operation; model- or user-supplied callbacks must never be passed to it.
+
+## Validation record
+
+- **CI run #1050** (`46156942241`): Python 3.10–3.13, Ruff lint/format, all three installation-profile security contracts, broker UID isolation, AgentDojo adapter, LangGraph, PostgreSQL checkpoint integration, wheel smoke test and Docker build completed successfully.
+- **Release-validation run #829** (`46156942338`): complete test suite, configured security-critical type checks, lint/format, installation-profile contracts, broker isolation, wheel/source-distribution build and smoke tests completed successfully.
+- The `agentdojo-real-benchmark` job in CI #1050 ended successfully with its credential-dependent preflight, live model run and upload steps **skipped** because `OPENAI_API_KEY` was not configured. No live-model result is claimed.
+- The validated code head for these runs was `bece5c3f507cac0669c60b778a42b4b456b25d03`. Subsequent branch commits through the current documentation snapshot were documentation-only. No independent security review has been completed.
 
 ## Regression tests
 
