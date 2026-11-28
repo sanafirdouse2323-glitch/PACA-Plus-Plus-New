@@ -225,15 +225,23 @@ jobs:
           EVENT_TAG: ${{ github.ref_name }}
           EVENT_ACTOR: ${{ github.actor }}
           EXPECTED_RELEASE_ACTOR: sanafirdouse2323-glitch
+          GOVERNANCE_VERIFIED: ${{ vars.PACA_RELEASE_GOVERNANCE_VERIFIED }}
           TARGET_SHA: ${{ github.sha }}
           GITHUB_REPOSITORY: ${{ github.repository }}
         shell: bash
         run: |
           set -euo pipefail
 
-          # GITHUB_TOKEN cannot inspect or enforce repository branch-protection
-          # settings. Keep an independent, explicit publisher allowlist here;
-          # expand it only through a reviewed workflow change.
+          # GITHUB_TOKEN cannot inspect repository rulesets. Fail closed unless
+          # an administrator has attested that main/tag rulesets and the
+          # paca-release environment have been configured and verified.
+          if [ "$GOVERNANCE_VERIFIED" != "true" ]; then
+            echo "Refusing release: repository branch/tag protections and paca-release environment have not been attested." >&2
+            exit 1
+          fi
+
+          # Keep an independent, explicit publisher allowlist here; expand it
+          # only through a reviewed workflow change.
           if [ "$EVENT_ACTOR" != "$EXPECTED_RELEASE_ACTOR" ]; then
             echo "Refusing release: actor $EVENT_ACTOR is not an authorised release publisher." >&2
             exit 1
