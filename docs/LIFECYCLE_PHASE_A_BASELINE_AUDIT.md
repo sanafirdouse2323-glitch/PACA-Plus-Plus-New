@@ -4,7 +4,7 @@
 **Assessment date:** 28 November 2026.  
 **Code baseline:** PR #49 merge `c9d06c4796a9fb0a04cd5db1ca4c792d2396506a`.  
 **Current documentation/repository head inspected:** `5b8103b5949b9bfce2488b96a4890d59dba7e527` on `main`.  
-**Status:** Phase A source-and-documentation audit; no new comparative experiment or live model run is claimed.
+**Status:** initial Phase A source-and-documentation audit; Phase A has not yet met its exit criteria. No new comparative experiment or live model run is claimed.
 
 The comparison between the code baseline and the inspected `main` head shows that the intervening commits changed workflows, the Dockerfile and documentation, but no `paca/` implementation modules. The implementation baseline therefore remains PR #49 for this audit. The repository's current CI run on the inspected `main` head succeeded, including the broker UID-isolation and AgentDojo adapter jobs; its credential-dependent live AgentDojo model benchmark was skipped. CI success is not a live-agent effectiveness result.
 
@@ -144,7 +144,21 @@ Report security, utility and operations separately:
 
 The six-point protocol requires frozen templates, a declared primary estimand and denominator, randomization/reset rules, a disjoint pilot, simulation-based power/interval-coverage analysis and independent-template analysis. Thirty independent templates is only a minimum eligibility threshold for further review; it is not automatic statistical power.
 
-## 7. Phase A work items and exit criteria
+## 7. Current Phase A completion status
+
+| Element | Status as of this audit | Work still required |
+|---|---|---|
+| **A0 — Baseline freeze** | Partially complete. The code baseline, current `main` head, latest CI/release-validation runs and current comparator register have been checked. | Freeze exact Python/package/runtime versions, OS/kernel/DB configuration, model/provider versions and all experiment dependency artifacts. |
+| **A1 — Scope and policy** | Drafted. The six lifecycle stages, protected assets and initial attacker capabilities are mapped in this document. | Select and approve a small, precise primary policy family, eligible action/effect set, identity/tenant/task assumptions and explicit exclusions before examining results. |
+| **A2 — TCB and bypass map** | Initial source/documentation inventory completed for the main runtime, lifecycle controller, broker, memory/framework adapters and provider connectors. | Complete executable path coverage for the chosen agent profile; add explicit negative-control bypass attempts for each declared resource route and validate under the actual worker/broker OS identities. |
+| **A3 — Sink and outcome oracle** | Existing local resource commit tests and protocol guidance provide starting points. | Freeze a common test-sink contract, receipt/state oracle, effect identity, idempotency/retry rules and treatment of uncertain commits. A remote-provider sink is not currently implemented. |
+| **A4 — Native comparators** | Documentary source register exists; 16 external entries remain `D / not_run`. | Pin and smoke-test the native artefacts/configurations that are actually accessible. AgentDojo's live model benchmark is credential-gated and was skipped in the current CI run. |
+| **A5 — Traces and metrics** | The six-point protocol already defines extensive metrics, trace fields and template-level statistical rules. | Freeze the precise schema version, eligible-opportunity denominators, primary estimand, randomization/reset rules and missing/indeterminate outcome handling for the selected primary study. |
+| **A6 — Review and transition** | Not complete. | Obtain review/sign-off on the Phase A threat model, policies, adapter map, comparator eligibility and sink oracle before beginning confirmatory evaluation. |
+
+This is an initial baseline audit, not a declaration that Phase A is complete. A0–A2 have useful groundwork, but the policy, executable bypass coverage, sink contract, native comparator reproductions and review gate remain open.
+
+## 8. Phase A work items and exit criteria
 
 | Work item | Required output | Exit criterion |
 |---|---|---|
@@ -160,7 +174,7 @@ The six-point protocol requires frozen templates, a declared primary estimand an
 
 Phase A completion would not mean that PACA has passed the six-stage lifecycle experiment, demonstrated superiority, achieved complete mediation, validated production readiness or completed an independent security review. It means only that the testable research boundary, threat assumptions, baseline candidates, evidence rules and experiment artifacts are sufficiently precise to begin the next evaluation gates.
 
-## 8. Existing documents and source-of-truth hierarchy
+## 9. Existing documents and source-of-truth hierarchy
 
 Use the following division of responsibility to prevent duplicate and contradictory status claims:
 
