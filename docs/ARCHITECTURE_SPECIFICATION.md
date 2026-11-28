@@ -4,7 +4,8 @@
 **Version:** 0.2.0-draft  
 **Status:** Proposed architecture; not a conformance standard or implementation claim  
 **Repository:** PACA-Plus-Plus-New (research repository only)  
-**Baseline inspected:** 24 November 2026, main commit a81bbffe3cf081830e7b87bba90f5342a327dfa0
+**Target-architecture baseline:** 24 November 2026, main commit a81bbffe3cf081830e7b87bba90f5342a327dfa0  
+**Implementation map rechecked:** 28 November 2026, security-code baseline PR #49 merge `c9d06c4796a9fb0a04cd5db1ca4c792d2396506a`; inspected `main` head `5b8103b5949b9bfce2488b96a4890d59dba7e527`
 
 > This document specifies the intended architecture for the research project. It deliberately describes target components and security contracts separately from the code currently implemented. A component appearing in this specification is not evidence that the component already exists or has been independently validated.
 
@@ -484,7 +485,7 @@ Every result must state whether it is a unit test, protocol fixture, integration
 
 ## 15. Implementation mapping and current repository boundary
 
-The following mapping relates the target architecture to the research repository as inspected at the baseline commit in the header. It does not certify the components.
+The following mapping relates the target architecture to the research repository as rechecked on 28 November 2026 against the implementation baseline and `main` head recorded above. It does not certify the components.
 
 The current code is grouped below into six responsibility areas to make the implementation easier to navigate. These are **implementation groupings**, not a collapse of the target architecture's logical planes in Section 4. Policy, identity, information provenance, authority, enforcement and assurance retain distinct security semantics even when modules are presented together.
 
