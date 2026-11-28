@@ -307,7 +307,7 @@ jobs:
           password: ${{ github.token }}
 
       - name: Build and push version-specific image tags
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           push: true
