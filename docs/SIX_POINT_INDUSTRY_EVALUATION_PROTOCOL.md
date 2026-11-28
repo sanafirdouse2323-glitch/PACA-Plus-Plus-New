@@ -2,7 +2,7 @@
 
 **Status:** execution protocol and baseline evidence register; not a completed comparative experiment.  
 **Repository:** `PACA-Plus-Plus-New` only.  
-**Implementation baseline:** merge commit `b2e68277d2604c730fd5ae0c86a49ded20a72ef5` on `main`, verified 27 November 2026 after PR #48 was merged.  
+**Implementation baseline:** merge commit `c9d06c4796a9fb0a04cd5db1ca4c792d2396506a` on `main`, verified 27 November 2026 after PR #49 was merged.  
 **Purpose:** turn the six proposed research priorities into a falsifiable, reproducible engineering and evaluation programme.  
 **Claim boundary:** no vendor product is represented as tested until its real service/runtime is configured, version-pinned, exercised, and its raw outputs are retained.
 
@@ -23,8 +23,8 @@ The project must remain a research prototype until host-level mediation, trusted
 
 At the time of this protocol:
 
-- The implementation baseline is merge commit `b2e68277d2604c730fd5ae0c86a49ded20a72ef5`. PR #48 added the lifecycle-security controller and policy-continuity evaluation contract.
-- PR #48 CI run `913` and release-validation run `746` completed successfully for head `80cdb4c2cf33bee25c981cf5343120fb6719da4d` before the squash merge. The merge commit is `b2e68277d2604c730fd5ae0c86a49ded20a72ef5`.
+- The implementation baseline is merge commit `c9d06c4796a9fb0a04cd5db1ca4c792d2396506a`. PR #48 added lifecycle enforcement; PR #49 added bounded process-local replay handling and publication/release gates.
+- PR #49 CI run `966` and release-validation run `767` completed successfully for head `6d8c058691e506ba94f6a95b61d98d6c45a91f61` before the squash merge. The merge commit is `c9d06c4796a9fb0a04cd5db1ca4c792d2396506a`; the earlier PR #48 validation remains historical evidence for the lifecycle controller.
 - The separate `agentdojo-real-benchmark` job was **skipped**, not passed, because the required model credential was not available to that run.
 - The repository still reports `main` as unprotected. A repository administrator must apply and verify the ruleset described in [REPOSITORY_SECURITY_CONFIGURATION.md](REPOSITORY_SECURITY_CONFIGURATION.md).
 - The deterministic benchmark currently compares PACA against hand-authored toy models: no guard, a prompt filter, a role allow-list, and a simplified sandbox-style policy. These models are useful regression baselines, but they are not AWS, NVIDIA, Microsoft, Google, or research artefact implementations.
