@@ -7,6 +7,8 @@
 
 This current-baseline record supersedes the earlier PR #48 snapshot. PR #49 hardened publication/release gates and lifecycle replay bounds; it did not convert the partial lifecycle controls described below into complete mediation or production certification. Historical evidence remains labelled by its original commit and test configuration.
 
+**PR #59 (28 November 2026):** a separate branch adds session checks to delegation and message sending and receiving through the PACA runtime. It also adds a local SQLite example and regression tests. This work is not part of the PR #49 `main` baseline described here. CI run #1050 and release-validation run #829 passed for the code revision, but the live AgentDojo experiment was skipped because no `OPENAI_API_KEY` was available. PR #59 remains unmerged and has not had an independent security review. Direct calls to the authority and message adapters, and paths outside PACA, are not covered by this change.
+
 This record separates code that exists from system properties that have not yet been
 demonstrated. A passing unit test is evidence only for the path it exercises.
 

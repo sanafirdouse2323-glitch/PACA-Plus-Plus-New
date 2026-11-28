@@ -40,11 +40,22 @@ python -m paca bench /tmp/paca-benchmark
 
 The benchmark command writes `index.html` and `results.json` into the selected output directory. Use a temporary directory so the checked-in historical report under `docs/` is not overwritten accidentally.
 
+## Run the lifecycle example
+
+After installing the development dependencies, run:
+
+```bash
+python -m pip install -e ".[dev]"
+python examples/lifecycle_security_demo.py --output /tmp/paca-lifecycle-demo.json
+```
+
+The example runs two local cases. In the first, a trusted test source is passed between two agents and written through the SQLite resource fence. In the second, the source is marked untrusted and the write is blocked. The example uses fixed test data and demonstration HMAC keys. It does not call an LLM or an external provider, and it is not a deployment configuration.
+
 ## What is implemented
 
 | Responsibility group | Included modules | Current boundary |
 |---|---|---|
-| **1. Policy and lifecycle enforcement** | Policy language and evaluation: `paca/ast.py`, `paca/parser.py`, `paca/compiler.py`, `paca/evaluator.py`, `paca/engine.py`, `paca/obligations.py`; enforcement and request flow: `paca/monitor.py`, `paca/runtime.py`, `paca/lifecycle.py`, `paca/agent_runtime.py`; packaged policies | The Monitor evaluates configured rules and capability/effect checks. The lifecycle controller adds session, task, purpose, epoch and selected provenance/tool checks. The agent runtime routes supported calls. These are complementary responsibilities, not duplicate policy engines; only configured PACA paths are covered. |
+| **1. Policy and lifecycle enforcement** | Policy language and evaluation: `paca/ast.py`, `paca/parser.py`, `paca/compiler.py`, `paca/evaluator.py`, `paca/engine.py`, `paca/obligations.py`; enforcement and request flow: `paca/monitor.py`, `paca/runtime.py`, `paca/lifecycle.py`, `paca/agent_runtime.py`; packaged policies | The Monitor evaluates configured rules and capability/effect checks. The lifecycle controller checks the session, task, purpose, policy epoch and selected provenance/tool conditions. When it is configured, the runtime also checks delegation and message send/receive operations against the active session. Direct calls to the authority or message adapters, and other paths outside PACA, do not pass through this check. |
 | **2. Authority and usage state** | `paca/authority.py`, `authority_runtime.py`, `authority_registry.py`, `postgres_authority.py`, `ledger.py` | Capability issuance/verification, delegation, revocation, quotas and selected replay/operation state. The Monitor's operation ledger remains separate from authority-registry quota/revocation state because it records different transitions. PostgreSQL is a shared-primary authority backend, not a unified distributed lifecycle store. Production OIDC/workload identity and KMS/HSM key custody are not implemented. |
 | **3. Information provenance and memory** | `paca/provenance.py`, `paca/durable.py`, `paca/memory.py` | Typed labels, lineage, durable provenance metadata, memory values and selected trusted memory/connector/message adapters. Values and provenance metadata use separate stores; trusted host adapters must supply source and lineage evidence. Hidden model-context dependencies and raw-store bypasses remain. |
 | **4. Protected-resource mediation and commits** | `paca/resource_commit.py`, `filesystem_commit.py`, `broker.py`, `broker_write.py`, `unix_broker.py`, and `paca/contracts/` | Several intentionally distinct paths: the runtime's logical-resource fence, optional Linux filesystem writer, separate signed local logical-file broker mediators, and optional AF_UNIX transport. They are not one universally wired pipeline. Remote-provider mutations and destination-side commit fencing are not implemented. |
@@ -118,9 +129,11 @@ Do not deploy PAC++ New as the sole security control protecting company data, ac
 - [Versioned protocol contracts v1.0.0](contracts/v1.0.0/README.md) — JSON Schemas and message-security semantics.
 - [Security semantics](docs/SECURITY_SEMANTICS.md) — delegation, provenance, revocation and commit state rules.
 - [Agent-lifecycle enforcement](docs/AGENT_LIFECYCLE_ENFORCEMENT.md) — fail-closed session, provenance, tool and commit checks for the PACA-owned runtime boundary.
+- [Lifecycle communication integration](docs/LIFECYCLE_COMMUNICATION_INTEGRATION.md) — session-bound delegation and message operations, exact scope and regression evidence.
 - [Current implementation status and next gates](docs/security-roadmap.md)
 - [Lifecycle Phase A baseline audit and threat model](docs/LIFECYCLE_PHASE_A_BASELINE_AUDIT.md)
 - [Research question, related work and evaluation plan](docs/AGENT_LIFECYCLE_SECURITY_RESEARCH.md)
+- [PhD research prototype dossier](docs/RESEARCH_PROTOTYPE_DOSSIER.md) — hypothesis, architecture, connected local demonstration, evidence status and research limitations.
 - [Durable lifecycle implementation and trust boundaries](docs/DURABLE_LIFECYCLE_SECURITY.md)
 - [Direct-bypass evaluation](docs/DIRECT_BYPASS_EVALUATION.md)
 - [AgentDojo integration](docs/agentdojo-integration.md)

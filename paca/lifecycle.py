@@ -19,11 +19,12 @@ from collections import deque
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from enum import Enum
-from typing import NoReturn
+from typing import NoReturn, TypeVar
 
 from .runtime import ACTIONS, Request
 
 _DIGEST = re.compile(r"^[0-9a-f]{64}$")
+_T = TypeVar("_T")
 _DEFAULT_TOOL_ACTIONS = frozenset(
     action
     for action, spec in ACTIONS.items()
@@ -43,6 +44,7 @@ class LifecyclePhase(str, Enum):
     TOOL = "tool"
     MEMORY = "memory"
     MESSAGE = "message"
+    DELEGATION = "delegation"
     EFFECT = "effect"
     COMMIT = "commit"
     SHUTDOWN = "shutdown"
@@ -304,6 +306,123 @@ class LifecycleSecurityController:
                 subject=subject,
                 digest=digest,
             )
+
+    def _run_context_transition(
+        self,
+        *,
+        phase: LifecyclePhase,
+        operation: str,
+        principal: str,
+        tenant: str,
+        task_id: str,
+        purpose: str,
+        policy_epoch: int | None,
+        subject: str,
+        digest: str,
+        action: Callable[[], _T],
+    ) -> _T:
+        """Run one trusted communication/delegation operation in the active session.
+
+        The callback must be a PACA-owned adapter operation, never model- or
+        user-supplied code. It runs while the lifecycle lock is held so stop,
+        close and other session transitions cannot race the operation. This
+        binds only calls routed through this runtime; it is not host mediation.
+        """
+        allowed_operations = {
+            LifecyclePhase.DELEGATION: frozenset({"delegate"}),
+            LifecyclePhase.MESSAGE: frozenset({"send", "receive"}),
+        }
+        if (
+            phase not in allowed_operations
+            or operation not in allowed_operations[phase]
+        ):
+            raise ValueError("unsupported lifecycle context transition")
+        self._required_text("principal", principal)
+        self._required_text("tenant", tenant)
+        self._required_text("task_id", task_id)
+        self._required_text("purpose", purpose)
+        self._required_text("subject", subject)
+        if policy_epoch is not None and (
+            isinstance(policy_epoch, bool)
+            or not isinstance(policy_epoch, int)
+            or policy_epoch < 0
+        ):
+            raise ValueError("policy_epoch must be a non-negative integer or None")
+        if _DIGEST.fullmatch(digest) is None:
+            raise ValueError("digest must be a lowercase SHA-256 value")
+        if not callable(action):
+            raise TypeError("context transition action must be callable")
+
+        with self._lock:
+            session = self._session
+
+            def reject(reason: str) -> NoReturn:
+                self._emit(
+                    phase,
+                    operation,
+                    "deny",
+                    subject=subject,
+                    digest=digest,
+                    reason=reason,
+                )
+                raise LifecycleSecurityError(reason)
+
+            if self._stopped_reason is not None:
+                reject("lifecycle controller is stopped")
+            if session is None:
+                reject("an active lifecycle session is required")
+            if (
+                principal != session.principal
+                or tenant != session.tenant
+                or task_id != session.task_id
+                or purpose != session.purpose
+            ):
+                reject(
+                    "communication or delegation authority is outside the active session"
+                )
+            if (
+                session.policy_epoch is not None
+                and policy_epoch != session.policy_epoch
+            ):
+                reject(
+                    "communication or delegation authority is outside the active policy epoch"
+                )
+
+            self._emit(
+                phase,
+                operation,
+                "context-validated",
+                subject=subject,
+                digest=digest,
+            )
+            try:
+                # The audit sink is trusted host code and is called from _emit.
+                # RLock permits same-thread re-entry, so verify that an audit
+                # callback did not stop or replace this session before dispatch.
+                if self._stopped_reason is not None or self._session is not session:
+                    raise LifecycleSecurityError(
+                        "active lifecycle session changed during transition audit"
+                    )
+                result = action()
+            except Exception as exc:
+                # Do not persist exception text: adapter errors may contain data.
+                self._emit(
+                    phase,
+                    operation,
+                    "failed",
+                    subject=subject,
+                    digest=digest,
+                    reason=type(exc).__name__,
+                )
+                raise
+            self._emit(
+                phase,
+                operation,
+                "completed",
+                subject=subject,
+                digest=digest,
+            )
+            return result
 
     def _reject(self, request: Request, reason: str) -> NoReturn:
         digest = None

@@ -2,6 +2,8 @@
 
 **Implementation snapshot baseline:** 27 November 2026, merge commit `c9d06c4796a9fb0a04cd5db1ca4c792d2396506a` on `main` after PR #49. This is the verified security-code baseline for this status update; later dependency and documentation commits do not change the lifecycle implementation. Architecture and evaluation documents retain their own versioned design/protocol baselines and identify separately when their implementation maps were refreshed.
 
+**PR #59 (28 November 2026):** the separate branch `research/lifecycle-session-communication-2026-11-28` adds active-session checks to `PACAAgentRuntime.delegate()`, `send_message()` and `receive_message()`. It also includes a local SQLite example and a smoke test for a trusted source and an untrusted source. CI run #1050 and release-validation run #829 passed for the code revision. The live AgentDojo steps were skipped because no API key was configured. PR #59 is not merged and has not had an independent security review. The new checks apply only to calls routed through these runtime methods; direct adapter, host, framework and provider paths remain outside them.
+
 **Maturity:** research prototype. The repository contains useful reference mechanisms and integrations, but does not mediate every agent lifecycle transition and is not production-ready.
 
 **Project boundary:** this roadmap applies only to `PACA-Plus-Plus-New`. The separate `PACA-Plus-Plus` repository is an enterprise authorization gateway and has a different architecture, codebase and evidence base.
