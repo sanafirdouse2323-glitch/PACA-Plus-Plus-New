@@ -2,8 +2,8 @@
 
 **Repository:** `PACA-Plus-Plus-New`  
 **Implementation:** `PACAAgentRuntime`  
-**Branch:** `research/lifecycle-session-communication-2026-11-28`  
-**Status:** Implemented on the PR branch. The code revision passed CI run #1050 and release-validation run #829. It has not been merged into `main` or independently security-reviewed.
+**Main commit:** `c45732707cbfccf44bc4903300250f21184aa128`  
+**Status:** Merged into `main` in [PR #59](https://github.com/sanafirdouse2323-glitch/PACA-Plus-Plus-New/pull/59). Main-branch CI run #1062 and release-validation run #841 passed on this commit. No independent security review is recorded.
 
 ## Why this change was needed
 
@@ -11,7 +11,7 @@ The lifecycle controller already checked selected effect requests against an act
 
 The authority issuer and message codec already performed their own checks. They verified permissions, message authentication, provenance, revocation and replay state. The gap was that they did not also establish that the operation belonged to the session currently represented by the runtime's lifecycle controller.
 
-This meant that a valid capability for one principal or task could be presented to a runtime whose active session represented someone else. PR #59 adds a session check to those three runtime methods.
+This meant that a valid capability for one principal or task could be presented to a runtime whose active session represented someone else. The change merged in PR #59 adds a session check to those three runtime methods.
 
 ## What changed
 
@@ -42,7 +42,7 @@ The tests also cover a connected local workflow. A host-configured connector sup
 
 There are two cases. The trusted-source case writes a row to the local resource registry. The test checks the version, child authority ID, request digest and commit nonce. The untrusted-source case is denied, and the test confirms that no resource row was created. The plan and source data are fixed test inputs; the example does not call an LLM or claim to test hidden model planning.
 
-The branch also includes `examples/lifecycle_security_demo.py`, a standalone two-case example. `tests/test_lifecycle_demo_cli.py` runs that example as a smoke test and checks both outcomes.
+The merged `main` branch also includes `examples/lifecycle_security_demo.py`, a standalone two-case example. `tests/test_lifecycle_demo_cli.py` runs that example as a smoke test and checks both outcomes.
 
 Run the example and the focused tests from the repository root:
 
@@ -54,13 +54,11 @@ python -m pytest tests/test_lifecycle_communication.py tests/test_lifecycle_demo
 
 ## Validation results
 
-The code revision validated by the following runs was `bece5c3f507cac0669c60b778a42b4b456b25d03`. The commits after that revision, up to the current documentation snapshot, changed documentation only.
+The merged code and documentation are at `c45732707cbfccf44bc4903300250f21184aa128` on `main`.
 
-CI run #1050 (`46156942241`) passed the Python 3.10–3.13 test matrix, Ruff lint and formatting, the core, extended and research installation-profile checks, broker UID isolation, AgentDojo adapter tests, LangGraph integration, PostgreSQL checkpoint integration, wheel smoke tests and Docker build.
+Main-branch CI run #1062 (`46165972063`) passed the Python 3.10–3.13 test matrix, Ruff lint and formatting, the core, extended and research installation-profile checks, broker UID isolation, AgentDojo adapter tests, LangGraph integration, PostgreSQL checkpoint integration, wheel smoke tests and Docker build. The credential-dependent `agentdojo-real-benchmark` job was skipped, so no live-model experiment was completed.
 
-Release-validation run #829 (`46156942338`) passed the full test suite, the configured security-critical type checks, lint and formatting, installation-profile checks, broker isolation, and wheel and source-distribution build and smoke tests.
-
-The live AgentDojo benchmark did not run. No `OPENAI_API_KEY` was configured, so its preflight, model run and result upload steps were skipped. The job's successful status does not mean that a live-model experiment was completed.
+Main-branch release-validation run #841 (`46165972095`) passed the full test suite, configured security-critical type checks, lint and formatting, installation-profile checks, broker isolation, and wheel and source-distribution build and smoke tests. Tag-specific publishing steps were skipped because this was a normal `main` push.
 
 ## What this change does not establish
 
@@ -72,4 +70,4 @@ The message codec still uses HMAC for its envelope signature. This change does n
 
 The audit digest is useful for matching an event to the data that was processed. It is not encryption and should not be treated as a confidentiality control. Audit records still need suitable access controls and retention. The connected test fixture also uses a permissive memory metadata callback to isolate the session and lineage checks; the repository's separate memory-policy tests remain necessary.
 
-**In summary:** PR #59 connects the existing session check to delegation and message operations on the PACA runtime path. It closes that specific gap, but it does not make every path through an agent, framework, host or provider subject to lifecycle enforcement.
+**In summary:** the change merged in PR #59 connects the existing session check to delegation and message operations on the PACA runtime path. It closes that specific runtime-path gap, but it does not make every path through an agent, framework, host or provider subject to lifecycle enforcement.
