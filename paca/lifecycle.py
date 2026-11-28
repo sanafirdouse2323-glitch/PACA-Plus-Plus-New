@@ -396,6 +396,13 @@ class LifecycleSecurityController:
                 digest=digest,
             )
             try:
+                # The audit sink is trusted host code and is called from _emit.
+                # RLock permits same-thread re-entry, so verify that an audit
+                # callback did not stop or replace this session before dispatch.
+                if self._stopped_reason is not None or self._session is not session:
+                    raise LifecycleSecurityError(
+                        "active lifecycle session changed during transition audit"
+                    )
                 result = action()
             except Exception as exc:
                 # Do not persist exception text: adapter errors may contain data.
