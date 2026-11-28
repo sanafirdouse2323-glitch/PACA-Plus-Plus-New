@@ -173,12 +173,14 @@ class PACAAgentRuntime:
         max_calls: int = 40,
         max_fanout: int = 5,
         max_task_calls: int | None = None,
+        tool_pins: Mapping[str, str] | None = None,
     ):
-        # Snapshot iterable grants once. The same immutable request is both
-        # audited and passed to the authority issuer.
+        # Snapshot iterable grants and tool pins once. The same immutable
+        # request is both audited and passed to the authority issuer.
         grant_snapshot = {
             action: tuple(patterns) for action, patterns in grants.items()
         }
+        tool_pin_snapshot = dict(tool_pins or {})
         if self.lifecycle_security is None:
             return self.authority.issue(
                 parent_token=parent_token,
@@ -189,6 +191,7 @@ class PACAAgentRuntime:
                 max_calls=max_calls,
                 max_fanout=max_fanout,
                 max_task_calls=max_task_calls,
+                tool_pins=tool_pin_snapshot,
             )
 
         parent = self.authority.verify(parent_token).capability
@@ -209,6 +212,7 @@ class PACAAgentRuntime:
             "max_calls": max_calls,
             "max_fanout": max_fanout,
             "max_task_calls": max_task_calls,
+            "tool_pins": dict(sorted(tool_pin_snapshot.items())),
         }
         digest = hashlib.sha256(canonical_value_bytes(intent)).hexdigest()
         try:
@@ -231,6 +235,7 @@ class PACAAgentRuntime:
                     max_calls=max_calls,
                     max_fanout=max_fanout,
                     max_task_calls=max_task_calls,
+                    tool_pins=tool_pin_snapshot,
                 ),
             )
         except LifecycleSecurityError as exc:
