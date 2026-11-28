@@ -69,14 +69,9 @@ def test_provider_connector_modules_reexport_through_legacy_facade() -> None:
         assert pickle.loads(pickle.dumps(provider_type)) is provider_type
 
 
-def test_shared_http_wrapper_is_exported_by_legacy_facade() -> None:
+def test_private_http_wrapper_remains_importable_and_shared() -> None:
     from paca.integrations import provider_core
     from paca.integrations.providers import _ProviderHTTPClient
 
     assert _ProviderHTTPClient is provider_core._ProviderHTTPClient
-
-
-def test_private_http_wrapper_remains_importable_from_compatibility_module() -> None:
-    from paca.integrations.providers import _ProviderHTTPClient
-
     assert _ProviderHTTPClient.__name__ == "_ProviderHTTPClient"
