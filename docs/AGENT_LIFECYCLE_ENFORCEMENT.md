@@ -1,47 +1,32 @@
 # Agent-lifecycle enforcement
 
-**Status:** implemented reference control for PACA-managed runtime calls. This is
-stronger than an advisory prompt guard, but it is not a host or provider security
-boundary.
+**Status:** implemented reference checks for selected PACA-managed effect requests. This is stronger than an advisory prompt guard, but it is not a complete lifecycle monitor, host security boundary or provider security boundary.
 
 ## Why this exists
 
-Research on indirect prompt injection, excessive agency, memory poisoning and
-tool abuse consistently finds that the harmful step is the transition from
-untrusted information to an authorized side effect. Prompt-only defenses are
-weak and benchmark scores are often optimistic when they measure semantic
-compliance instead of observed harm. PACA already had useful capability,
-provenance and commit primitives; this milestone makes their lifecycle use
-explicit and fail closed at the reference runtime's final effect boundary.
+The security question is whether information and authority constraints remain valid as an agent moves from input and retrieval through memory, planning, tools, communication and consequential effects. A prompt-level refusal is not sufficient evidence: the protected resource must show that an unauthorized effect did not occur.
 
-## Lifecycle contract
+PACA contains useful, separately implemented controls for provenance, memory, authority, messaging, selected framework adapters and local resource commits. The `LifecycleSecurityController` connects a subset of these checks to effect requests made through `PACAAgentRuntime`. It does not automatically observe or mediate every transition in an agent's internal execution.
 
-| Phase | Required control | PACA implementation |
+## What is enforced today
+
+| Lifecycle segment | Current repository control | Actual boundary and evidence limit |
 |---|---|---|
-| Session start | Bind principal, tenant, task and purpose | `LifecycleSecurityController.start_session()` |
-| Input/retrieval | Record source and trust; never treat tool output as instructions | `observe(..., trusted=False)` plus trusted adapters that create labelled `Arg` values |
-| Planning | Constrain the action/tool set before invocation | `LifecycleSecurityPolicy.allowed_actions` and `allowed_tools` |
-| Tool invocation | Require a typed, capability-pinned tool manifest with an implementation digest | `require_tool_for` and `require_tool_implementation_digest`; the host-supplied executor mapping remains trusted configuration |
-| Memory/context | Preserve complete lineage and tenant binding | `require_complete_lineage_for`, `Arg.lineage_refs`, and `Label` checks |
-| Inter-agent transfer | Keep the session binding and signed message path | existing PACA message codec plus runtime session checks |
-| Effect authorization | Re-check the frozen request immediately before the monitor | `authorize_request()` |
-| Effect commit | Consume a one-use request digest and audit the commit | `commit_authorization()` plus the existing monitor token and authority registry |
-| Shutdown/response | Stop all subsequent effects on operator action | `stop()`; create a new controller to resume after incident handling |
+| Session start | `LifecycleSecurityController.start_session()` records principal, tenant, task, purpose and optional policy epoch. | The values are supplied by trusted host code. The controller does not authenticate the caller or independently establish workload identity. The host must derive them from an authenticated session source. |
+| Input and retrieval | Trusted connector/ingress adapters can attach source identity, trust labels and lineage; `observe(...)` can record an input/retrieval audit event. | `observe()` is an audit hook, not an ingress enforcement point. It records metadata supplied by its caller; it does not capture every model input, retrieved result or hidden context dependency. Source identity depends on the trusted adapter. |
+| Memory and context | `TrustedMemoryAdapter`, provenance/value stores, LangGraph BaseStore and PostgreSQL checkpoint wrappers enforce checks on supported mediated calls. | These are separate adapters, not universal hooks in the lifecycle controller. Direct raw SQLite/value-store access, raw checkpointer/SQL access and alternate memory paths can bypass them. Provenance metadata, values and operation-ledger state are not one cross-store atomic transaction. |
+| Planning | `LifecycleSecurityPolicy.allowed_actions` and `allowed_tools` are evaluated when a typed candidate effect request reaches `authorize_request()`. | This constrains the proposed action/tool on the PACA runtime path. It does not inspect or constrain the model's private/internal planning process, nor every planner state transition. A plan is not itself a permit. |
+| Tool execution | `PACAAgentRuntime.execute_effect()` / `aexecute_effect()` verify the request, authority, provenance, tool manifest and digest before entering the configured executor. Optional AgentDojo and LangChain middleware adapters mediate their registered paths. | Only calls routed through these configured paths are checked. Direct Python function calls, raw framework clients, alternate executors, subprocesses and provider clients remain potential bypasses. The AgentDojo workspace mapper supports a limited declared task/tool subset, not all AgentDojo tasks. |
+| Communication and delegation | Capability issuance/delegation and the signed message codec enforce their own authority, message-authentication and provenance-related checks. | These are separate controls. `PACAAgentRuntime.delegate()`, `send_message()` and `receive_message()` do not call the lifecycle controller or bind each message/delegation to its active session. Do not claim unified lifecycle-session enforcement across multi-hop agent communication. |
+| Effect authorization | The lifecycle controller rechecks the frozen PACA `Request` for session binding, authority lineage, purpose, policy epoch, action/tool restrictions, selected argument lineage and tenant constraints. The runtime also verifies the signed capability and monitor decision. | This applies immediately before executor entry for requests routed through the PACA runtime. It does not protect direct calls outside that runtime. |
+| Effect entry and resource commit | `commit_authorization()` consumes a bounded, process-local request-digest entry before the configured executor is entered. Separate local logical-resource and optional Linux filesystem adapters perform narrow fenced writes. In-process broker mediators and an optional Linux AF_UNIX transport support selected local logical-file reads/writes. | The lifecycle event means “authorization consumed before executor entry”; it is **not a receipt proving that the external effect committed**. The lifecycle digest set is lost on restart and is not shared across controller instances. Local resource fences do not implement remote SaaS/provider commit fencing. The AF_UNIX transport covers only operations explicitly routed through it. |
+| Shutdown | `stop()` makes the controller reject subsequent effect requests that pass through it. | It cannot stop direct tools, raw stores, subprocesses or provider paths that bypass the PACA runtime and broker. |
 
-The session can also bind an authority `policy_epoch`. When supplied, the
-request's immutable authority lineage must carry the same epoch. This makes a
-policy change or revocation epoch a visible continuity boundary rather than an
-implicit assumption.
-
-The `session_id` is a controller-local audit/context identifier. It is not carried in `Request` or independently authenticated by the transport. The host must derive principal, tenant, task and purpose from an authenticated workload/session source, and must not allow an agent to choose those values. A controller supports one active session at a time; use separately managed controller/runtime instances for concurrent sessions. The session ID alone is not proof of identity.
-
-The controller records metadata only: action names, identities, digests,
-decisions and reasons. It never stores model text, credentials or effect
-payloads in its audit events.
+The table is a code-path inventory, not evidence that every adapter has passed a matched adversarial evaluation. See [the Phase A baseline audit](LIFECYCLE_PHASE_A_BASELINE_AUDIT.md), [the direct-bypass evaluation](DIRECT_BYPASS_EVALUATION.md) and [the current implementation roadmap](security-roadmap.md).
 
 ## Runtime integration
 
-Attach it to `PACAAgentRuntime`:
+Attach the controller to the reference runtime:
 
 ```python
 from paca.lifecycle import LifecycleSecurityController
@@ -65,58 +50,38 @@ runtime = PACAAgentRuntime(
 )
 ```
 
-Every call through `execute_effect()` or `aexecute_effect()` is then bound to
-the active task and tenant. Consequential actions require complete lineage,
-reject untrusted arguments, require a digest-pinned tool manifest, and cannot
-reuse the same request digest. `lifecycle.stop("incident-123")` is a one-way
-kill switch for that controller instance.
+Every effect request routed through `execute_effect()` or `aexecute_effect()` is checked against the active lifecycle session. Consequential requests require immutable authority lineage, selected arguments must have complete lineage and acceptable integrity/tenant labels, and a typed tool manifest with an implementation digest is required for the configured action classes.
 
-**Important implementation boundaries:** the manifest digest is included in the capability-pinned tool identity, but the generic Python executor callback is still supplied by trusted host code. The lifecycle controller does not independently hash arbitrary Python callables or prove that a callback's code matches the manifest digest. The deployment must maintain an explicit trusted tool-to-executor mapping and must not let the agent select or replace executor callbacks.
+**Identity boundary:** `session_id` is local controller context, not an authenticated request field. The host must derive principal, tenant, task and purpose from an authenticated workload/session source and must not allow an agent to choose them. A controller supports one active session at a time; concurrent sessions require separately managed controller/runtime instances.
 
-The one-use digest set is process-local. It is bounded by `LifecycleSecurityPolicy.max_committed_effects` (default 100,000); reaching the limit denies further commits rather than evicting receipts. A process restart loses this controller-local set, and separate controller instances do not share it. Do not treat it as durable or distributed replay protection; retain the authority-registry, monitor-ledger and destination-side replay checks that apply to the deployment.
+**Executor boundary:** the manifest digest is capability-pinned, but the generic Python executor callback is trusted host configuration. The controller does not independently hash arbitrary Python callables or prove that a callback's code matches the manifest. The host must own the tool-to-executor mapping and prevent agent-controlled replacement.
 
-## Position within the agent-lifecycle research landscape
+**Replay boundary:** the controller's one-use digest set is bounded by `LifecycleSecurityPolicy.max_committed_effects` (default 100,000). It fails closed at capacity rather than evicting entries, but a restart loses this process-local set and separate controller instances do not share it. Do not treat it as durable or distributed replay protection. Retain the relevant authority-registry, monitor-ledger and resource-side replay controls.
 
-PACA's intended scope is lifecycle-wide: it studies continuity across input/retrieval, memory/context, planning, tool invocation, inter-agent communication, delegation, and consequential effect execution. This should not be read as a claim that the current controller mediates every one of those stages in every framework. The controller enforces only the calls routed through the configured PACA runtime and adapters; the host must still close direct-access and alternate-path bypasses.
+## Broker and destination boundaries
 
-Two focused works are particularly important comparators:
+The optional [Linux separate-process broker transport](UNIX_BROKER_DEPLOYMENT.md) uses AF_UNIX and kernel peer credentials (`SO_PEERCRED`) to bind configured worker UIDs/GIDs to fixed session context. Each connection receives a fresh session/channel binding and carries one operation. The configured dispatcher exposes only the read/write mediators supplied to it; those mediators narrow the actual operations further.
 
-- **Multi-CaMeL** ([paper](https://arxiv.org/abs/2610.05640)) addresses trusted-instruction/untrusted-data separation and provenance across hierarchical agent-as-tool communication. It is a direct comparator for the communication/delegation part of the lifecycle.
-- **AID-Guard** ([paper](https://arxiv.org/abs/2608.21159)) addresses authorization-to-effect continuity through commit-time revalidation, reservations and ambiguous delivery/recovery under declared provider contracts. It is a direct comparator for the effect-commit part of the lifecycle.
+The tests include a separate child-process broker test and a constrained cross-UID fixture in which a worker reads a protected mode-0600 test file through the socket but cannot open that file directly. This is useful local IPC evidence. It is not proof that every worker resource path is mediated: the library does not create the OS identities or access-control policy, automatically start the broker, wire every runtime/framework operation through it, or remove workers' direct access to other resource clients. Production deployment must independently deny direct resource and credential access and exercise bypass tests under the actual service identities.
 
-These are complementary focused mechanisms, not evidence that PACA already subsumes their guarantees. PACA's research burden is to demonstrate that connecting lifecycle stages yields additional end-to-end security properties, with matched baselines and observed effects. Do not infer complete mediation, remote provider fencing or superiority from the breadth of the lifecycle diagram alone.
+The optional Linux filesystem writer and logical-resource commit adapters protect only their declared local resource paths. Provider ingress adapters are read-only. No current PACA path supplies general destination-side commit-time authorization, conditional writes or ambiguous-delivery recovery for arbitrary SaaS providers.
+
+## Position within the research landscape
+
+- **CaMeL** is a direct baseline for trusted/untrusted data separation, value-level capabilities and tool-boundary information flow.
+- **Progent** is a direct baseline for symbolic privilege restrictions and tool-argument policy updates.
+- **Multi-CaMeL** is a direct baseline for preserving instruction/data separation and provenance across hierarchical agent communication.
+- **AID-Guard** is a direct baseline for commit-time request/provider-state revalidation, reservations and ambiguous delivery/recovery under its declared provider contracts.
+- **AgentDojo's native `tool_filter`** is a baseline for supported AgentDojo tasks and tools, not an enterprise-wide lifecycle monitor.
+
+These are distinct controls, not interchangeable implementations. They must be tested in their native, pinned configurations where possible. Do not substitute a hand-coded imitation and label it as the original system. The machine-readable register currently marks external comparators as documentary/unrun; no matched result or superiority claim follows from the descriptions above.
 
 ## Research evidence versus engineering requirements
 
-The research record supports the direction, not a universal security claim:
+The research direction is to test whether a connected model of information provenance and authority continuity prevents violations that separate stage-specific controls miss. The experiment must observe the protected sink, not only model refusals or policy decisions. Measure prohibited effects/attack success, benign completion, false blocks, latency and cost; report indeterminate outcomes and uncertainty separately.
 
-1. InjecAgent and Agent Security Bench demonstrate that tool-using agents remain
-   vulnerable to indirect injection and memory/tool attacks, often at high rates.
-2. Progent, AgentSys, AgentVisor and AgentArmor report substantial reductions
-   when enforcement is deterministic, privilege-scoped and context-isolated.
-3. SafeClawBench-style evaluations show that semantic checks can pass while the
-   sandbox still records harm; observed effects and stateful traces must be
-   measured separately.
-4. Provenance, cryptographic source binding and tamper-resistant memory remain
-   valuable engineering patterns, but are not by themselves broadly validated
-   production controls.
-
-Therefore this module is a necessary lifecycle control, not sufficient evidence
-for production readiness. A production deployment must additionally remove the
-agent's direct access to raw stores, credentials, subprocesses and provider
-clients; enforce network and OS isolation; broker short-lived secrets; mediate
-destination-side commits; and test adaptive, multi-session attacks.
-
-The reproducible four-dimension evaluation protocol is documented in
-[`docs/POLICY_CONTINUITY_EVALUATION.md`](POLICY_CONTINUITY_EVALUATION.md). It
-requires separate evidence for authority, information, usage and effect
-continuity across transformations, delegation, retries, revocation races and
-external sink outcomes.
+The reproducible protocol is documented in [the six-point comparative evaluation protocol](SIX_POINT_INDUSTRY_EVALUATION_PROTOCOL.md) and the four-dimension contract in [POLICY_CONTINUITY_EVALUATION.md](POLICY_CONTINUITY_EVALUATION.md). The lifecycle hypothesis remains unvalidated. No production-readiness, universal mediation, independent audit or superiority claim is made.
 
 ## Deployment rule
 
-Use this controller for PACA-owned runtime calls. Treat any path that can avoid
-`PACAAgentRuntime`, the broker, the memory adapter or a destination commit
-adapter as a bypass until it is separately integrated and tested. Do not claim
-complete mediation solely because this controller is enabled.
-
+Use the lifecycle controller only for PACA-owned runtime calls and only with trusted host-provided session configuration. Treat every path that avoids the configured PACA runtime, adapters, broker or destination commit adapter as a bypass until it is separately integrated and tested. Do not claim complete mediation merely because the controller is enabled.
