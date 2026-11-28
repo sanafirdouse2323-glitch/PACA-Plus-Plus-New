@@ -1,120 +1,104 @@
-# PACA++ New — PhD research prototype dossier
+# PACA++ New: PhD research prototype
 
-**Project:** PACA-Plus-Plus-New  
 **Assessment date:** 28 November 2026  
-**Purpose:** technical dossier for PhD research discussions and application evidence  
-**Maturity:** research prototype / integration demonstrator; not production-ready  
-**Implementation candidate:** PR [#59 — Bind agent communication and delegation to lifecycle sessions](https://github.com/sanafirdouse2323-glitch/PACA-Plus-Plus-New/pull/59)  
-**Working branch:** `research/lifecycle-session-communication-2026-11-28`  
-**Repository boundary:** this dossier applies only to `PACA-Plus-Plus-New`. It does not describe or reuse code or evidence from the separate `PACA-Plus-Plus` enterprise gateway.
+**Project:** `PACA-Plus-Plus-New`  
+**Current status:** Research prototype. It is not production-ready.  
+**Implementation work:** [PR #59 — Bind agent communication and delegation to lifecycle sessions](https://github.com/sanafirdouse2323-glitch/PACA-Plus-Plus-New/pull/59)  
+**Working branch:** `research/lifecycle-session-communication-2026-11-28`
 
-## 1. Research proposition
+This document describes `PACA-Plus-Plus-New` only. The separate `PACA-Plus-Plus` enterprise gateway is a different project, with a different codebase and evidence. The two should not be confused.
 
-LLM agents do not act through one isolated tool call. User content and retrieved data can influence a plan, persist through memory, be transformed or forwarded to another agent, and eventually affect a protected resource. Authority can also outlive or drift away from the task, tenant, purpose or policy state that originally justified it. A security control applied at only one stage may therefore miss a violation that emerges across several stages.
+## 1. The research problem
+
+An AI agent does not make one decision and then stop. It takes in information, retrieves and stores data, forms a plan, calls tools and may pass work to another agent. Eventually, one of those steps can change something outside the agent, such as a file or a service record.
+
+A security check at the tool-call stage may not be enough. Information retrieved earlier may have lost its source details. A memory entry may be reused in a later task. A delegated agent may receive more authority than it needs. A policy or capability may also change between the time an action is planned and the time it is carried out.
+
+This project asks whether those parts can be checked together, rather than treating each tool call as a separate event.
 
 **Research question**
 
-> Can a unified, composable authorisation and usage-control model preserve information provenance and authority constraints across input and retrieval, memory and context, planning, tool use, inter-agent communication and consequential effect commitment—and does it prevent lifecycle-spanning violations that are missed by the strongest applicable stage-specific controls while preserving benign task completion?
+> Can an authorisation and usage-control model preserve information provenance and authority restrictions as an AI agent moves through retrieval, memory, planning, tool use, communication and effect execution? Can it prevent violations that the strongest relevant stage-specific controls do not catch, while still allowing legitimate tasks to finish?
 
-**Falsifiable hypothesis**
+**Working hypothesis**
 
-> For a declared agent threat model and matched workflows, a connected model of information provenance, authority lineage, usage state and resource-side commit validation will reduce prohibited sink effects compared with the strongest applicable native stage-specific controls, without an unacceptable loss of benign task utility.
+> When provenance, delegated authority, usage limits and the final resource commit are checked as part of the same workflow, fewer unauthorised effects will reach a protected resource than with the strongest applicable stage-specific controls, without an unacceptable reduction in legitimate task completion.
 
-This is a hypothesis to evaluate, not a result already established by the repository. A policy denial, a model refusal, a unit test or a larger architecture diagram is not by itself proof that a protected effect was prevented. The primary security oracle is the protected resource's state and trusted commit receipt.
+This is a hypothesis, not a result. The current repository does not establish that the approach is better than existing systems. A policy returning “deny”, a model refusing a request or a passing unit test is not enough to show that an unauthorised action was prevented. The main evidence must come from the protected resource itself and from a trusted record of what it accepted.
 
-## 2. Research gap and novelty discipline
+## 2. Existing work and the research gap
 
-Existing work already addresses important parts of this problem. PACA++ New must not claim to be the first capability-based agent monitor, the first information-flow control for tool calls, or the first delegated-authority reference monitor.
+There is already substantial work on tool authorisation, information-flow control, agent identity, delegation, multi-agent communication and effect commitment. The project must build on that work and compare against it fairly. It should not claim that capabilities, provenance tracking or reference monitors are new ideas.
 
-The repository's research programme identifies the following relevant native comparators. The 2026 papers below are recent arXiv preprints; their reported evaluations are the authors' results, not independent reproductions by PACA++ New. Pin each artifact and reproduce its native setup before quantitative comparison:
+The following papers and systems are relevant to the proposed study:
 
-| Research area | Relevant prior work | Role in the evaluation |
+| Area | Existing work | Why it matters |
 |---|---|---|
-| Tool-boundary information flow and privilege policy | [CaMeL](https://arxiv.org/abs/2503.18813); [Progent](https://arxiv.org/abs/2504.11703) | Native comparisons for trusted/untrusted data separation, value-level capabilities and symbolic tool/argument restrictions |
-| Multi-agent communication | [Multi-CaMeL](https://arxiv.org/abs/2610.05640), submitted 5 October 2026 | Native comparison for preserving instruction/data separation and provenance across delegated agent communication; its reported results are paper results, not PACA evidence |
-| Commit-time authorisation and recovery | [AID-Guard](https://arxiv.org/abs/2608.21159), submitted 21 August 2026 | Comparison for request/provider-state revalidation, reservation, ambiguous delivery and retry/recovery under declared provider contracts; its provider claims depend on evaluated contracts and effect-path inventory |
-| Stateful delegation/reference monitoring | [DelegateGuard](https://arxiv.org/abs/2610.16005), submitted 12 October 2026; [Delegation Without Trust](https://arxiv.org/abs/2609.00267), submitted 31 August 2026 | Very close novelty comparators for purpose/label/operation/sink-bound attenuable authority, model-independent reference monitoring, identity, delegation, revocation and compromised sub-agents |
-| Benchmark-native tool filtering | AgentDojo native `tool_filter` | Baseline for the subset of AgentDojo workspace tasks supported by the current adapter |
+| Tool use and information flow | [CaMeL](https://arxiv.org/abs/2503.18813) and [Progent](https://arxiv.org/abs/2504.11703) | Relevant to keeping trusted instructions separate from untrusted data and restricting tool calls and arguments. |
+| Communication between agents | [Multi-CaMeL](https://arxiv.org/abs/2610.05640), submitted 5 October 2026 | Shows why protections applied to individual agents may not be enough when agents pass information to one another. |
+| Delegation and reference monitoring | [DelegateGuard](https://arxiv.org/abs/2610.16005), submitted 12 October 2026, and [Delegation Without Trust](https://arxiv.org/abs/2609.00267), submitted 31 August 2026 | Close comparisons for delegated permissions, capability restrictions, broker enforcement and compromised sub-agents. |
+| Authorisation at the point of effect | [AID-Guard](https://arxiv.org/abs/2608.21159), submitted 21 August 2026 | Relevant to checking that an action is still authorised when a provider commits it, including retries and uncertain delivery. |
+| Tool filtering in a benchmark | AgentDojo's native `tool_filter` | A baseline for the AgentDojo tasks that the current adapter supports. |
 
-**Defensible research position:** recent prior art makes broad claims to model-independent delegated authorisation, attenuable capabilities, provenance transfer between agents and commit-time authorisation/recovery untenable as novelty claims by themselves. The potential contribution is narrower: a formally specified and empirically tested composition of information continuity, authority continuity, usage continuity and effect continuity across distinct runtime stages, with explicit cross-store and resource-side failure semantics. Whether this provides additional protection over the best layered combination of existing systems remains an open experimental question. A G2 residual-gap study is mandatory before claiming a novel mechanism is needed.
+The papers listed above are recent preprints. Their reported results belong to the authors; they are not results obtained by PACA++ New. Any comparison must use the original implementation, a pinned version and the paper's stated threat model. A simplified implementation written for this project must not be presented as a reproduction of the original system.
 
-The six-point comparative protocol requires native, version-pinned comparators. A home-written imitation must not be reported as CaMeL, Multi-CaMeL, Progent or AID-Guard. Comparator descriptions in the repository are documentary/source evidence unless a native reproduction has actually been completed.
+The possible contribution is therefore not any single mechanism in this list. The question is whether a clearly specified combination of information provenance, authority, usage limits and resource-side checks can preserve the necessary restrictions across a connected workflow. The study must show where this combination adds protection over the strongest suitable existing controls. That has not yet been demonstrated.
 
-## 3. Target lifecycle and security model
+## 3. What the model is intended to cover
 
-The research target has six stages:
+The proposed study follows an agent through six stages:
 
-1. **Input and retrieval:** establish source identity, tenant, version, trust and provenance before content is used.
-2. **Memory and context:** preserve source lineage and policy restrictions across write, read, retrieval, compaction and cross-session reuse.
-3. **Planning:** treat model-generated plans as proposals, not authorisation credentials; bind the eventual executable request to current policy and context.
-4. **Tool execution:** authorise the exact tool, implementation, arguments and authority immediately before execution on a configured PACA path.
-5. **Communication and delegation:** bind sender, recipient, task, purpose, information lineage and attenuated authority across agent boundaries.
-6. **Effect authorisation and commitment:** revalidate the exact request at the resource boundary and retain evidence of what the destination actually committed.
+1. **Input and retrieval.** Identify where information came from, which tenant and version it belongs to, and whether it can be trusted.
+2. **Memory and context.** Keep that source information and its restrictions when data is stored, retrieved, summarised or reused in another session.
+3. **Planning.** Treat a model's plan as a proposal. The plan itself must not grant permission to act.
+4. **Tool execution.** Check the exact tool, implementation, arguments and authority before a configured runtime executes it.
+5. **Communication and delegation.** Check who sent a message, who receives it, what information it carries and what authority is passed to the next agent.
+6. **Effect authorisation and commitment.** Check the action again at the resource boundary and keep evidence of what was actually committed.
 
-The continuity model separates four properties:
+Four related questions run through these stages. Does the agent still have the right authority? Is the information's source and history still known? Have usage limits and replay protections been preserved? Did the action that reached the resource match the action that was authorised?
 
-- **Authority continuity:** principal, tenant, task, purpose, epoch, grant chain and revocation state remain bound.
-- **Information continuity:** source identity, labels, lineage and transformation dependencies are preserved without silently upgrading untrusted content.
-- **Usage continuity:** quotas, one-use authorisations, replay state and retry identity remain consistent.
-- **Effect continuity:** the action, destination, arguments and policy snapshot authorised are the same values that reach the sink.
+These questions are related, but they are not interchangeable. Trusted information does not automatically give an agent permission to use it. A valid capability does not make the data trustworthy. Consuming an authorisation does not prove that a resource accepted the action.
 
-Information trust is not permission. A valid capability does not make its input trustworthy. A consumed authorisation is not proof of a committed effect.
+## 4. What is implemented
 
-## 4. Implemented prototype architecture
+The README contains the current six-group map of the codebase. In broad terms, the repository contains:
 
-The README maintains the canonical six-group module inventory. The grouping is for responsibility and navigation; it does not imply six complete, independently deployable layers.
+- policy parsing and evaluation, a `Monitor`, a lifecycle controller and a runtime for selected PACA-managed calls;
+- HMAC and Ed25519 capability paths, authority lineage, delegation and revocation, with SQLite and an optional PostgreSQL authority registry;
+- provenance labels, lineage records, separate memory-value storage and selected connector, memory and framework adapters;
+- local resource-commit controls, including a logical-resource fence, an optional Linux filesystem writer and selected broker paths;
+- optional Docker and Linux helpers for selected execution and I/O paths; and
+- adapters for AgentDojo, LangChain, LangGraph/checkpoints and selected read-only provider ingress.
 
-| Responsibility group | Current implementation examples | Boundary that remains |
-|---|---|---|
-| 1. Policy and lifecycle enforcement | Policy parser/evaluator, Monitor, lifecycle controller and PACA-owned runtime | Only configured paths are checked; hidden planning and direct host/framework calls are not universally intercepted |
-| 2. Authority and usage state | HMAC/Ed25519 capability paths, immutable authority lineage, delegation/revocation, SQLite and optional PostgreSQL authority registry | Production workload identity, managed key custody and unified distributed state/recovery are not supplied |
-| 3. Information provenance and memory | Typed labels/lineage, durable provenance metadata, separate memory values, trusted adapters and selected framework/message wrappers | Trusted adapters must supply source evidence; raw-store and alternate framework paths can bypass wrappers |
-| 4. Protected-resource mediation and commits | Logical resource fences, optional Linux filesystem fence, local broker mediators and optional AF_UNIX transport | Each path is narrow and separately wired; remote-provider destination-side commit fencing is absent |
-| 5. Execution containment and secure I/O | Optional digest-pinned Docker worker and selected Linux filesystem/network helpers | Not a mandatory OS sandbox; direct host, subprocess, network and credential bypasses are not universally prevented |
-| 6. Framework and provider adapters | AgentDojo, LangChain, LangGraph/checkpoint integrations and read-only provider ingress adapters | Only declared adapter paths are covered; mocked provider CI is not live-account validation |
+These are separate pieces with different boundaries. They are not six complete layers that are always active together. For example, the PostgreSQL registry is not a complete distributed lifecycle store, the Docker worker is not a mandatory operating-system sandbox, and the provider adapters do not protect arbitrary calls made directly to a provider.
 
-Formal models, tests, simulators and benchmark runners are assurance/evaluation tools, not additional runtime security groups.
+Formal models, tests and benchmark tools help examine the implementation. They are not additional runtime enforcement layers.
 
-### Lifecycle communication integration in PR #59
+### The change in PR #59
 
-The implementation candidate closes a specific continuity gap identified in the Phase A audit. Before this change, `PACAAgentRuntime.execute_effect()` applied active-session checks to selected effect requests, but `delegate()`, `send_message()` and `receive_message()` did not bind those operations to the active lifecycle session.
+The Phase A audit identified one specific gap. When `lifecycle_security` was configured, `PACAAgentRuntime.execute_effect()` checked selected effect requests against the active session. However, `delegate()`, `send_message()` and `receive_message()` did not apply the same session check.
 
-When a lifecycle controller is configured, the candidate now:
+PR #59 adds that check to those three runtime methods. Before delegation, the runtime verifies the parent capability and its authority lineage. Before sending or receiving a message, it verifies the relevant sender or recipient capability. The principal, tenant, task, purpose and policy epoch must match the active lifecycle session.
 
-- verifies the parent/sender/recipient capability and immutable authority lineage;
-- binds principal, tenant, task, purpose and policy epoch to the active session;
-- routes delegation and message operations through an explicit, restricted internal context-transition helper;
-- serialises the trusted local adapter operation against `stop()` and `close_session()`;
-- supports child tool pins, subject to the issuer's existing parent-pin attenuation checks; and
-- records routing metadata and payload digests rather than raw message bytes or token values.
+The actual delegation and message work still goes through the existing authority issuer and message codec. The issuer remains responsible for restricting a child's permissions and tool pins. The message codec continues to check message authentication, recipient permissions, provenance, revocation and replay. The new session check does not replace those controls.
 
-The existing authority issuer remains responsible for delegation attenuation and quota semantics. The message codec remains responsible for message authentication, sender/recipient grants, provenance, revocation and replay receipts. The change does not replace those controls or make direct adapter calls pass through the lifecycle controller.
+The runtime performs the local adapter operation while holding the lifecycle controller's lock. It also checks the session again after the audit callback, because trusted host audit code can call back into the controller. This prevents an audit callback from stopping or replacing the session and then allowing the operation to continue.
 
-The lifecycle controller rechecks the active session after its synchronous audit callback, because the configured host audit sink can re-enter the controller under its reentrant lock. This prevents a reentrant callback that stops or replaces the session from being followed by adapter dispatch.
+This change only covers calls made through the configured `PACAAgentRuntime`. It does not intercept direct calls to the issuer or message codec, or calls made through other frameworks, transports or host APIs.
 
-## 5. Connected executable demonstration
+## 5. Demonstration and tests
 
-The candidate adds deterministic tests in `tests/test_lifecycle_communication.py` for both isolated boundary cases and one connected local-resource trajectory.
+The branch includes a small offline example at `examples/lifecycle_security_demo.py`. It uses local SQLite stores and two agents. It does not call an LLM or a live provider.
 
-**Connected benign control**
+The example runs two cases. In the first, a source is marked trusted by the host-configured test connector. One agent retrieves it, delegates limited authority to a second agent and sends the data in a signed message. The receiving agent checks its session and attempts a write through the local SQLite resource fence. The example checks the resulting resource record, including its version, authority identifier, request digest and commit nonce.
 
-1. A host-configured connector captures a versioned source and workspace path.
-2. The sender retrieves the source through `TrustedMemoryAdapter`.
-3. The experiment records input, retrieval and a candidate-plan digest. The plan is a fixed test fixture, not hidden LLM reasoning.
-4. The sender delegates an attenuated capability to a second agent, including a child tool pin already authorised by its parent.
-5. The sender seals a lineage-bearing message; a separately session-bound recipient opens it.
-6. The recipient calls `PACAAgentRuntime.execute_effect()` using the packaged `Monitor` and the concrete `SQLiteFencedResourceExecutor`.
-7. The test checks the actual resource-registry row, version, child authority ID, request digest and commit nonce.
+The second case follows the same route, but the source is labelled untrusted. The receiving agent may receive the data, but the consequential write must be denied. The test checks that no resource record was created.
 
-**Connected poisoned-memory control**
+The plan in these tests is fixed test data. It is not produced by an LLM, and the example does not inspect a model's hidden reasoning. The source labels also come from trusted test configuration. This is a demonstration of the declared local path, not a live-agent experiment.
 
-The same workflow is repeated with a source explicitly labelled untrusted. The recipient can receive the data, but the consequential write is denied by the lifecycle integrity policy. The test checks that no protected resource row appears and that no successful lifecycle commit authorisation is recorded.
+Additional tests in `tests/test_lifecycle_communication.py` cover session mismatches, successful delegation, message sending and receiving, rejection before message receipt consumption, the kill switch and a re-entrant audit callback. `tests/test_lifecycle_demo_cli.py` runs the example itself and checks both outcomes.
 
-This is a meaningful end-to-end demonstration for the declared local reference path: the benign control reaches the fenced sink, while the poisoned-data control does not. It is not a live LLM experiment, not a general host filesystem experiment, not a remote-provider commit test and not proof that every path in a deployed agent is mediated.
-
-### Reproduction
-
-Use the project environment and run the focused suite:
+To run the example and the focused tests from the repository root:
 
 ```bash
 python -m pip install -e ".[dev]"
@@ -122,93 +106,61 @@ python examples/lifecycle_security_demo.py --output /tmp/paca-lifecycle-demo.jso
 python -m pytest tests/test_lifecycle_communication.py tests/test_lifecycle_demo_cli.py -q
 ```
 
-The executable example runs two local SQLite scenarios and writes a metadata-only JSON trace: a benign delegated message-to-fenced-write path and a poisoned-memory denial path. It uses demo-only HMAC keys, a deterministic plan fixture and a permissive memory metadata callback to isolate the lifecycle/session path. It is not a live LLM evaluation, provider test or deployment configuration.
+## 6. Threat model and limitations
 
-The full repository CI additionally exercises the Python version matrix, installation profiles, broker UID isolation, AgentDojo adapter, LangGraph integrations, PostgreSQL checkpoint integration, wheel smoke test and repository formatting/lint checks. The branch and commit under review should be used when reproducing the candidate, rather than assuming the change is already on `main`.
+The tests consider untrusted retrieved content, indirect prompt injection, memory poisoning, loss of provenance, over-broad delegation, stale or replayed authority, policy changes, revocation races, duplicate requests and attempts to bypass the configured runtime.
 
-## 6. Threat model and trust assumptions
+The local prototype trusts the host application to establish the session, the connector to identify and label its source, the configured issuer and its keys, the policy engine, the executor mapping, the local registry and the resource used to check the result. These components are part of the trusted computing base for the tests.
 
-The prototype targets attacks involving untrusted user/retrieved/tool content, indirect prompt injection, memory poisoning, lineage loss, downstream-agent reinterpretation, over-broad delegation, stale/replayed authority, policy changes, revocation races, duplicate requests, direct adapter paths and uncertain effect delivery.
+The current work does not solve a compromised host or issuer, arbitrary discovery of hidden model-context dependencies, semantic truth verification, or complete mediation of raw stores, direct framework calls, subprocesses and network paths. It also does not provide production OIDC or workload identity, KMS/HSM key custody, a single atomic transaction across every store, or general commit and recovery guarantees for SaaS providers. Availability, side-channel resistance and broad denial-of-service protection have not been established either.
 
-The current local experiments trust the host application/session configuration, source connector identity and labels, issuer/verifier keys, policy engine, configured executor mapping, local SQLite registry, test oracle and protected sink. Those dependencies form part of the trusted computing base.
+The demonstration uses a permissive memory metadata callback so that it can focus on the lifecycle and provenance path. It does not replace the separate memory-policy tests. The HMAC keys in the example are for demonstration only and must not be used in a deployment. A SHA-256 digest helps identify the data recorded in an event; it does not encrypt that data or prove that the source is truthful. Audit records still need access controls and appropriate retention.
 
-The following are not established as solved:
+## 7. What the validation shows
 
-- compromised host kernel or trusted issuer;
-- arbitrary hidden model-context dependency discovery;
-- semantic truth verification or complete semantic reconstruction;
-- universal mediation of raw stores, direct framework calls, subprocesses or network paths;
-- production OIDC/workload identity and KMS/HSM key custody;
-- atomic consistency across all provenance, memory, operation and authority stores;
-- general SaaS/provider destination-side conditional commits and ambiguous-delivery recovery;
-- all frameworks, providers, agent topologies or operating systems; or
-- production availability, side-channel resistance or general denial-of-service protection.
+The validation results below apply to the code revision `bece5c3f507cac0669c60b778a42b4b456b25d03`. The later commits up to the current PR documentation snapshot changed documentation only.
 
-A digest binds supplied bytes and metadata; it does not prove truth. A digest in an audit log is not encryption or a confidentiality mechanism. Audit stores still require access controls and appropriate retention. The connected test fixture uses a permissive memory metadata callback to isolate the lifecycle-session and provenance path; it does not replace the repository's separate memory-policy tests or establish production metadata-policy behaviour.
+CI run #1050 (`46156942241`) passed the Python test matrix on versions 3.10, 3.11, 3.12 and 3.13. The Ruff checks, all three installation-profile security contracts, broker UID-isolation test, AgentDojo adapter, LangGraph integration, PostgreSQL checkpoint integration, wheel smoke test and Docker build also passed.
 
-## 7. Evidence status on 28 November 2026
+Release-validation run #829 (`46156942338`) passed the complete test suite, configured security-critical type checks, lint and formatting checks, installation-profile contracts, broker isolation, and wheel and source-distribution build and smoke tests.
 
-Evidence is labelled by what actually ran, not by what the architecture intends.
+The live AgentDojo benchmark did not run. Its credential check found no `OPENAI_API_KEY`, so the preflight, model run and result upload were skipped. The job completed successfully because those steps were skipped; this is not evidence of live-model effectiveness.
 
-| Evidence item | Observed status | Permitted conclusion |
-|---|---|---|
-| Existing targeted unit/regression suites | Present in the repository and exercised by CI | Evidence for the individual declared fixtures and adapter paths only |
-| PR #59 Python test matrix | CI run #1050 (run ID `46156942241`) passed Python 3.10, 3.11, 3.12 and 3.13, including the connected trajectory and offline demo smoke tests, on code head `bece5c3f507cac0669c60b778a42b4b456b25d03` | The validated code is present at the current PR head; subsequent commits through the current documentation snapshot changed documentation only. The exact latest documentation head was not separately re-run through CI |
-| Broker UID-isolation, installation-profile security contracts, AgentDojo adapter, wheel smoke, LangGraph integration, PostgreSQL checkpoint and Docker build jobs | Passed in CI run #1050 | Evidence for the named CI configurations, not universal mediation |
-| Lint, formatting and type checks | Ruff lint/format and the repository's configured security-critical type checks passed in release-validation run #829 (run ID `46156942338`) | The release workflow validates packaging and project checks; it is not independent security certification |
-| AgentDojo real-model benchmark | Explicitly skipped because `OPENAI_API_KEY` was not configured | No live model effectiveness result exists |
-| Vendor/service comparators | The repository's Phase A matrix marks the external comparators documentary/not-run | No matched vendor/research-comparator result or superiority claim |
-| Independent security review | Not completed | No independent certification or external assurance claim |
+PR #59 remains open on a separate branch. It has not been merged into `main` and has not received an independent security review. The repository's branch-protection settings also need an administrator to apply and verify the ruleset described in the security-configuration guide.
 
-The working change is PR #59 on a separate research branch and is not merged into `main`. CI run #1050 passed the complete non-credential-dependent job matrix. The `agentdojo-real-benchmark` job concluded successfully only because the credential check found no `OPENAI_API_KEY` and skipped the live preflight, model run and result upload. Release-validation run #829 passed the complete test suite, lint/type checks, installation contracts, broker UID isolation and wheel/sdist build/smoke test; release publication steps were skipped because this was not a tagged release. The exact current branch head includes documentation-only updates after the validated code head. Repository branch protection was previously observed as inactive; an administrator still needs to apply and verify the documented ruleset.
+These checks show that the tested code paths and package checks passed. They do not show complete lifecycle mediation, production readiness or independent security assurance.
 
-## 8. Evaluation programme
+## 8. Work still needed for the research study
 
-The prototype is intended to support a staged, falsifiable study:
+The next step is not to add more components simply to make the architecture larger. The study first needs to establish where existing controls succeed and where they leave a real gap.
 
-- **G0 — Freeze:** threat model, security policy, scenario schema, evidence labels and observable sink.
-- **G1 — Strongest baseline:** pin and configure the strongest applicable native controls for each scenario.
-- **G2 — Residual gap:** reproduce an in-scope violation after the comparator is configured correctly. Add no generic mechanism unless a real residual requirement is established.
-- **G3 — Semantic transformation:** test lineage across rewrite, summarisation, compaction, retrieval and inter-agent transfer; distinguish supplied lineage preservation from model-discovered semantic dependency.
-- **G4 — Effect sink:** exercise commit ordering, revocation races, duplicate delivery, timeout-after-commit, restart and recovery with trusted sink receipts.
-- **G5 — Model-in-loop:** run a pinned model/provider and retain raw traces; separate unsafe model proposals from enforcement failures.
-- **G6 — Confirmatory study:** use disjoint workflow templates, predeclared outcomes, adequate sample size and uncertainty estimates.
+The evaluation should begin by fixing the threat model, policy and test scenarios. It should then run the strongest suitable existing baseline in its original, pinned configuration. Only after reproducing a remaining failure should a new PACA mechanism be added or claimed as necessary.
 
-Primary outcomes should include prohibited sink effects/attack success, benign task completion, false denials, indeterminate outcomes, latency, token usage and cost. Multiple paraphrases or seeds of one underlying workflow do not constitute independent workflow templates.
+The experiments should cover changes to information as it is rewritten, summarised, compacted, retrieved and passed between agents. They should also test revocation, repeated requests, concurrent actions, timeouts, process restarts and recovery after an uncertain commit. A live model should be added only with a pinned configuration and retained traces, so model behaviour can be separated from enforcement behaviour.
 
-The first AgentDojo workspace preflight is documented separately. Its proposed task subset is a harness pilot, not a confirmatory lifecycle study. Live execution requires a protected API credential and an explicitly approved spend cap. Multi-CaMeL, CaMeL, Progent and AID-Guard require their native pinned artifacts and eligible task/contract semantics before reproduction.
+The main measures should include unauthorised effects at the resource, legitimate task completion, false denials, indeterminate outcomes, latency, token use and cost. The confirmatory study should use separate workflow templates, predeclared outcomes and an appropriate sample size. Rephrasing the same scenario several ways does not create several independent workflows.
 
-## 9. Claims suitable for research discussion
+The current AgentDojo work is an adapter and harness pilot. It is not a completed comparative study. CaMeL, Progent, Multi-CaMeL, DelegateGuard, Delegation Without Trust and AID-Guard must be tested using their own implementations and stated assumptions before any performance comparison is made.
 
-The following claims are supported at the current prototype scope:
+## 9. What can be claimed now
 
-- The repository implements several distinct reference controls for policy evaluation, authority lineage, provenance-aware memory, local resource commits, optional containment and framework/provider adapters.
-- The lifecycle controller can bind selected PACA runtime effect requests to a session.
-- The PR #59 candidate extends that session check to delegation and message send/receive operations routed through the configured runtime.
-- The deterministic connected local-resource test demonstrates one benign delegated-message-to-fenced-write path and one poisoned-memory denial path.
-- The repository has explicit negative controls and documentation identifying direct paths that remain outside its mediation boundary.
+The repository contains reference implementations for policy evaluation, capability authority, provenance-aware memory, selected local resource commits, optional execution containment and selected framework adapters.
 
-The following claims are **not** supported and must not be used:
+The lifecycle controller checks selected effect requests against an active session. The PR #59 branch extends that check to delegation and inter-agent messages made through the configured runtime. The deterministic local example shows one benign delegated-message-to-resource-write path and one case where untrusted memory is denied before a resource record is created.
 
-- complete lifecycle mediation or a universal agent security boundary;
-- proven prevention of prompt injection across arbitrary models and frameworks;
-- production-ready identity, key management, isolation or distributed state;
-- general remote-provider commit safety;
-- superiority over CaMeL, Progent, Multi-CaMeL, AID-Guard, DelegateGuard, Delegation Without Trust or commercial platforms;
-- completed live model or vendor benchmarks; or
-- independent security certification.
+Those statements describe the current implementation and tests. The following stronger claims are not supported: complete lifecycle mediation, protection against prompt injection across arbitrary models and frameworks, production-grade identity or key management, general remote-provider commit safety, superiority over the related research systems, successful live-model evaluation or independent security certification.
 
-## 10. Primary technical references in this repository
+**Overall assessment:** PACA++ New is a research prototype with a working local integration example and defined limitations. It gives the PhD research a concrete implementation to investigate. The main research question—whether the combined controls offer measurable protection beyond strong existing systems—still needs to be answered experimentally.
 
-- [README implementation map](../README.md#what-is-implemented)
-- [Agent-lifecycle enforcement boundary](AGENT_LIFECYCLE_ENFORCEMENT.md)
-- [Phase A lifecycle audit and threat model](LIFECYCLE_PHASE_A_BASELINE_AUDIT.md)
-- [Bounded AgentDojo pilot profile](PHASE_A_AGENTDOJO_PILOT_PROFILE.md)
-- [Lifecycle communication integration](LIFECYCLE_COMMUNICATION_INTEGRATION.md)
+## 10. Related project documentation
+
+- [README and implementation map](../README.md#what-is-implemented)
+- [Lifecycle enforcement and its boundaries](AGENT_LIFECYCLE_ENFORCEMENT.md)
+- [Phase A audit and threat model](LIFECYCLE_PHASE_A_BASELINE_AUDIT.md)
+- [AgentDojo pilot profile](PHASE_A_AGENTDOJO_PILOT_PROFILE.md)
+- [Communication and delegation integration](LIFECYCLE_COMMUNICATION_INTEGRATION.md)
 - [Six-point comparative evaluation protocol](SIX_POINT_INDUSTRY_EVALUATION_PROTOCOL.md)
 - [Policy-continuity evaluation](POLICY_CONTINUITY_EVALUATION.md)
 - [Direct-bypass evaluation](DIRECT_BYPASS_EVALUATION.md)
-- [Seven security requirements and evidence status](SEVEN_REQUIREMENTS_STATUS.md)
+- [Seven security requirements](SEVEN_REQUIREMENTS_STATUS.md)
 - [Repository security configuration](REPOSITORY_SECURITY_CONFIGURATION.md)
-
-**Overall assessment:** PACA++ New is a credible research-prototype foundation with a concrete, reproducible local integration path and explicit security boundaries. Its strongest PhD contribution is still a research question to be tested: whether cross-stage continuity and destination-side effect evidence provide additional protection beyond the best existing combination of focused controls. The prototype should be presented as work in progress with measurable engineering evidence, not as a solved or production-secure system.
