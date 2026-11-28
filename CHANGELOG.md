@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased — 2026-11-27
+## Unreleased — 2026-11-28
 
 This section records changes merged to `main` after the 0.3.2 packaging release. It does not claim production readiness or improved real-agent attack resistance.
 
@@ -16,6 +16,7 @@ This section records changes merged to `main` after the 0.3.2 packaging release.
 - Gates Docker image publication on the complete non-credential-dependent CI set and expands mypy checks to selected security-critical modules and untyped function bodies.
 - Adds PR #48 lifecycle-security reference control: explicit session/principal/tenant/task/purpose binding, policy-epoch checks, fail-closed provenance/tool checks, one-use commit authorization and a one-way stop switch for PACA-managed runtime calls. This does not establish complete mediation or provider/host enforcement.
 - Bounds the lifecycle controller's process-local committed-effect receipt cache and fails closed at capacity; this cache is not durable or shared across processes.
+- Adds lifecycle-session checks to `PACAAgentRuntime.delegate()`, `send_message()` and `receive_message()` when lifecycle security is configured. The checks bind the relevant capability to the active principal, tenant, task, purpose and policy epoch; regression tests and an offline SQLite example cover selected trusted and untrusted paths. This does not mediate direct issuer/codec calls or other transports and does not establish complete lifecycle mediation.
 - Gates Docker publication on the Python matrix, wheel smoke test, AgentDojo adapter, lint/type checks, LangGraph, PostgreSQL checkpoint, installation-profile security contracts and broker UID-isolation checks.
 - Strengthens release validation with repository-wide Ruff checks, selected security-critical mypy checks, profile and broker-isolation tests, and a tag-ancestry check requiring release commits to be reachable from `main`.
 

@@ -1,10 +1,12 @@
 # Lifecycle evaluation — Phase A baseline audit and threat model
 
 **Repository:** `PACA-Plus-Plus-New` only.  
-**Assessment date:** 28 November 2026.  
+**Assessment date:** 28 November 2026 (pre-PR #59 merge snapshot).  
 **Code baseline:** PR #49 merge `c9d06c4796a9fb0a04cd5db1ca4c792d2396506a`.  
-**Current documentation/repository head inspected:** `5b8103b5949b9bfce2488b96a4890d59dba7e527` on `main`.  
-**Status:** initial Phase A source-and-documentation audit; Phase A has not yet met its exit criteria. A bounded AgentDojo workspace pilot profile is now specified, but it has not been live-executed or approved as a confirmatory study. No new comparative experiment or live model run is claimed.
+**Main head inspected for this audit:** `5b8103b5949b9bfce2488b96a4890d59dba7e527`.  
+**Status:** historical Phase A source-and-documentation audit; Phase A has not yet met its exit criteria. A bounded AgentDojo workspace pilot profile is specified, but it has not been live-executed or approved as a confirmatory study. No new comparative experiment or live model run is claimed.
+
+**Subsequent implementation update (28 November 2026):** PR [#59](https://github.com/sanafirdouse2323-glitch/PACA-Plus-Plus-New/pull/59) was merged into `main` at `c45732707cbfccf44bc4903300250f21184aa128`. It adds active-session checks to `PACAAgentRuntime.delegate()`, `send_message()` and `receive_message()` when lifecycle security is configured. The historical communication/delegation finding below describes the pre-PR #59 code baseline; it is no longer the current implementation status. See [the current lifecycle enforcement map](AGENT_LIFECYCLE_ENFORCEMENT.md) and [communication integration notes](LIFECYCLE_COMMUNICATION_INTEGRATION.md).
 
 The comparison between the code baseline and the inspected `main` head shows that the intervening commits changed workflows, the Dockerfile and documentation, but no `paca/` implementation modules. The implementation baseline therefore remains PR #49 for this audit. The repository's current CI run on the inspected `main` head succeeded, including the broker UID-isolation and AgentDojo adapter jobs; its credential-dependent live AgentDojo model benchmark was skipped. CI success is not a live-agent effectiveness result.
 

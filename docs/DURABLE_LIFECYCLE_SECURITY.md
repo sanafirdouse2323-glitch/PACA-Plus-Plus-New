@@ -130,7 +130,7 @@ This is logical unavailability, not secure physical deletion. It does not erase 
 
 The initial implementation supports structured namespace search and filters. Semantic/vector search, vector index configuration and TTL are explicitly unsupported and fail rather than silently accepting and ignoring those options. Delete is logical lineage revocation, not physical erasure.
 
-LangGraph's long-term `BaseStore` and its graph checkpointer serve different purposes. This integration wraps the long-term store only. The branch also provides a separate optional adapter for the official PostgreSQL checkpointer, documented in `POSTGRES_CHECKPOINT_AND_LIFECYCLE_MODEL.md`; that adapter does **not** instrument every checkpoint implementation, state snapshot, interrupt/resume payload or external persistence layer. Other providers and runtime paths require separate adapters and tests.
+LangGraph's long-term `BaseStore` and its graph checkpointer serve different purposes. This integration wraps the long-term store only. The repository also provides a separate optional adapter for the official PostgreSQL checkpointer, documented in `POSTGRES_CHECKPOINT_AND_LIFECYCLE_MODEL.md`; that adapter does **not** instrument every checkpoint implementation, state snapshot, interrupt/resume payload or external persistence layer. Other providers and runtime paths require separate adapters and tests.
 
 ### LangChain tool middleware
 
@@ -145,6 +145,8 @@ The middleware does not infer a tool's side effects from its name or description
 ### Runtime and effect boundary
 
 `PACAAgentRuntime` joins authenticated authority, memory, messages and a PACA monitor. Its sync and async effect methods compare the request capability with the verified signed credential, require the effect's tool manifest to match a signed tool pin, obtain a monitor decision and verify its effect token, durably consume the call budget, and re-check active authority immediately before invoking the supplied executor.
+
+When `lifecycle_security` is configured on `PACAAgentRuntime`, additional checks bind `delegate()`, `send_message()` and `receive_message()` to the active principal, tenant, task, purpose and policy epoch before the authority/message adapter is called. These checks cover only the configured runtime methods; direct issuer or message-codec calls, alternate transports and host/framework/provider paths remain outside them. See [Lifecycle communication and delegation](LIFECYCLE_COMMUNICATION_INTEGRATION.md).
 
 For the standard `Monitor`, consequential runtime construction and every protected effect call validate `assert_consequential_safe()`. The validator rejects all policy-check ablations and verifies that the required packaged rule semantics (including cross-tenant, sensitivity, SSRF, untrusted-control and approval rules) have not been removed, duplicated or weakened. It also rejects destination clearances above the packaged defaults, missing packaged protected-path patterns and a quarantine threshold weaker than the default; stricter configuration is allowed. `PacaToolsExecutor` applies the same validation at construction, immediately before authorization, and again before an approval retry. Research ablations remain available in the deterministic simulator, not in these consequential adapters. Custom monitor implementations that do not expose this validator, along with application callbacks that map identity, provenance, resource metadata or tool effects, remain trusted application components; the validator does not authenticate arbitrary Python code.
 
@@ -161,7 +163,7 @@ The prototype assumes the issuer identity callback, connector identity/configura
 
 SQLite WAL and transactions provide durable local coordination for cooperating processes on one host. They do not provide multi-host linearizability or distributed revocation delivery. Database files and their containing directories must be protected with host ACLs, encrypted backups and controlled service identities. File mode 0600 is a best-effort POSIX permission setting, not a substitute for deployment controls.
 
-## Validation included in the branch
+## Durable-lifecycle validation coverage
 
 The focused lifecycle suite is `tests/test_durable_lifecycle.py`. It covers:
 
@@ -179,6 +181,8 @@ The focused lifecycle suite is `tests/test_durable_lifecycle.py`. It covers:
 - synchronous and asynchronous effect revocation races;
 - LangGraph `BaseStore` operations, metadata-only namespace listing under a denying application policy, explicit rejection of unsupported vector index configuration, and a compiled `StateGraph` using the PACA store;
 - LangChain synchronous and asynchronous tool middleware, handler suppression on deny, tool identity mismatch, framework-call and graph-state mutation during request construction and after authorization, async handler isolation from the caller's mutable request state, and revocation before the handler.
+
+Separate lifecycle communication tests in `tests/test_lifecycle_communication.py` cover the session-binding extension merged in PR #59. They exercise valid and mismatched delegation, message send/receive, rejection before receipt consumption, kill-switch rejection and audit-callback re-entry. These tests cover the PACA runtime route only.
 
 The optional `langgraph` dependency extra is pinned and receives a dedicated CI job. Its async BaseStore entry points snapshot mutable operation/value/filter inputs before worker-thread handoff and preserve LangGraph's `NOT_PROVIDED` TTL sentinel by identity; inputs that cannot be deep-copied fail closed. `tests/test_secure_execution_primitives.py` separately exercises Linux `openat2` path constraints, hard-link and FIFO rejection, and pinned DNS/TLS behavior. Core persistence and authority tests remain runnable without the optional framework packages.
 

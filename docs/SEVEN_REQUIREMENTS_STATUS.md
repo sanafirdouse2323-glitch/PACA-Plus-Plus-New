@@ -1,13 +1,13 @@
 # Seven security requirements — implementation and evidence status
 
 **Repository:** PACA-Plus-Plus-New  
-**Assessment snapshot:** 27 November 2026 (PR #49 code baseline); repository settings rechecked 28 November 2026  
+**Assessment snapshot:** 28 November 2026 (after PR #59 was merged); repository settings rechecked 28 November 2026  
 **Status:** Research implementation; not production-certified.  
-**Implementation baseline:** merge commit `c9d06c4796a9fb0a04cd5db1ca4c792d2396506a` on `main` (PR #49 merged 27 November 2026)
+**Implementation baseline:** squash-merge commit `c45732707cbfccf44bc4903300250f21184aa128` on `main` (PR #59 merged 28 November 2026)
 
-This current-baseline record supersedes the earlier PR #48 snapshot. PR #49 hardened publication/release gates and lifecycle replay bounds; it did not convert the partial lifecycle controls described below into complete mediation or production certification. Historical evidence remains labelled by its original commit and test configuration.
+This status record carries forward the earlier PR #49 assessment and updates the implementation baseline to include PR #59. PR #49 hardened publication/release gates and lifecycle replay bounds. PR #59 adds active-session checks to runtime delegation and message send/receive operations when lifecycle security is configured. Neither change establishes complete mediation or production certification. Historical evidence remains labelled by its original commit and test configuration.
 
-**PR #59 (28 November 2026):** a separate branch adds session checks to delegation and message sending and receiving through the PACA runtime. It also adds a local SQLite example and regression tests. This work is not part of the PR #49 `main` baseline described here. CI run #1050 and release-validation run #829 passed for the code revision, but the live AgentDojo experiment was skipped because no `OPENAI_API_KEY` was available. PR #59 remains unmerged and has not had an independent security review. Direct calls to the authority and message adapters, and paths outside PACA, are not covered by this change.
+Main-branch CI run #1062 (`46165972063`) and release-validation run #841 (`46165972095`) completed successfully on the implementation baseline above. The credential-dependent live AgentDojo benchmark was skipped in CI; this is not a live-agent result. The release workflow's tag-specific publication steps were skipped because the run was a normal `main` push. No independent security review of PR #59 is recorded. Direct calls to the authority and message adapters, and paths outside the configured PACA runtime, are not covered by its session check.
 
 This record separates code that exists from system properties that have not yet been
 demonstrated. A passing unit test is evidence only for the path it exercises.
@@ -65,12 +65,17 @@ through supported transformations. Model-generated transformations are conservat
 downgraded to untrusted integrity while retaining declared sensitivity, tenant and
 origin restrictions. Synthetic fixtures cover paraphrase, summary, translation,
 structured extraction, reconstruction, memory compaction/retrieval and agent transfer.
+The configured `PACAAgentRuntime` also binds delegation and message send/receive
+operations to the active lifecycle session, including principal, tenant, task, purpose
+and policy epoch checks.
 
 **Not established:** discovery of latent or omitted source dependencies in arbitrary
 model outputs, proof that every integration supplies complete parent references, or
 a general authenticated transformation-validation receipt that permits trust
-promotion. The tests validate declared lineage; they do not prove semantic
-dependency inference.
+promotion. Session binding on these runtime methods does not make all transports or
+agent communication paths subject to lifecycle enforcement. The tests validate
+declared lineage and selected runtime routes; they do not prove semantic dependency
+inference or complete multi-hop continuity.
 
 ## 5. Direct bypasses, concurrency, replay and revocation races
 
@@ -80,7 +85,9 @@ revocation ordering, response-loss retry and PostgreSQL shared-primary behavior.
 The new transport tests cover peer UID/GID rejection, broker UID verification,
 duplicate JSON keys, unsupported operations, per-connection session uniqueness,
 concurrent connections and signed operation verification against the kernel-bound
-session.
+session. The lifecycle communication tests also check delegation/session mismatch,
+valid session-bound delegation, sender and recipient session checks, rejection before
+message receipt consumption, kill-switch enforcement and audit-callback re-entry.
 
 Some bypass tests intentionally demonstrate that direct host/framework calls remain
 possible outside PACA hooks. They are evidence of current scope limits, not proof that

@@ -2,7 +2,8 @@
 
 **Repository:** `PACA-Plus-Plus-New` only.  
 **Profile version:** 0.1 (28 November 2026).  
-**Implementation baseline:** PR #49 merge `c9d06c4796a9fb0a04cd5db1ca4c792d2396506a`.  
+**Pilot configuration baseline:** PR #49 merge `c9d06c4796a9fb0a04cd5db1ca4c792d2396506a` (the frozen AgentDojo adapter/task configuration).  
+**Current `main` baseline:** `c45732707cbfccf44bc4903300250f21184aa128`, including PR #59's runtime communication/delegation session checks. This AgentDojo pilot does not exercise those checks.  
 **Status:** proposed executable pilot profile; not preregistered, not independently approved, and not run live.  
 **Purpose:** validate the existing AgentDojo comparison harness on a narrow supported task subset before attempting a broader lifecycle study.
 
@@ -14,7 +15,7 @@ The repository already has a bounded AgentDojo workspace adapter and a runner th
 2. AgentDojo's native `tool_filter` defense; and
 3. PACA's current AgentDojo adapter/policy.
 
-The dependency is pinned in `pyproject.toml` to `agentdojo==0.1.35`. The mapper is pinned to AgentDojo suite data version `v1.2.2`. The CI workflow and adapter tests exercise the CLI, dry-run preflight and official `tool_filter` configuration. The live model requests were skipped in the latest inspected CI run because `OPENAI_API_KEY` was unavailable.
+The dependency is pinned in `pyproject.toml` to `agentdojo==0.1.35`. The mapper is pinned to AgentDojo suite data version `v1.2.2`. Main-branch CI run #1062 on commit `c45732707cbfccf44bc4903300250f21184aa128` passed the adapter tests and skipped the credential-dependent `agentdojo-real-benchmark` job. No live model run was completed. This pilot evaluates only the declared AgentDojo task/filter comparison; it does not test lifecycle communication or delegation session binding.
 
 This is the most defensible first *harness pilot* because it reuses the actual benchmark and its native defense. It does not substitute a hand-authored approximation for AgentDojo's defense.
 
