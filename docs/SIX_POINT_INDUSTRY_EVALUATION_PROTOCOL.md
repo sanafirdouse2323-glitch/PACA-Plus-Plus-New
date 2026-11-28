@@ -2,7 +2,7 @@
 
 **Status:** execution protocol and baseline evidence register; not a completed comparative experiment.  
 **Repository:** `PACA-Plus-Plus-New` only.  
-**Implementation baseline:** merge commit `c9d06c4796a9fb0a04cd5db1ca4c792d2396506a` on `main`, verified 27 November 2026 after PR #49 was merged.  
+**Current implementation baseline:** merge commit `c45732707cbfccf44bc4903300250f21184aa128` on `main`, verified 28 November 2026 after PR #59 was merged.  
 **Purpose:** turn the six proposed research priorities into a falsifiable, reproducible engineering and evaluation programme.  
 **Claim boundary:** no vendor product is represented as tested until its real service/runtime is configured, version-pinned, exercised, and its raw outputs are retained.
 
@@ -14,7 +14,7 @@ The six workstreams are feasible as a staged programme. They are not all executa
 2. A residual gap can be claimed only after the strongest applicable controls have been configured for the exact policy and threat assumptions and a violation is reproduced. A documentary gap is not proof that a product lacks the capability.
 3. Semantic transformation tests can be built in the local harness now. Model-mediated reconstruction tests require a pinned model/runtime and a separate model-in-the-loop run.
 4. Local protected sinks with transactional/fencing behaviour can be tested in the repository. A real external effect guarantee requires a provider/sink contract that exposes an enforceable commit or conditional-write boundary.
-5. The repository already has a bounded AgentDojo runner. The main CI run on 28 November 2026 at inspected head `5b8103b5949b9bfce2488b96a4890d59dba7e527` completed the adapter integration but skipped the credential-gated `agentdojo-real-benchmark` job. A successful CI run must not be reported as a live agent experiment. The corresponding release-validation run built and validated the Python distributions; tag-specific GitHub Release and version-container publication jobs were skipped because the run was a normal `main` push.
+5. The repository already has a bounded AgentDojo runner. Main-branch CI run #1062 on merge commit `c45732707cbfccf44bc4903300250f21184aa128` completed the adapter integration but skipped the credential-gated `agentdojo-real-benchmark` job. A successful CI run must not be reported as a live agent experiment. Release-validation run #841 built and validated the Python distributions; tag-specific GitHub Release and version-container publication jobs were skipped because the run was a normal `main` push.
 6. Reproducible security and utility metrics can be added to the harness. Statistical claims require independent workflow templates, frozen outcome rules, raw traces, and a sample-size/power analysis. Repeats of one template are not independent scenarios.
 
 The project must remain a research prototype until host-level mediation, trusted identity and key services, distributed-state guarantees, provider-side effect enforcement, deployment resilience, independent evaluation, and external review have been demonstrated. This protocol does not change that maturity status.
@@ -23,9 +23,9 @@ The project must remain a research prototype until host-level mediation, trusted
 
 At the time of this protocol:
 
-- The implementation baseline is merge commit `c9d06c4796a9fb0a04cd5db1ca4c792d2396506a`. PR #48 added lifecycle enforcement; PR #49 added bounded process-local replay handling and publication/release gates.
-- PR #49 CI run `966` and release-validation run `767` completed successfully for head `6d8c058691e506ba94f6a95b61d98d6c45a91f61` before the squash merge. The merge commit is `c9d06c4796a9fb0a04cd5db1ca4c792d2396506a`; the earlier PR #48 validation remains historical evidence for the lifecycle controller.
-- The separate `agentdojo-real-benchmark` job was **skipped**, not passed, because the required model credential was not available to that run.
+- The current implementation baseline is merge commit `c45732707cbfccf44bc4903300250f21184aa128`. PR #48 added lifecycle effect-request checks; PR #49 added bounded process-local replay handling and publication/release gates; PR #59 added session checks to runtime delegation and message send/receive operations when lifecycle security is configured.
+- Main-branch CI run #1062 (`46165972063`) and release-validation run #841 (`46165972095`) both completed successfully on the current merge commit. CI skipped the credential-dependent live AgentDojo benchmark, and the release workflow skipped tag-specific publication steps because this was a normal `main` push. Earlier PR #49 runs remain historical validation evidence for their original tested commits.
+- PR #59's communication/delegation checks apply only to the configured `PACAAgentRuntime` methods. Direct issuer/codec calls, alternate transports and host/framework/provider paths remain outside this session check. The new regression tests cover selected session mismatch, successful delegation, message send/receive, receipt-consumption ordering, kill-switch and audit-callback re-entry cases.
 - The repository still reports `main` as unprotected. A repository administrator must apply and verify the ruleset described in [REPOSITORY_SECURITY_CONFIGURATION.md](REPOSITORY_SECURITY_CONFIGURATION.md).
 - The deterministic benchmark currently compares PACA against hand-authored toy models: no guard, a prompt filter, a role allow-list, and a simplified sandbox-style policy. These models are useful regression baselines, but they are not AWS, NVIDIA, Microsoft, Google, or research artefact implementations.
 - The deterministic corpus currently contains 30 author-written attack scenarios and 11 benign workflows. They are not an independent benchmark corpus.
