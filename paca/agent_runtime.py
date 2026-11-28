@@ -216,7 +216,7 @@ class PACAAgentRuntime:
         }
         digest = hashlib.sha256(canonical_value_bytes(intent)).hexdigest()
         try:
-            return self.lifecycle_security.__run_context_transition(
+            return self.lifecycle_security._run_context_transition(
                 phase=LifecyclePhase.DELEGATION,
                 operation="delegate",
                 principal=parent.principal,
@@ -279,7 +279,7 @@ class PACAAgentRuntime:
         }
         digest = hashlib.sha256(canonical_value_bytes(payload_manifest)).hexdigest()
         try:
-            return self.lifecycle_security.__run_context_transition(
+            return self.lifecycle_security._run_context_transition(
                 phase=LifecyclePhase.MESSAGE,
                 operation="send",
                 principal=authority.principal,
@@ -315,7 +315,7 @@ class PACAAgentRuntime:
             raise MemoryAccessDenied("inter-agent message token must be text")
         digest = hashlib.sha256(token.encode("utf-8")).hexdigest()
         try:
-            return self.lifecycle_security.__run_context_transition(
+            return self.lifecycle_security._run_context_transition(
                 phase=LifecyclePhase.MESSAGE,
                 operation="receive",
                 principal=recipient.principal,
