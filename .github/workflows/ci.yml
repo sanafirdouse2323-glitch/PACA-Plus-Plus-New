@@ -5,6 +5,7 @@ on:
     branches: [main, "fix/**"]
   pull_request:
     branches: [main, "security/**"]
+    types: [opened, synchronize, reopened, labeled, unlabeled]
 
 permissions:
   contents: read
@@ -225,7 +226,9 @@ jobs:
           PY
 
   agentdojo-real-benchmark:
-    if: github.event_name == 'pull_request'
+    # Real-model calls can incur charges. Run only when a maintainer explicitly
+    # opts this pull request in with the run-live-agentdojo label.
+    if: github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'run-live-agentdojo')
     needs: agentdojo-integration
     runs-on: ubuntu-latest
     timeout-minutes: 90
@@ -344,10 +347,11 @@ jobs:
           paca/contracts/permits.py
 
   docker-build:
+    # CI validates that the image builds. It never has package-write permission
+    # and never authenticates to GHCR. Publishing is release-workflow-only.
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      packages: write
     needs:
       - tests
       - wheel-smoke-test
@@ -361,21 +365,15 @@ jobs:
       - uses: actions/checkout@v7
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
-      - name: Log in to GitHub Container Registry
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ github.token }}
-      - name: Build and push Docker image
+      - name: Build Docker image without registry publication
         uses: docker/build-push-action@v7
         with:
           context: .
-          push: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
-          tags: |
-            ghcr.io/sanafirdouse2323-glitch/paca-plus-plus-new:${{ github.sha }}
-            ghcr.io/sanafirdouse2323-glitch/paca-plus-plus-new:latest
+          push: false
+          load: true
+          tags: paca-plus-plus-new:ci-${{ github.sha }}
+      - name: Verify local Docker image
+        run: docker image inspect paca-plus-plus-new:ci-${{ github.sha }} >/dev/null
 
   langgraph-postgres-checkpoint:
     runs-on: ubuntu-latest

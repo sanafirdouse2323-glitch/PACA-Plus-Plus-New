@@ -223,11 +223,29 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           EXPECTED_TAG: ${{ needs.validate-and-build.outputs.release_tag }}
           EVENT_TAG: ${{ github.ref_name }}
+          EVENT_ACTOR: ${{ github.actor }}
+          EXPECTED_RELEASE_ACTOR: sanafirdouse2323-glitch
+          GOVERNANCE_VERIFIED: ${{ vars.PACA_RELEASE_GOVERNANCE_VERIFIED }}
           TARGET_SHA: ${{ github.sha }}
           GITHUB_REPOSITORY: ${{ github.repository }}
         shell: bash
         run: |
           set -euo pipefail
+
+          # GITHUB_TOKEN cannot inspect repository rulesets. Fail closed unless
+          # an administrator has attested that main/tag rulesets and the
+          # paca-release environment have been configured and verified.
+          if [ "$GOVERNANCE_VERIFIED" != "true" ]; then
+            echo "Refusing release: repository branch/tag protections and paca-release environment have not been attested." >&2
+            exit 1
+          fi
+
+          # Keep an independent, explicit publisher allowlist here; expand it
+          # only through a reviewed workflow change.
+          if [ "$EVENT_ACTOR" != "$EXPECTED_RELEASE_ACTOR" ]; then
+            echo "Refusing release: actor $EVENT_ACTOR is not an authorised release publisher." >&2
+            exit 1
+          fi
 
           if [ "$EVENT_TAG" != "$EXPECTED_TAG" ]; then
             echo "Refusing release: event tag $EVENT_TAG does not match package tag $EXPECTED_TAG." >&2
@@ -261,6 +279,10 @@ jobs:
     if: github.event_name == 'push' && github.ref_type == 'tag'
     name: Publish GitHub Release
     needs: [validate-and-build, verify-release-tag]
+    # Configure this environment in repository settings with required reviewers
+    # and prevent self-review. The actor allowlist above remains a separate gate.
+    environment:
+      name: paca-release
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -314,3 +336,4 @@ jobs:
           tags: |
             ghcr.io/sanafirdouse2323-glitch/paca-plus-plus-new:${{ needs.verify-release-tag.outputs.release_tag }}
             ghcr.io/sanafirdouse2323-glitch/paca-plus-plus-new:${{ needs.validate-and-build.outputs.version }}
+            ghcr.io/sanafirdouse2323-glitch/paca-plus-plus-new:latest
