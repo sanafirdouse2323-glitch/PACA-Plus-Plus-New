@@ -516,4 +516,3 @@ def _require_scope(token_provider: OAuth2RefreshTokenProvider, scope: str) -> st
     if not isinstance(token_provider, OAuth2RefreshTokenProvider):
         raise TypeError("provider requires an OAuth2RefreshTokenProvider")
     return token_provider.get_access_token((scope,)).access_token
-
