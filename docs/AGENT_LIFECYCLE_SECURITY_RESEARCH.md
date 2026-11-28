@@ -26,19 +26,15 @@ This is a systems-security problem. Model alignment, prompt wording and injectio
 
 The code on `main` is a substantial but partial research prototype. The table describes implementation scope, not independently verified security guarantees.
 
-| Component | Present implementation | Boundary |
-|---|---|---|
-| Provenance | `Label`, `Arg`, explicit `derive()`, typed `LineageNode`/`ProvenanceGraph`, and `SQLiteProvenanceRepository` for durable lineage metadata | Source identity and labels are supplied by trusted adapters. The system does not infer every hidden model-context dependency or prove that a source is truthful. |
-| Memory | Separate `SQLiteMemoryValueStore` and `TrustedMemoryAdapter`; checks authority, tenant, purpose, lineage and digests before returning values | Raw database/store access bypasses the adapter. Provenance metadata and values are local SQLite stores, not one distributed transaction. |
-| Authority | `SQLiteAuthorityRegistry`, HMAC and Ed25519 capability envelopes, static Ed25519 verification-key rings for key overlap/retirement, policy epochs, revocation, delegation checks, per-capability counters, message receipts and tenant/task aggregate quotas | Identity and task callbacks are trusted host integrations. OIDC/workload identity, KMS/HSM custody, authenticated key distribution and coordinated production rollover remain open. |
-| Shared authority | Optional `PostgresAuthorityRegistry` shares authority, revocation, counters, aggregate quota, message receipts and local resource-commit state across clients on one primary | Not multi-primary, rollback-safe failover or replication of provenance, memory values and the Monitor operation ledger. |
-| Runtime and monitor | Selected action/target policies, strict consequential-monitor validation, effect tokens, protected runtime checks, an opt-in local resource-commit fence for `write_file`/`mem_write`, and the PR #49 `LifecycleSecurityController` for session, lineage, purpose, policy-epoch, tool-manifest and one-use commit checks. Its one-use digest cache is process-local, bounded and fail-closed at capacity; it is not durable or shared across processes | Only actions routed through the configured runtime are mediated. The local commit fence and lifecycle controller do not cover remote providers, raw handles or every executor. |
-| Framework adapters | AgentDojo ToolsExecutor and limited workspace mapper; LangGraph BaseStore; LangChain middleware; PostgreSQL checkpoint wrapper | Adapters do not intercept direct calls to raw tools, stores, checkpointers, databases or alternate execution paths. |
-| Provider ingress | Read-only Gmail, Microsoft Graph mail, Slack history and Qdrant search adapters with bounded HTTP handling and provenance capture | CI uses mocked HTTP. Production identity binding, live account validation, provider writes, deletion sync and remote commit fencing remain open. |
-| Execution helpers | Optional Docker worker; Linux `openat2` filesystem and DNS/IP-pinned network primitives | Docker isolation is opt-in. Filesystem/network helpers are not wired into every connector or executor. |
-| Formal models | Bounded `PACAAuth.tla` and `PACALifecycle.tla` models with TLC configurations | TLC checks finite specifications; it does not prove Python refinement, host isolation or deployed-system security. |
-| Evaluation | Author-written deterministic simulator, regression tests, protocol fixtures and a limited AgentDojo runner | Not an independent benchmark or completed live-agent effectiveness evaluation. |
-| Reference API | `paca_executor.py` exposes `/health` and `/decide` for local demonstration | It accepts demonstration capability data and never executes external effects. It is not a production enforcement service. |
+The source-code component inventory is maintained once in the [README implementation map](../README.md#what-is-implemented), which groups modules into six responsibility areas. This research document does not repeat a second per-module component table. The grouping is for navigation only: it does not claim that all paths are integrated or that any group is a complete security boundary.
+
+For the research claims, keep three implementation distinctions explicit:
+
+- Policy evaluation, lifecycle-session checks and runtime routing are related but different responsibilities.
+- Information provenance and authority lineage are separate security state models; information trust never grants permission, and a capability never makes data trustworthy.
+- Resource-side fencing, broker mediation and execution containment have different enforcement and failure boundaries. Their tests must not be combined as evidence of one end-to-end mechanism.
+
+The local reference API in `paca_executor.py` exposes demonstration `/health` and `/decide` endpoints; it accepts demonstration capability data and does not execute external effects. It is not counted as a separate runtime security component or a production enforcement service.
 
 The separate `SQLiteOperationLedger` in `paca/ledger.py` persists selected Monitor operation/token state. It is distinct from the authority registry and from the provenance/value stores. These stores have different transaction boundaries and must not be described as one unified distributed database.
 
