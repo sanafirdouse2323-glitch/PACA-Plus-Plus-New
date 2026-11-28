@@ -305,4 +305,3 @@ def test_protocol_identifiers_accept_url_safe_authority_references(
         message = _valid_broker_operation("read")
         message["authorization_grant_ref"] = grant_ref
         validator.validate(message)
-
