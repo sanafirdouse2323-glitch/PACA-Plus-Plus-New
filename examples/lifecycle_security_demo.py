@@ -138,6 +138,7 @@ def _run_scenario(root: Path, *, content_integrity: str) -> dict[str, Any]:
             "mem_write": ("mem/*",),
             "delegate": (CHILD_PRINCIPAL,),
             "send_agent_message": (CHILD_PRINCIPAL,),
+            "receive_agent_message": (PARENT_PRINCIPAL,),
             "write_file": ("/demo-tenant/*",),
         },
         expires_at=2_000,
