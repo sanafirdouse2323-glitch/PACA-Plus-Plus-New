@@ -656,7 +656,7 @@ def test_reentrant_audit_sink_cannot_stop_then_allow_a_context_transition():
     invoked = []
 
     try:
-        controller.__run_context_transition(
+        controller._run_context_transition(
             phase=LifecyclePhase.MESSAGE,
             operation="send",
             principal="agent-a",
