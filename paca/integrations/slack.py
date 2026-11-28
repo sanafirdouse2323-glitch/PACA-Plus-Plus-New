@@ -144,4 +144,3 @@ class SlackHistoryConnector:
 
     def close(self) -> None:
         self.http.close()
-
