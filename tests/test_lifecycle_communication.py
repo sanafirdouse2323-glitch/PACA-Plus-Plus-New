@@ -324,6 +324,7 @@ def test_kill_switch_blocks_context_transition_before_adapter_call(tmp_path):
     assert event.phase == LifecyclePhase.MESSAGE.value
     assert event.decision == "deny"
 
+
 def _integrated_environment(tmp_path, *, content_integrity: str):
     now = [1_000]
 
