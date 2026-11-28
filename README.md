@@ -40,6 +40,17 @@ python -m paca bench /tmp/paca-benchmark
 
 The benchmark command writes `index.html` and `results.json` into the selected output directory. Use a temporary directory so the checked-in historical report under `docs/` is not overwritten accidentally.
 
+## Offline lifecycle integration demonstration
+
+Run the deterministic two-agent example after installing the development dependencies:
+
+```bash
+python -m pip install -e ".[dev]"
+python examples/lifecycle_security_demo.py --output /tmp/paca-lifecycle-demo.json
+```
+
+The JSON report contains a benign source-to-memory-to-delegated-message-to-fenced-write control and an untrusted-memory denial control. It uses local SQLite stores, demonstration HMAC keys and a fixed test plan. It does not call an LLM or external provider and is not a production deployment configuration.
+
 ## What is implemented
 
 | Responsibility group | Included modules | Current boundary |
