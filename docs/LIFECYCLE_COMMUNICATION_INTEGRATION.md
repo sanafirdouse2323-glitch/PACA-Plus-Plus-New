@@ -19,7 +19,7 @@ When `lifecycle_security` is configured:
 2. **Message send:** the runtime verifies the sender capability and authority lineage, computes a digest over the typed payload value and its provenance label/references, and routes the signed-envelope operation through the active session check. The message codec remains responsible for send-recipient scope, memory access, lineage integrity, revocation and envelope authentication.
 3. **Message receive:** the runtime verifies the recipient capability and lineage, binds it to the active recipient session, and only then invokes the message codec. Thus a session mismatch is rejected before the codec consumes the durable message receipt or memory-read budget. The codec remains responsible for signature verification, sender/recipient grants, replay receipt, provenance and memory authorization.
 4. **Stop/session serialization:** the trusted adapter callback executes while the lifecycle controller lock is held. A concurrent `stop()` or `close_session()` therefore cannot pass the context check and change the local session before the routed adapter operation completes.
-5. **Audit minimisation:** transition events record phase, operation, session metadata, subject and SHA-256 digest. They do not contain message payload bytes or raw token values.
+5. **Audit minimisation and re-entry:** transition events record phase, operation, session metadata, subject and SHA-256 digest. They do not contain message payload bytes or raw token values. Because the configured audit sink is trusted host code and may be invoked synchronously, the controller rechecks that the active session has not been stopped or replaced by a reentrant audit callback before dispatching the adapter operation.
 
 The controller accepts only the explicit transition pairs `delegation/delegate` and `message/send|receive`. The callback is a trusted PACA-owned adapter operation; model- or user-supplied callbacks must never be passed to this API.
 
@@ -36,6 +36,19 @@ The controller accepts only the explicit transition pairs `delegation/delegate` 
 
 These tests complement, rather than replace, the existing durable-message tests for signature verification, provenance checks, replay receipts, authority revocation and concurrent receipt consumption.
 
+## Connected deterministic trajectory
+
+The added tests also exercise a single local reference trajectory rather than only isolated method calls:
+
+1. A fixed-identity connector captures either an explicitly trusted test source or an untrusted external-content source with versioned lineage.
+2. The sender retrieves the source through `TrustedMemoryAdapter` and records input, retrieval and a model-independent candidate-plan audit digest. The plan is an explicit test fixture; no hidden model reasoning is claimed.
+3. The sender delegates an attenuated child capability to `worker-b`, including the parent-pinned `write_file` implementation digest.
+4. The sender seals the lineage-bearing payload; a separate recipient session validates and opens the message.
+5. The recipient submits the exact received value to `PACAAgentRuntime.execute_effect()` with the concrete SQLite fenced-resource executor and the packaged `Monitor`.
+6. The benign control writes a row whose version, child authority ID, request digest and commit nonce are checked in the actual resource registry. The poisoned-memory control is denied by lifecycle integrity policy and asserts that no sink row or successful lifecycle commit event exists.
+
+This provides an executable integration demonstration for a declared local reference path, including a positive-utility control and a protected-sink negative case. It does not represent a live LLM, hidden planning, a production connector, an arbitrary host filesystem, a remote SaaS provider or universal six-stage mediation. The deterministic plan and connectors are test fixtures; trust comes from the host-configured adapter labels, not from the model's assertion.
+
 ## Security boundary and limitations
 
 This change improves lifecycle continuity only for operations routed through the configured `PACAAgentRuntime`. It does not make the Python object boundary a host security boundary. Direct calls to `HMACCapabilityAuthority.issue()`, `HMACAgentMessageCodec.seal()` or `HMACAgentMessageCodec.open()`, alternate transports, raw framework APIs and direct database access can still bypass the runtime session gate.
@@ -48,7 +61,7 @@ The message codec currently uses HMAC for its envelope signature. This work does
 
 Before describing this change as validated, require:
 
-- the new lifecycle communication tests to pass;
+- the lifecycle session-binding tests, the benign/poisoned connected trajectory tests and the reentrant-audit test to pass;
 - the complete Python test matrix and repository lint/type checks to pass;
 - durable lifecycle/message and PostgreSQL-backed authority integration tests to pass; and
 - review of the branch diff to confirm that no existing adapter checks or replay/usage semantics were weakened.
