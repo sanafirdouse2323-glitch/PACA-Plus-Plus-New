@@ -37,7 +37,7 @@ python examples/lifecycle_security_demo.py --output /tmp/paca-lifecycle-demo.jso
 
 This deterministic, local SQLite example runs one trusted and one untrusted source through selected retrieval, delegation, messaging and resource-write paths. It uses fixed test data, demonstration HMAC keys and a permissive test metadata callback. It does not call an LLM or external provider and is not a deployment recipe. See [the communication integration notes](docs/LIFECYCLE_COMMUNICATION_INTEGRATION.md).
 
-## Implementation map
+## What is implemented
 
 The six groups below organise related code; they are **not six complete or independently deployable security layers**.
 
@@ -59,6 +59,8 @@ Some similarly named or adjacent modules enforce different invariants and must n
 - The **AF_UNIX transport** provides process communication and peer-credential checks for configured mediators; it is not another policy engine or a universal broker.
 
 Tests, TLA+ models, simulators, scenarios, benchmarks and reports are assurance/evaluation tooling, not additional runtime security components.
+
+The package and research entry points are also separate from those security components: `paca/__main__.py`, `paca/cli.py` and `paca_executor.py` expose the CLI and local decision API; `paca/baselines.py`, `paca/bench.py`, `paca/evaluation_statistics.py`, `paca/harness.py`, `paca/report.py` and `paca/scenarios.py` support deterministic simulations and reporting. AgentDojo benchmark loading and execution live in `paca/integrations/agentdojo_benchmark.py`, `paca/integrations/agentdojo_load.py` and `paca/integrations/agentdojo_workspace.py`; `paca/integrations/model_usage.py` captures usage metadata for the opt-in evaluation. These modules do not add enforcement beyond the boundaries described above.
 
 ## Installation profiles and optional integrations
 
