@@ -4,6 +4,7 @@
 
 This section records changes merged to `main` after the 0.3.2 packaging release. It does not claim production readiness or improved real-agent attack resistance.
 
+- Separates shared provider OAuth/HTTP/capture primitives from the Gmail, Microsoft Graph, Slack and Qdrant read-only adapters while retaining the `paca.integrations.providers` facade, public exports, private HTTP wrapper and pickle names.
 - Adds durable provenance and memory reference components, signed capability envelopes, policy epochs, revocation, per-capability and tenant/task aggregate quotas, and persistent message replay receipts.
 - Adds an optional PostgreSQL shared-primary authority registry and an Ed25519 issuer/verifier separation primitive.
 - Adds read-only Gmail, Microsoft Graph, Slack and Qdrant provider adapters with bounded response handling and provenance capture; CI uses mocked provider HTTP.
