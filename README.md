@@ -122,6 +122,7 @@ Do not deploy PAC++ New as the sole security control protecting company data, ac
 - [Current implementation status and next gates](docs/security-roadmap.md)
 - [Lifecycle Phase A baseline audit and threat model](docs/LIFECYCLE_PHASE_A_BASELINE_AUDIT.md)
 - [Research question, related work and evaluation plan](docs/AGENT_LIFECYCLE_SECURITY_RESEARCH.md)
+- [PhD research prototype dossier](docs/RESEARCH_PROTOTYPE_DOSSIER.md) — hypothesis, architecture, connected local demonstration, evidence status and research limitations.
 - [Durable lifecycle implementation and trust boundaries](docs/DURABLE_LIFECYCLE_SECURITY.md)
 - [Direct-bypass evaluation](docs/DIRECT_BYPASS_EVALUATION.md)
 - [AgentDojo integration](docs/agentdojo-integration.md)
